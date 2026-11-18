@@ -1,6 +1,7 @@
 @echo off
 rem Host aracini exe'ye cevirir (PyInstaller, tek dosya):
 rem   dist\TelemetriHost.exe   grafik arayuz (cift tikla acilir, konsol penceresi yok)
+rem   dist\TelemetriHost_v2.exe  grafik arayuz v2 (SET_RATE_DEBUG butonu)
 rem   dist\vnet.exe            komut satiri  (vnet.exe --port COM5 hello, vnet.exe --sim test all)
 rem Kullanim: Host\build_exe.bat   (her klasorden calisir)
 setlocal
@@ -21,9 +22,11 @@ rem 'tests' paketi importlib ile adindan yuklendigi icin acikca toplanir.
 set COMMON=--noconfirm --clean --onefile --paths "%~dp0." --collect-submodules tests --distpath dist --workpath build --specpath build
 
 python -m PyInstaller %COMMON% --windowed --name TelemetriHost vnet_gui.py || exit /b 1
+python -m PyInstaller %COMMON% --windowed --name TelemetriHost_v2 vnet_gui_v2.py || exit /b 1
 python -m PyInstaller %COMMON% --console --name vnet vnet.py || exit /b 1
 
 echo.
 echo Hazir:
 echo   %~dp0dist\TelemetriHost.exe
+echo   %~dp0dist\TelemetriHost_v2.exe
 echo   %~dp0dist\vnet.exe
