@@ -118,6 +118,7 @@ typedef struct xMEAS_STATE
     uint16_t usRateInForce;     /* the rate the IMU runs at now            */
     uint16_t usSeq;             /* TELEM SEQ since start-up (K3)           */
     TickType_t xDrdyWait;       /* one sample period + margin, in ticks    */
+    uint8_t ucRateChanged;      /* 1: next DRDY may still be at the old rate */
     uint8_t ucFailRun;          /* reads in a row that failed (K6)         */
 } MeasState_t;
 
@@ -370,6 +371,12 @@ static void prvApplyNewRate( void )
 
     prvRateInForce( usNew );
     xAtt.ucHaveLast = 0U;
+
+    /* The IMU takes the new divider only at its next sample at the OLD rate
+     * (board, 22.11.2026: 10 -> 100 Hz, three 20 ms DRDY waits ran out
+     * before the 100 ms of the old period, FAULT IMU). So the first DRDY
+     * after a change gets the longest wait. */
+    xMeas.ucRateChanged = 1U;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -388,7 +395,9 @@ static BaseType_t prvLoadDestination( MeasDest_t * pxOut )
 static BaseType_t prvAcquire( Sample_t * pxOut )
 {
 #if ( APP_MEAS_SOURCE == APP_MEAS_SOURCE_IMU )
-    BaseType_t xOk = Imu_WaitDrdy( xMeas.xDrdyWait );
+    BaseType_t xOk = Imu_WaitDrdy( ( xMeas.ucRateChanged != 0U ) ? APP_MS( APP_IMU_DRDY_TIMEOUT_MAX_MS ) : xMeas.xDrdyWait );
+
+    xMeas.ucRateChanged = 0U;
 
     if( xOk == pdPASS )
     {
