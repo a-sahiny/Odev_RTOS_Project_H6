@@ -52,6 +52,11 @@ class F746CompatTest(unittest.TestCase):
         self.assertEqual(proto.fcs(b"x" * 60), h_crc.fcs_bytes(b"x" * 60))
         pkt = proto.encode(proto.CMD_SET_RATE, 7, 1234, b"\x00\x14")
         self.assertEqual(pkt, h_proto.encode(h_proto.Packet(type=0x03, seq=7, req_id=1234, payload=b"\x00\x14")))
+        self.assertEqual((proto.RATES_HZ, proto.TELEM_LEN), (h_proto.RATES_HZ, h_proto.TELEM_LEN))
+        tel = h_proto.payload_telem((10, -20, 16384), (1, 2, 3), (4500, -1234, -18000), 7, 0x0200, 4700)
+        t = proto.parse_telem(tel)
+        self.assertEqual((t["acc"], t["gyro"], t["roll_cdeg"], t["pitch_cdeg"], t["yaw_cdeg"], t["flags"],
+                          t["prev_seq"], t["prev_us"]), ([10, -20, 16384], [1, 2, 3], 4500, -1234, -18000, 7, 0x0200, 4700))
         arp = h_eth.build_arp(1, HOST_MAC, proto.HOST_IP, bytes(6), proto.BOARD_IP)
         self.assertEqual(proto.frame_to_line(arp), h_lines.frame_line(arp, 1))
 
@@ -104,9 +109,11 @@ class F746CompatTest(unittest.TestCase):
                 return h_eth.build_udp_frame(board_mac, HOST_MAC, proto.HOST_IP, proto.BOARD_IP,
                                              proto.HOST_PORT, dport, payload)
 
-            send(udp(proto.PORT_CTRL, proto.encode(proto.CMD_START, 1, 4321)))
+            send(udp(proto.PORT_CTRL, proto.encode(proto.CMD_SET_RATE, 1, 4320, b"\x00\xC8")))   # 200 Hz
+            time.sleep(0.2)
+            send(udp(proto.PORT_CTRL, proto.encode(proto.CMD_START, 2, 4321)))
             time.sleep(1.5)                                       # START sonrası telemetri aksın
-            send(udp(proto.PORT_CTRL, proto.encode(proto.CMD_GET_IMU, 2, 4322)))
+            send(udp(proto.PORT_CTRL, proto.encode(0x05, 3, 4322)))   # eski GET_IMU: artık E_TYPE
             time.sleep(0.3)
 
             replies = {}
@@ -114,18 +121,24 @@ class F746CompatTest(unittest.TestCase):
                 t, flags, seq, req_id, payload = proto.decode(p)
                 if flags & proto.FLAG_RESP:
                     replies[req_id] = (t, proto.parse_response(payload))
+            self.assertIn(4320, replies, "SET_RATE cevabi yok")
+            self.assertEqual(replies[4320][1]["status"], 0)
             self.assertIn(4321, replies, "START cevabi yok")
             self.assertEqual(replies[4321][1]["status"], 0)
             self.assertTrue(replies[4321][1]["state"] & proto.STATE_MEAS_EN)
-            self.assertIn(4322, replies, "GET_IMU cevabi yok")
-            imu = proto.parse_imu_reply(replies[4322][1]["extra"])
-            self.assertIn("roll_cdeg", imu)
+            self.assertIn(4322, replies, "eski GET_IMU cevabi yok")
+            self.assertEqual(replies[4322][1]["status"], 5)        # E_TYPE
 
             telem = [proto.decode(p) for p in udp_payloads(proto.PORT_TELEM)]
-            self.assertGreater(len(telem), 3, "telemetri gelmedi")
+            self.assertGreater(len(telem), 200, "200 Hz telemetri gelmedi")   # 1,5 s x 200 Hz
+            parsed = []
             for t, flags, seq, req_id, payload in telem:
                 self.assertEqual(t, proto.TELEM)
-                proto.parse_telem(payload)
+                parsed.append(proto.parse_telem(payload))
+            self.assertTrue(all(-18000 <= p["roll_cdeg"] <= 18000 for p in parsed))
+            lat = [p["prev_us"] for p in parsed[1:]]
+            self.assertTrue(all(v is not None and 0 < v <= proto.TELEM_DEADLINE_MS * 1000 for v in lat),
+                            "her TELEM bir öncekinin kart içi gecikmesini taşımalı")
 
             with lock:
                 self.assertTrue(any(ln.startswith(b"{") for ln in lines), "JSON raporu yok")

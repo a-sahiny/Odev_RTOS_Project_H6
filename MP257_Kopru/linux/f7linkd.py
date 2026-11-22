@@ -39,7 +39,7 @@ IFF_TAP = 0x0002
 IFF_NO_PI = 0x1000
 
 COMMAND_RE = re.compile(rb"^(HELLO|STATE|HOLD [0-9]{1,5}|TXDELAY [0-9]{1,4})$")
-TX_LIMIT = 16384            # seri TX kuyruğu: ~0,26 s hat süresi; dolarsa çerçeve atılır (F746'da akış kontrolü yok)
+TX_LIMIT = 16384            # seri TX kuyruğu: ~0,16 s hat süresi (1 Mbaud); dolarsa çerçeve atılır (F746'da akış kontrolü yok)
 
 
 def log(msg):
@@ -47,7 +47,7 @@ def log(msg):
 
 
 def open_serial(path, baud):
-    """Seri portu ham modda açar; 625000 gibi standart dışı hızı termios2 (BOTHER) ile ayarlar."""
+    """Seri portu ham modda açar; hızı (1000000, 625000 gibi) termios2 (BOTHER) ile tam olarak ayarlar."""
     fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     attr = termios.tcgetattr(fd)
     attr[0] = 0                                         # iflag: dönüşüm yok, XON/XOFF yok
@@ -77,7 +77,7 @@ def open_tap(name, ip_cidr, mtu):
     cmds = [
         ["ip", "link", "set", name, "address", proto.HOST_MAC],
         ["ip", "link", "set", name, "mtu", str(mtu)],
-        ["sysctl", "-q", "-w", "net.ipv6.conf.%s.disable_ipv6=1" % name],   # 625 kbaud'u IPv6 gürültüsüyle doldurma
+        ["sysctl", "-q", "-w", "net.ipv6.conf.%s.disable_ipv6=1" % name],   # seri hattı IPv6 gürültüsüyle doldurma
         ["ip", "addr", "flush", "dev", name],
         ["ip", "addr", "add", ip_cidr, "dev", name],
         ["ip", "link", "set", name, "up"],

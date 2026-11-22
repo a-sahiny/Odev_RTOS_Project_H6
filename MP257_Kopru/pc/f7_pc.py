@@ -2,9 +2,9 @@
 """PC aracı: MP257'deki f7hub'a bağlanır (USB ağı: 192.168.7.1). Yalnız standart kütüphane.
 
     python pc\\f7_pc.py durum                 anlık durum (F746, M33, hat sayaçları)
-    python pc\\f7_pc.py izle                  canlı olaylar: telemetri, açı, M33, raporlar (Ctrl+C ile çık)
+    python pc\\f7_pc.py izle                  canlı olaylar: telemetri (açı, kart gecikmesi), M33, raporlar (Ctrl+C ile çık)
     python pc\\f7_pc.py start | stop          ölçümü başlat / durdur
-    python pc\\f7_pc.py rate 20               telemetri hızı (1..50 Hz)
+    python pc\\f7_pc.py rate 100              IMU / telemetri hızı: 10, 20, 50, 100, 200 Hz
     python pc\\f7_pc.py stats 0               GET_STATS sayfası (0..3)
     python pc\\f7_pc.py limit 2500            M33 eğim alarm sınırı (0,01 derece)
     python pc\\f7_pc.py konsol HELLO          F746 konsol satırı (HELLO, STATE, HOLD n, TXDELAY n)
@@ -33,10 +33,10 @@ def watch(base, kinds):
             elif line.startswith("data: ") and (not kinds or kind in kinds):
                 data = json.loads(line[6:])
                 if kind == "telem":
-                    print("TM  seq=%5d acc=%s gyro=%s" % (data["seq"], data["acc"], data["gyro"]))
-                elif kind == "imu":
-                    print("AT  roll=%7.2f pitch=%7.2f yaw=%7.2f rtt=%.1f ms" % (
-                        data["roll_cdeg"] / 100, data["pitch_cdeg"] / 100, data["yaw_cdeg"] / 100, data["rtt_ms"]))
+                    print("TM  seq=%5d acc=%s gyro=%s roll=%7.2f pitch=%7.2f yaw=%7.2f önceki %s" % (
+                        data["seq"], data["acc"], data["gyro"], data["roll_cdeg"] / 100, data["pitch_cdeg"] / 100,
+                        data["yaw_cdeg"] / 100,
+                        "%.2f ms" % (data["prev_us"] / 1000) if data["prev_us"] is not None else "-"))
                 elif kind == "m33":
                     print("M33 %-8s tm_age=%s ms gaps=%s dt=%s..%s us" % (
                         data["mode_text"], data["tm_age_ms"], data["tm_gaps"], data["dt_min_us"], data["dt_max_us"]))
@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("komut", choices=["durum", "izle", "start", "stop", "rate", "stats", "limit", "konsol"])
     ap.add_argument("deger", nargs="?", help="rate: Hz, stats: sayfa, limit: cdeg, konsol: satir")
-    ap.add_argument("--tur", action="append", default=[], help="izle: yalniz bu olaylar (telem, imu, m33, report...)")
+    ap.add_argument("--tur", action="append", default=[], help="izle: yalniz bu olaylar (telem, m33, report...)")
     a = ap.parse_args()
     base = "http://%s:%d" % (a.board, a.port)
 
@@ -63,7 +63,7 @@ def main():
         elif a.komut in ("start", "stop"):
             print(json.dumps(post(base, {"cmd": a.komut}), ensure_ascii=False))
         elif a.komut == "rate":
-            print(json.dumps(post(base, {"cmd": "rate", "hz": int(a.deger or 10)}), ensure_ascii=False))
+            print(json.dumps(post(base, {"cmd": "rate", "hz": int(a.deger or 100)}), ensure_ascii=False))
         elif a.komut == "stats":
             print(json.dumps(post(base, {"cmd": "stats", "page": int(a.deger or 0)}), ensure_ascii=False))
         elif a.komut == "limit":

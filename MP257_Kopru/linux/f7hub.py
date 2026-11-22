@@ -2,11 +2,12 @@
 """f7hub: MP257 Linux'taki uygulama servisi. F746'nın tek istemcisi, M33'ün köprüsü, PC'nin sunucusu.
 
     tap-f7 üzerinden normal UDP soketi (192.168.50.1:6000 <-> 192.168.50.2:5000/5002)
-        komut gönderir (REQ_ID eşleme + aynı REQ_ID ile tekrar), telemetriyi alır, GET_IMU yoklar
+        komut gönderir (REQ_ID eşleme + aynı REQ_ID ile tekrar), telemetriyi alır: her IMU örneği bir
+        TELEM (ivme, jiroskop, roll / pitch / yaw ve bir önceki TELEM'in kart içi DRDY -> TX bitti süresi)
     UDP 127.0.0.1:7101 <- f7linkd'nin aktardığı F746 JSON raporları ve hat sayaçları
     /dev/ttyRPMSG0 <-> M33 (FreeRTOS ya da Zephyr; aynı satır protokolü: protocol/A35_M33_Protokolu.md)
     HTTP :8080 -> PC: panel (web/index.html), canlı olaylar (/events, SSE), komut (/api/cmd), durum (/api/status)
-    CSV kaydı: telemetri ve açı satırları --log-dir altına
+    CSV kaydı: her TELEM bir satır, --log-dir altına
 Yalnız Python standart kütüphanesi.
 """
 
@@ -29,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from f7common import proto  # noqa: E402
 
-CMD_TIMEOUT_S = 0.15        # tek deneme; F746 cevabı tipik < 15 ms + 625 kbaud hat
+CMD_TIMEOUT_S = 0.15        # tek deneme; F746 cevabı tipik < 15 ms + 1 Mbaud hat
 CMD_ATTEMPTS = 3            # aynı REQ_ID ile: F746 tekrarı tanır (dedup penceresi 10 s)
 HB_PERIOD_S = 0.1           # M33 kalp atışı (M33 500 ms'de A35_LOST der)
 
@@ -82,11 +83,13 @@ class Hub:
         self.seq = collections.defaultdict(int)
         self.pending = {}                           # req_id -> [Event, cevap]
         self.state = {"f7_state": None, "f7_why": 0, "epoch": None, "meas": False, "rate_hz": None,
-                      "telem": None, "imu": None, "m33": None, "m33_rtos": None, "linkd": None,
-                      "hello": None, "telem_count": 0, "telem_gaps": 0, "last_telem_seq": None}
+                      "telem": None, "m33": None, "m33_rtos": None, "linkd": None,
+                      "hello": None, "telem_count": 0, "telem_gaps": 0, "last_telem_seq": None,
+                      # kart içi gecikme (DRDY -> TX bitti), TELEM'lerin taşıdığı ölçümler
+                      "lat_n": 0, "lat_last_ms": None, "lat_max_ms": 0.0, "lat_over12": 0}
+        self.last_prev_seq = None
         self.m33_fd = None
         self.m33_lock = threading.Lock()
-        self.imu_enabled = args.imu_period_ms > 0
         self.csv = self.open_csv(args.log_dir)
 
     # ------------------------------------------------------------ yardımcılar
@@ -97,7 +100,8 @@ class Hub:
         path = os.path.join(log_dir, time.strftime("f7_%Y%m%d_%H%M%S.csv"))
         f = open(path, "w", newline="")
         w = csv.writer(f)
-        w.writerow(["t_unix", "kind", "seq", "idx", "ax", "ay", "az", "gx", "gy", "gz", "roll_cdeg", "pitch_cdeg", "yaw_cdeg"])
+        w.writerow(["t_unix", "seq", "ax", "ay", "az", "gx", "gy", "gz", "roll_cdeg", "pitch_cdeg", "yaw_cdeg",
+                    "flags", "prev_seq", "prev_us"])
         log("kayit: %s" % path)
         return (f, w)
 
@@ -159,9 +163,9 @@ class Hub:
         elif name == "stop":
             resp = self.command(proto.CMD_STOP)
         elif name == "rate":
-            hz = int(req.get("hz", 10))
-            if not proto.RATE_MIN_HZ <= hz <= proto.RATE_MAX_HZ:
-                return {"ok": False, "error": "hz 1..50"}
+            hz = int(req.get("hz", proto.RATE_DEFAULT_HZ))
+            if hz not in proto.RATES_HZ:
+                return {"ok": False, "error": "hz: 10, 20, 50, 100 ya da 200"}
             resp = self.command(proto.CMD_SET_RATE, struct.pack(">H", hz))
             if resp and resp["status"] == 0:
                 with self.lock:
@@ -173,9 +177,6 @@ class Hub:
             resp = self.command(proto.CMD_GET_STATS, bytes([page]))
             if resp and resp["status"] == 0:
                 resp["stats"] = proto.parse_stats_page(resp["extra"])
-        elif name == "imu_poll":
-            self.imu_enabled = bool(req.get("on", True))
-            return {"ok": True, "imu_poll": self.imu_enabled}
         elif name == "limit":
             cdeg = int(req.get("cdeg", 3000))
             if not 100 <= cdeg <= 18000:
@@ -232,6 +233,7 @@ class Hub:
                 self.on_telem(seq, payload)
 
     def on_telem(self, seq, payload):
+        """Her IMU örneği: SEQ boşluğu, kart içi gecikme (bir önceki TELEM'in), M33'e TM + AT, PC'ye SSE, CSV."""
         try:
             t = proto.parse_telem(payload)
         except proto.PacketError:
@@ -246,9 +248,22 @@ class Hub:
             self.state["last_telem_seq"] = seq
             self.state["telem_count"] += 1
             self.state["telem"] = t
-        self.m33_send("TM %d %d %d %d %d %d %d" % (seq, *t["acc"], *t["gyro"]))
+            # Aynı ölçüm iki TELEM'de gelebilir (önceki henüz hattayken bir sonraki kurulduysa): bir kez say.
+            if t["prev_seq"] is not None and t["prev_seq"] != self.last_prev_seq:
+                self.last_prev_seq = t["prev_seq"]
+                ms = t["prev_us"] / 1000.0
+                self.state["lat_n"] += 1
+                self.state["lat_last_ms"] = ms
+                self.state["lat_max_ms"] = max(self.state["lat_max_ms"], ms)
+                if ms > proto.TELEM_DEADLINE_MS:
+                    self.state["lat_over12"] += 1
+        # İki satır tek yazımda: 200 Hz'de RPMsg mesaj sayısı yarıya iner (M33 satırları ayırır).
+        self.m33_send("TM %d %d %d %d %d %d %d\nAT %d %d %d %d" % (
+            seq, *t["acc"], *t["gyro"], t["roll_cdeg"], t["pitch_cdeg"], t["yaw_cdeg"], t["flags"]))
         self.broker.publish("telem", t)
-        self.write_csv([round(time.time(), 4), "TM", seq, t["idx"], *t["acc"], *t["gyro"], "", "", ""])
+        self.write_csv([round(time.time(), 4), seq, *t["acc"], *t["gyro"], t["roll_cdeg"], t["pitch_cdeg"],
+                        t["yaw_cdeg"], t["flags"], "" if t["prev_seq"] is None else t["prev_seq"],
+                        "" if t["prev_us"] is None else t["prev_us"]])
 
     def json_rx(self):
         """f7linkd'den: F746 JSON raporları ve {"type":"linkd"} hat sayaçları."""
@@ -280,34 +295,6 @@ class Hub:
                 st = (st | proto.STATE_FAULT) if rep.get("set") else (st & ~proto.STATE_FAULT)
                 self.set_f7_state(st, int(rep.get("why", 0)))
             self.broker.publish("report", rep)
-
-    def imu_poller(self):
-        """GET_IMU: ölçüm açıkken periyodik açı sorgusu (eski PC host'u 20 ms kullanıyordu)."""
-        period = max(self.args.imu_period_ms, 10) / 1000.0
-        next_t = time.monotonic()
-        while True:
-            next_t += period
-            delay = next_t - time.monotonic()
-            if delay > 0:
-                time.sleep(delay)
-            else:
-                next_t = time.monotonic()           # geride kaldıysak yetişmeye çalışma
-            if not (self.imu_enabled and self.state["meas"]):
-                continue
-            resp = self.command(proto.CMD_GET_IMU)
-            if resp is None or resp["status"] != 0:
-                continue
-            try:
-                imu = proto.parse_imu_reply(resp["extra"])
-            except proto.PacketError:
-                continue
-            imu["rtt_ms"] = resp["rtt_ms"]
-            with self.lock:
-                self.state["imu"] = imu
-            self.m33_send("AT %d %d %d %d" % (imu["roll_cdeg"], imu["pitch_cdeg"], imu["yaw_cdeg"], imu["flags"]))
-            self.broker.publish("imu", imu)
-            self.write_csv([round(time.time(), 4), "AT", "", imu["idx"], *imu["acc"], *imu["gyro"],
-                            imu["roll_cdeg"], imu["pitch_cdeg"], imu["yaw_cdeg"]])
 
     # ------------------------------------------------------------ M33
     def m33_send(self, text):
@@ -396,7 +383,7 @@ class Hub:
 
     # ------------------------------------------------------------ başlat
     def start(self):
-        for target in (self.udp_rx, self.json_rx, self.imu_poller, self.m33_thread, self.heartbeat):
+        for target in (self.udp_rx, self.json_rx, self.m33_thread, self.heartbeat):
             threading.Thread(target=target, daemon=True, name=target.__name__).start()
         hub = self
 
@@ -424,7 +411,6 @@ class Hub:
                 elif self.path == "/api/status":
                     with hub.lock:
                         snap = dict(hub.state)
-                    snap["imu_poll"] = hub.imu_enabled
                     snap["limit_cdeg"] = hub.args.limit_cdeg
                     self.send_json(snap)
                 elif self.path == "/events":
@@ -471,7 +457,6 @@ def main():
     ap.add_argument("--json-port", type=int, default=7101, help="f7linkd'nin rapor yolladigi port")
     ap.add_argument("--ctl-port", type=int, default=7100, help="f7linkd konsol komut portu")
     ap.add_argument("--rpmsg", default="/dev/ttyRPMSG0", help="M33 kanali")
-    ap.add_argument("--imu-period-ms", type=int, default=20, help="GET_IMU periyodu; 0 = kapali")
     ap.add_argument("--limit-cdeg", type=int, default=3000, help="M33 egim alarm siniri (0,01 derece)")
     ap.add_argument("--log-dir", default="/home/root/f7_kayit", help="CSV klasoru; bos = kayit yok")
     Hub(ap.parse_args()).start()

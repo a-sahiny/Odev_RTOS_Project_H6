@@ -245,7 +245,7 @@ footer.band{padding:40px 0;font-size:14px}
         <h3>STM32F746G-DISCO</h3>
         <ul>
           <li>FreeRTOS + FreeRTOS-Plus-TCP, IMU, 192.168.50.2</li>
-          <li>Ağ çerçevelerini UART1'den <code>FRAME 1 &lt;hex&gt;</code> satırıyla yollar, 625000 baud</li>
+          <li>Ağ çerçevelerini UART1'den <code>FRAME 1 &lt;hex&gt;</code> satırıyla yollar, 1000000 baud (1 Mbaud)</li>
           <li>UDP 5000 komut, 5001 veri, 5002'den telemetri; JSON raporlar</li>
         </ul>
       </div>
@@ -254,7 +254,7 @@ footer.band{padding:40px 0;font-size:14px}
         <h3>f7linkd + f7hub</h3>
         <ul>
           <li><b>f7linkd</b>: seri port ↔ <code>tap-f7</code> (192.168.50.1). Linux çekirdeği ARP, ping, UDP'yi kendisi yapar</li>
-          <li><b>f7hub</b>: F746'nın tek istemcisi, GET_IMU yoklama, CSV kaydı, M33 köprüsü, PC paneli</li>
+          <li><b>f7hub</b>: F746'nın tek istemcisi, her IMU örneğinde gelen TELEM (açı + kart içi gecikme), CSV kaydı, M33 köprüsü, PC paneli</li>
         </ul>
       </div>
       <div class="node" style="--nc:var(--amber)">
@@ -311,16 +311,16 @@ footer.band{padding:40px 0;font-size:14px}
       <thead><tr><th>#</th><th>Karar</th><th>Gerekçe</th><th>Reddedilen seçenek</th></tr></thead>
       <tbody>
         <tr><td>K1</td><td>F746 → MP257 bağlantısı: F746'nın <b>ST-LINK USB</b>'si MP257'nin <b>CN19 USB-A</b> portuna</td><td>F746 uygulaması USART1'i (PA9/PB7) zaten ST-LINK sanal COM'una veriyor; USB'den çıkan şey PC'nin gördüğüyle aynı. Kablo, seviye çevirici, lehim yok.</td><td>Kablolu UART: USART1 hattını ST-LINK sürüyor ve pinler başlıkta değil; USART6 CubeMX'te açık ama uygulama kullanmıyor (değiştirmek gerekir).</td></tr>
-        <tr><td>K2</td><td>Seri portun <b>tek sahibi</b> f7linkd; F746 Linux'ta <code>tap-f7</code> arayüzü olur</td><td>Linux çekirdeği ARP/ICMP/UDP'yi doğru yapar; üstteki her program sıradan soket kullanır. MTU 242 (F746 çerçeve sınırı 256 − 14), IPv6 kapalı (625 kbaud'u gürültüyle doldurmasın), kısa çerçeve 60 B'ye doldurulur.</td><td>Eski PC host'unun Python yığınını kartta taşımak (ARP/IP'yi elle yapmak).</td></tr>
-        <tr><td>K3</td><td>Linux kodu <b>Python 3, yalnız standart kütüphane</b></td><td>Windows'ta Yocto SDK yok (WSL de yok); Python kartta derlemesiz çalışır, pip gerekmez. 625000 baud <code>termios2/BOTHER</code> ile, TAP <code>/dev/net/tun</code> ile açılır.</td><td>C ile çapraz derleme (Plan B: Arm GNU aarch64 araç zinciri, statik bağlama).</td></tr>
-        <tr><td>K4</td><td><b>f7hub F746'nın tek istemcisi</b>; PC'ye HTTP + SSE ile sunar</td><td>F746 telemetriyi son START'ı gönderene yollar; birden çok istemci birbirini ezerdi. GET_IMU (20 ms) karta yakın yoklanır, RTT düşük. Panel için PC'ye kurulum gerekmez.</td><td>PC'nin doğrudan F746 ile konuşması (yalnız tanı amaçlı seçenek olarak kaldı, adım 2.6).</td></tr>
+        <tr><td>K2</td><td>Seri portun <b>tek sahibi</b> f7linkd; F746 Linux'ta <code>tap-f7</code> arayüzü olur</td><td>Linux çekirdeği ARP/ICMP/UDP'yi doğru yapar; üstteki her program sıradan soket kullanır. MTU 242 (F746 çerçeve sınırı 256 − 14), IPv6 kapalı (seri hattı gürültüyle doldurmasın), kısa çerçeve 60 B'ye doldurulur.</td><td>Eski PC host'unun Python yığınını kartta taşımak (ARP/IP'yi elle yapmak).</td></tr>
+        <tr><td>K3</td><td>Linux kodu <b>Python 3, yalnız standart kütüphane</b></td><td>Windows'ta Yocto SDK yok (WSL de yok); Python kartta derlemesiz çalışır, pip gerekmez. 1000000 baud <code>termios2/BOTHER</code> ile, TAP <code>/dev/net/tun</code> ile açılır.</td><td>C ile çapraz derleme (Plan B: Arm GNU aarch64 araç zinciri, statik bağlama).</td></tr>
+        <tr><td>K4</td><td><b>f7hub F746'nın tek istemcisi</b>; PC'ye HTTP + SSE ile sunar</td><td>F746 telemetriyi son START'ı gönderene yollar; birden çok istemci birbirini ezerdi. Açı ve kart içi gecikme her TELEM'de kendiliğinden gelir; kimse sormaz. Panel için PC'ye kurulum gerekmez.</td><td>PC'nin doğrudan F746 ile konuşması (yalnız tanı amaçlı seçenek olarak kaldı, adım 2.6).</td></tr>
         <tr><td>K5</td><td>M33 görevi: <b>gerçek zamanlı gözetim</b> (kalp atışı, tazelik, aralık, alarm, LED, buton)</td><td>USB ve ağ Linux'ta; M33'ü veri yoluna sokmak gecikme ekler, yarar getirmez. Gözetim ise Linux'tan bağımsız saat ister: tam M33'ün işi.</td><td>M33'ün baytları ayrıştırması (A35 → M33 → A35 gidip gelmesi).</td></tr>
         <tr><td>K6</td><td><b>İki ayrı M33 projesi</b>: FreeRTOS ve Zephyr; ortak <code>m33/common</code></td><td>Kullanıcı isteği. Ortak çekirdek RTOS'suz saf C: iki varyant aynı davranır, PC'de gcc ile test edilir; Linux tarafı hangisinin koştuğunu umursamaz.</td><td>Tek RTOS seçmek.</td></tr>
         <tr><td>K7</td><td>A35↔M33 protokolü <b>metin satırı</b> (<code>HB</code>, <code>TM</code>, <code>AT</code>, <code>ST</code>, <code>LIM</code> / <code>RDY</code>, <code>SUP</code>, <code>BTN</code>)</td><td><code>cat</code>/<code>echo</code> ile elle denenebilir; hız ihtiyacı ~120 satır/s. Katı ayrıştırma: alan sayısı ve aralık tutmayan satır reddedilir.</td><td>İkili paket (daha hızlı ama elle denenemez).</td></tr>
         <tr><td>K8</td><td>FreeRTOS projesi ST örneklerinden <b>betikle</b> birleştirilir</td><td>ST'nin DK paketinde FreeRTOS+OpenAMP birlikte hazır örnek yok; elle 35 bağlantı + 7 define + ön derleme adımı eklemek hataya açık.</td><td>Elle CubeIDE ayarı; CubeMX ile yeniden üretmek.</td></tr>
       </tbody>
     </table></div>
-    <p class="src">K1: <span class="b b-yr">YEREL</span> <code>RTOS_Project_H6.ioc</code> (USART1 625000, USART6 230400), <code>App/</code> içinde <code>huart6</code> geçmiyor · UM3385 §8.1 "two USB 2.0 HS host ports (dual-USB sockets CN19)" <span class="b b-st">ST</span> · K8: <span class="b b-yr">YEREL</span> CubeMP2 <code>Applications/</code> klasörü</p>
+    <p class="src">K1: <span class="b b-yr">YEREL</span> <code>RTOS_Project_H6.ioc</code> (USART1 1000000 8x oversampling, USART6 230400), <code>App/</code> içinde <code>huart6</code> geçmiyor · UM3385 §8.1 "two USB 2.0 HS host ports (dual-USB sockets CN19)" <span class="b b-st">ST</span> · K8: <span class="b b-yr">YEREL</span> CubeMP2 <code>Applications/</code> klasörü</p>
   </div>
 </section>
 
@@ -389,7 +389,7 @@ cat /sys/class/tty/ttyACM0/device/../idVendor /sys/class/tty/ttyACM0/device/../i
     <div class="tbl"><table>
       <thead><tr><th>Uç</th><th>Adres</th><th>Kim kullanır</th></tr></thead>
       <tbody>
-        <tr><td>F746 seri portu</td><td><code>/dev/f746</code> (udev bağlantısı) → <code>/dev/ttyACM0</code>, 625000 8N1</td><td>yalnız f7linkd</td></tr>
+        <tr><td>F746 seri portu</td><td><code>/dev/f746</code> (udev bağlantısı) → <code>/dev/ttyACM0</code>, 1000000 8N1</td><td>yalnız f7linkd</td></tr>
         <tr><td>TAP arayüzü</td><td><code>tap-f7</code>, 192.168.50.1/24, MTU 242, MAC 02:00:00:00:00:01</td><td>Linux çekirdeği</td></tr>
         <tr><td>F746</td><td>192.168.50.2 · UDP 5000 komut, 5001 ENV/BULK/CAL, 5002 telemetri kaynağı</td><td>f7hub</td></tr>
         <tr><td>f7hub UDP</td><td>0.0.0.0:6000 (telemetri buraya gelir)</td><td>f7hub</td></tr>
@@ -416,7 +416,7 @@ scp -r C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\linux roo
       </div></div>
 
       <div class="step" data-id="2.2"><div class="step-h"><label class="check"><input type="checkbox" aria-label="2.2 tamam"></label><span class="sid">2.2</span><h3>F746 hattını servis olmadan dinle</h3></div><div class="body">
-        <div class="why"><b>Ne oluyor?</b> Küçük bir betik seri portu 625000 baud'da açar, F746'ya <code>HELLO</code> yollar ve 5 saniye boyunca gelen satırları gösterir. Hız, kablo ve satır biçimi burada ilk kez doğrulanır. F746'ya yalnız bir HELLO satırı gider; ayarı değişmez.</div>
+        <div class="why"><b>Ne oluyor?</b> Küçük bir betik seri portu 1000000 baud'da açar, F746'ya <code>HELLO</code> yollar ve 5 saniye boyunca gelen satırları gösterir. Hız, kablo ve satır biçimi burada ilk kez doğrulanır. F746'ya yalnız bir HELLO satırı gider; ayarı değişmez.</div>
         <div class="lbl">Kartta (SSH)</div>
         <pre><code><span class="c"># /dev/ttyACM0'ı açar, HELLO gönderir, 5 s dinler, sonunda kaç JSON / FRAME satırı geldiğini yazar</span>
 python3 /home/root/f7kopru/tools/f7_dinle.py /dev/ttyACM0</code></pre>
@@ -424,7 +424,7 @@ python3 /home/root/f7kopru/tools/f7_dinle.py /dev/ttyACM0</code></pre>
         <p><code>{"type":"hello","fw":"0.3","board":"STM32F746G-DISCO",…,"ip":"192.168.50.2","ports":[5000,5001,5002],…}</code> satırı; her saniye bir <code>{"type":"st",…}</code>; F746 192.168.50.1'i aradığı için arada <code>FRAME (… hex karakter)</code> (ARP isteği) görülebilir. Özet: <code>{'json': 5+, …, 'diger': 0}</code>.</p>
         <div class="lbl">Olmazsa</div>
         <p>Hiç satır yok ya da <code>?</code> ile başlayan bozuk satırlar: hız tutmuyor. <code>dmesg</code>'de hata var mı bak; F746'nın reset düğmesine bas ve tekrar çalıştır. <code>Device or resource busy</code>: f7linkd çalışıyordur, <code>systemctl stop f7linkd</code>.</p>
-        <p class="src"><span class="b b-yr">YEREL</span> F746 <code>report.c</code> (hello/st alanları), <code>app_config.h</code> (625000) · <span class="b b-gn">GENEL</span> termios2/BOTHER</p>
+        <p class="src"><span class="b b-yr">YEREL</span> F746 <code>report.c</code> (hello/st alanları), <code>app_config.h</code> (1000000) · <span class="b b-gn">GENEL</span> termios2/BOTHER</p>
       </div></div>
 
       <div class="step" data-id="2.3"><div class="step-h"><label class="check"><input type="checkbox" aria-label="2.3 tamam"></label><span class="sid">2.3</span><h3>f7linkd'yi elle başlat, F746'ya ping at</h3></div><div class="body">
@@ -438,10 +438,10 @@ ip addr show tap-f7
 <span class="c"># F746'ya üç ping: cevaplar Linux çekirdeğinden değil F746'nın FreeRTOS-Plus-TCP'sinden gelir</span>
 ping -c 3 192.168.50.2</code></pre>
         <div class="lbl">Beklenen sonuç</div>
-        <p>Birinci pencerede <code>seri port acik: /dev/ttyACM0 @ 625000</code>. <code>ip addr</code>: <code>mtu 242</code>, <code>inet 192.168.50.1/24</code>. Ping: <code>3 packets transmitted, 3 received</code>; süre birkaç ms ile birkaç on ms arası (98 baytlık ping, hex olarak ~200 karakter, 625 kbaud'da yön başına ~3 ms + F746 işleme).</p>
+        <p>Birinci pencerede <code>seri port acik: /dev/ttyACM0 @ 1000000</code>. <code>ip addr</code>: <code>mtu 242</code>, <code>inet 192.168.50.1/24</code>. Ping: <code>3 packets transmitted, 3 received</code>; süre birkaç ms ile birkaç on ms arası (98 baytlık ping, hex olarak ~200 karakter, 1 Mbaud'da yön başına ~2 ms + F746 işleme).</p>
         <div class="lbl">Olmazsa</div>
         <p><code>FileNotFoundError: /dev/net/tun</code> → adım 1.1. Ping cevapsız: birinci pencerede hata var mı; ikinci pencerede <code>ip neigh show dev tap-f7</code> F746'nın MAC'ini (<code>02:80:e1:…</code> gibi) gösteriyor mu. Göstermiyorsa F746 çerçeveleri ulaşmıyordur: 2.2'ye dön.</p>
-        <p class="src"><span class="b b-ts">TEST</span> satır ↔ çerçeve dönüşümü F746 simülatörüne karşı ARP + START + GET_IMU + telemetri ile denendi (<code>linux/tests/test_uyumluluk.py</code>) · <span class="b b-gn">GENEL</span> TAP, ip komutları</p>
+        <p class="src"><span class="b b-ts">TEST</span> satır ↔ çerçeve dönüşümü F746 simülatörüne karşı ARP + SET_RATE 200 + START + 200 Hz telemetri (açı + gecikme) ile denendi (<code>linux/tests/test_uyumluluk.py</code>) · <span class="b b-gn">GENEL</span> TAP, ip komutları</p>
       </div></div>
 
       <div class="step" data-id="2.4"><div class="step-h"><label class="check"><input type="checkbox" aria-label="2.4 tamam"></label><span class="sid">2.4</span><h3>f7hub'u elle başlat ve PC'den panele bak</h3></div><div class="body">
@@ -454,8 +454,8 @@ python3 /home/root/f7kopru/f7hub.py --log-dir /home/root/f7_kayit</code></pre>
         <div class="lbl">Beklenen sonuç</div>
         <p>Üstteki etiketler: <code>seri: bağlı</code>, START'tan sonra <code>F746: NET_READY|MEAS_EN</code>. İvme ve jiroskop sayıları saniyede 10 kez (varsayılan hız) değişir; 1 saniye sonra (F746 jiroskop sapmasını ölçtükten sonra) açılar ve roll/pitch grafiği akar. Olaylar kutusunda <code>start -&gt; {"ok":true,…}</code>.</p>
         <div class="lbl">Olmazsa</div>
-        <p>Sayfa açılmıyor: kartta <code>ss -ltn | grep 8080</code> ile dinleniyor mu bak. START <code>cevap yok (3 deneme)</code>: ping (2.3) çalışıyor mu. Açılar gelmiyor ama telemetri var: GET_IMU <code>E_STATE</code> dönüyordur (ölçüm kapalı); START'ı yeniden gönder.</p>
-        <p class="src"><span class="b b-yr">YEREL</span> F746 protokolü (<code>Host/vnet_host/proto.py</code>: REQ_ID eşleme, aynı REQ_ID ile tekrar, GET_IMU 20 ms) · <span class="b b-ts">TEST</span> paket kodlama F746 host koduyla bayt bayt aynı</p>
+        <p>Sayfa açılmıyor: kartta <code>ss -ltn | grep 8080</code> ile dinleniyor mu bak. START <code>cevap yok (3 deneme)</code>: ping (2.3) çalışıyor mu. Yaw ilk 1 s 0 kalıyor ve BIAS_READY yok: normal, F746 START'tan sonra 1 s jiroskop bias'ını ölçer (kart hareketsiz durmalı).</p>
+        <p class="src"><span class="b b-yr">YEREL</span> F746 protokolü (<code>Host/vnet_host/proto.py</code>: REQ_ID eşleme, aynı REQ_ID ile tekrar, her IMU örneğinde bir TELEM) · <span class="b b-ts">TEST</span> paket kodlama F746 host koduyla bayt bayt aynı</p>
       </div></div>
 
       <div class="step" data-id="2.5"><div class="step-h"><label class="check"><input type="checkbox" aria-label="2.5 tamam"></label><span class="sid">2.5</span><h3>İki servisi kalıcı kur</h3></div><div class="body">
@@ -473,7 +473,7 @@ systemctl --no-pager status f7linkd f7hub
 <span class="c"># f7linkd'nin son 20 günlük satırı</span>
 journalctl -u f7linkd -n 20 --no-pager</code></pre>
         <div class="lbl">Beklenen sonuç</div>
-        <p>İki servis <code>active (running)</code>; günlükte <code>seri port acik: /dev/f746 @ 625000</code>; panel PC'den yine açılıyor. USB kablosunu çıkarıp takınca f7linkd 2 s içinde yeniden bağlanır.</p>
+        <p>İki servis <code>active (running)</code>; günlükte <code>seri port acik: /dev/f746 @ 1000000</code>; panel PC'den yine açılıyor. USB kablosunu çıkarıp takınca f7linkd 2 s içinde yeniden bağlanır.</p>
         <div class="lbl">Olmazsa / geri alma</div>
         <pre><code><span class="c"># Servisleri durdurur ve açılışta başlamalarını engeller</span>
 systemctl disable --now f7hub f7linkd
@@ -864,7 +864,7 @@ systemctl restart f7hub</code></pre>
         <ul>
           <li><span class="b b-ts">TEST</span> <code>m33/common</code>: gcc <code>-Wall -Wextra -Wconversion</code> uyarısız; ayrıştırma (taşma, eksik/fazla alan, aralık, çift boşluk, uzun satır) ve gözetim (modlar, SEQ boşluğu, µs taşması, buton, LED) testleri 0 hata.</li>
           <li><span class="b b-ts">TEST</span> <code>linux/f7common/proto.py</code>: CRC-8, FCS, paket kodlama F746 host koduyla bayt bayt aynı.</li>
-          <li><span class="b b-ts">TEST</span> Uçtan uca, F746'nın Python simülatörüyle: ARP → START → telemetri (3+ paket) → GET_IMU cevabı → JSON raporu; hepsi f7linkd'nin satır dönüşümünden geçerek.</li>
+          <li><span class="b b-ts">TEST</span> Uçtan uca, F746'nın Python simülatörüyle: ARP → SET_RATE 200 → START → 200 Hz telemetri (açı, her TELEM'de bir öncekinin kart içi gecikmesi) → eski GET_IMU E_TYPE → JSON raporu; hepsi f7linkd'nin satır dönüşümünden geçerek.</li>
           <li><span class="b b-ts">TEST</span> FreeRTOS proje betiği <code>--kontrol</code>: 35 bağlantı gerçek dosyalara çözülüyor.</li>
           <li>Denenmedi: kartta hiçbir şey (senin adımların), CubeIDE derlemesi, Zephyr derlemesi, TAP ve termios2 (Windows'ta yok).</li>
         </ul>
@@ -892,7 +892,7 @@ python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\pc\f7_pc.
 <span class="c"># Hızı 50 Hz yapar</span>
 python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\pc\f7_pc.py rate 50
 <span class="c"># Yalnız M33 ve açı olaylarını canlı izler (Ctrl+C ile çık)</span>
-python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\pc\f7_pc.py izle --tur m33 --tur imu</code></pre>
+python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\pc\f7_pc.py izle --tur m33 --tur telem</code></pre>
         <div class="lbl">Beklenen sonuç</div>
         <p><code>{"ok": true, … "state_text": "NET_READY|MEAS_EN"}</code>; izlemede saniyede iki <code>M33 RUN …</code> ve ~50 <code>AT roll=…</code> satırı.</p>
         <div class="lbl">Olmazsa</div>
@@ -908,10 +908,10 @@ python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\pc\f7_pc.
             <tr><td>T2 Linux kaybı</td><td><code>systemctl stop f7hub</code></td><td>LD9 ≤ 0,6 s içinde A35_LOST deseni</td></tr>
             <tr><td>T3 F746 reset</td><td>F746 reset düğmesi</td><td>Panelde F746 durumu düşer, <code>boot</code> raporu gelir; START sonrası akış sürer (SEQ sıfırlanması kayıp sayılmaz)</td></tr>
             <tr><td>T4 USB çıkar-tak</td><td>F746 kablosunu 5 s çıkar, tak</td><td><code>seri: F746 yok</code> → ≤ 3 s içinde <code>seri: bağlı</code></td></tr>
-            <tr><td>T5 Alarm</td><td>Sınır 15°, kartı eğ</td><td>ALARM ≤ 50 ms (bir GET_IMU periyodu + 10 ms)</td></tr>
+            <tr><td>T5 Alarm</td><td>Sınır 15°, kartı eğ</td><td>ALARM ≤ 30 ms 100 Hz'de (bir TELEM periyodu + kart içi gecikme + M33'ün 10 ms döngüsü)</td></tr>
             <tr><td>T6 Buton</td><td>USER2'ye bas</td><td>Ölçüm durumu değişir; Olaylar'da <code>USER2 butonu</code> satırı</td></tr>
           </tbody></table></div>
-        <p class="src">Sınırlar: <code>supervisor.h</code> (HB 500 ms, TM 300 ms), <code>f7linkd.py</code> (2 s yeniden deneme), F746 GET_IMU deadline 12 ms <span class="b b-yr">YEREL</span> <code>app_config.h:226</code></p>
+        <p class="src">Sınırlar: <code>supervisor.h</code> (HB 500 ms, TM 300 ms), <code>f7linkd.py</code> (2 s yeniden deneme), F746 TELEM deadline 12 ms (DRDY → TX bitti) <span class="b b-yr">YEREL</span> <code>app_config.h</code> <code>APP_TELEM_DEADLINE_MS</code></p>
       </div></div>
 
       <div class="step" data-id="5.3"><div class="step-h"><label class="check"><input type="checkbox" aria-label="5.3 tamam"></label><span class="sid">5.3</span><h3>Kayıtları PC'ye al</h3></div><div class="body">
@@ -941,7 +941,7 @@ scp "root@192.168.7.1:/home/root/f7_kayit/*.csv" C:\Users\Asus\Documents\GitHub\
         <tr><td>Z-R2</td><td>Zephyr RPMsg kanalı açılmaz <span class="b b-ks">KISMEN</span></td><td>Zephyr'de veri yok</td><td>Kapı Z2 (4.3); <code>/proc/iomem</code> ile paylaşımlı bellek karşılaştırması</td></tr>
         <tr><td>F-R1</td><td>Birleşik FreeRTOS projesinde ilk derleme hataları (çift tanım, eksik include)</td><td>Faz 3 gecikir</td><td>3.3'teki hata listesi; betik ST örneklerine dokunmadığı için yeniden oluşturmak kolay</td></tr>
         <tr><td>L-R1</td><td>Kartta Python 3 ya da TUN yok <span class="b b-ks">KISMEN</span></td><td>Faz 2 başlamaz</td><td>1.1'de erken teyit; Plan B: C'ye port ya da kullanıcı alanı ARP/UDP</td></tr>
-        <tr><td>L-R2</td><td>ST-LINK VCP 625000 baud'u Linux'ta kabul etmez</td><td>Bozuk satırlar</td><td>2.2'de görülür; PC'de aynı ST-LINK bu hızda çalışıyor (F746 host aracı). Olmazsa F746 sürücüsünün izin verdiği en yakın hız F746 değişikliği ister: kapsam dışı, bildirilir.</td></tr>
+        <tr><td>L-R2</td><td>ST-LINK VCP 1000000 baud'u kabul etmez</td><td>Bozuk satırlar</td><td>2.2'de görülür; 1 Mbaud PC'de de henüz denenmedi (625000 çalışıyordu), önce PC'de F746 host aracıyla dene. Olmazsa F746 sürücüsünün izin verdiği en yakın hız F746 değişikliği ister: kapsam dışı, bildirilir.</td></tr>
         <tr><td>H-R1</td><td>MP257'nin USB-A portu F746'yı besleyemez <span class="b b-gn">GENEL</span></td><td>ttyACM görünmez ya da kopar</td><td>MP257'yi 5 V / 3 A kaynaktan besle (CN21); gerekirse F746'ya ayrı güç</td></tr>
         <tr><td>H-R2</td><td>LD9 / USER2 m33-examples imajında M33'e verilmemiş</td><td>LED sönük, buton ölü</td><td>ST'nin GPIO_EXTI örneği aynı LED ve butonu M33'ten kullanıyor <span class="b b-yr">YEREL</span>; olmazsa RIF ayarına bakılır</td></tr>
         <tr><td>P-R1</td><td>Yavaş PC istemcisi f7hub'u tıkar</td><td>Telemetri gecikir</td><td>Önlendi: her SSE istemcisinin 500 olaylık kendi kuyruğu, dolunca o istemci olay kaybeder</td></tr>
@@ -959,7 +959,7 @@ scp "root@192.168.7.1:/home/root/f7_kayit/*.csv" C:\Users\Asus\Documents\GitHub\
       <thead><tr><th>Dosya</th><th>Ne</th><th>Nerede çalışır</th></tr></thead>
       <tbody>
         <tr><td><code>linux/f7linkd.py</code></td><td>Seri port ↔ tap-f7 köprüsü; JSON raporları ve konsol komutları</td><td>Kart, root, systemd</td></tr>
-        <tr><td><code>linux/f7hub.py</code></td><td>F746 istemcisi, GET_IMU yoklama, CSV, M33 köprüsü, HTTP/SSE</td><td>Kart, systemd</td></tr>
+        <tr><td><code>linux/f7hub.py</code></td><td>F746 istemcisi, TELEM (açı + gecikme), CSV, M33 köprüsü, HTTP/SSE</td><td>Kart, systemd</td></tr>
         <tr><td><code>linux/f7common/proto.py</code></td><td>F746 paket ve satır biçimi (CRC-8, FCS, çözme/kodlama)</td><td>Kart + PC testleri</td></tr>
         <tr><td><code>linux/web/index.html</code></td><td>PC paneli (f7hub sunar)</td><td>PC tarayıcısı</td></tr>
         <tr><td><code>linux/tools/f7_dinle.py</code></td><td>İlk hat testi</td><td>Kart</td></tr>
@@ -978,7 +978,7 @@ scp "root@192.168.7.1:/home/root/f7_kayit/*.csv" C:\Users\Asus\Documents\GitHub\
     <div class="tbl"><table>
       <thead><tr><th>Kaynak</th><th>Doğrulanan</th></tr></thead>
       <tbody>
-        <tr><td><span class="b b-yr">YEREL</span> <code>C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6</code></td><td>UART1 625000, USART6 kullanılmıyor, adres/portlar, paket biçimi, FRAME satırı, JSON alanları (<code>s</code>, <code>why</code>, <code>ep</code>), telemetri hedefi = START'ı gönderen; host kodu ve simülatör</td></tr>
+        <tr><td><span class="b b-yr">YEREL</span> <code>C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6</code></td><td>UART1 1000000, USART6 kullanılmıyor, adres/portlar, paket biçimi, FRAME satırı, JSON alanları (<code>s</code>, <code>why</code>, <code>ep</code>), telemetri hedefi = START'ı gönderen; host kodu ve simülatör</td></tr>
         <tr><td><span class="b b-yr">YEREL</span> STM32CubeMP2 1.4.0 (<code>resources/05_STM32CubeMP2</code>)</td><td>FreeRTOS_ThreadCreation, OpenAMP_TTY_echo, GPIO_EXTI (USER2/LED3), BSP pinleri, imza komutu, libmetal FreeRTOS/generic platformları</td></tr>
         <tr><td><span class="b b-st">ST</span> UM3385 Rev 2 (yerel PDF)</td><td>CN19 iki USB-A host, LD9 turuncu PH6, USER2 B4 PC11</td></tr>
         <tr><td><span class="b b-st">ST</span> <a href="https://wiki.st.com/stm32mpu/wiki/Linux_remoteproc_framework_overview">W7 remoteproc</a>, <a href="https://wiki.st.com/stm32mpu/wiki/Getting_started/STM32MP2_boards/STM32MP257x-DK/Develop_on_Arm_Cortex-M33/Modify,_rebuild_and_reload_the_firmware_for_A35-TD_flavor">W8 M33 A35-TD</a></td><td>sysfs başlatma, fw_format, ttyRPMSG testi</td></tr>

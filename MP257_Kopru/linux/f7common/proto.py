@@ -20,7 +20,7 @@ PORT_LOW = 5001
 PORT_TELEM = 5002
 
 # ---------------------------------------------------------------- UART satır sınırları (F746 app_config.h)
-UART_BAUD = 625000
+UART_BAUD = 1000000                 # F746 USART1 (8x oversampling): TELEM satırı 167 karakter = 1,67 ms
 LINE_MAX = 540
 FRAME_MIN = 60                      # FCS hariç; kısa çerçeve dolgu ile 60'a tamamlanır
 FRAME_MAX = 256                     # FCS hariç; TAP MTU'su 256 - 14 = 242
@@ -38,14 +38,14 @@ CMD_START = 0x01
 CMD_STOP = 0x02
 CMD_SET_RATE = 0x03
 CMD_GET_STATS = 0x04
-CMD_GET_IMU = 0x05
+# 0x05 GET_IMU'ydu: açılar artık her IMU örneğinde TELEM ile gelir (kart cevabı E_TYPE).
 ENV = 0x20
 BULK = 0x21
 CAL = 0x22
 TELEM = 0x30
 
 TYPE_NAMES = {CMD_START: "START", CMD_STOP: "STOP", CMD_SET_RATE: "SET_RATE", CMD_GET_STATS: "GET_STATS",
-              CMD_GET_IMU: "GET_IMU", ENV: "ENV", BULK: "BULK", CAL: "CAL", TELEM: "TELEM"}
+              ENV: "ENV", BULK: "BULK", CAL: "CAL", TELEM: "TELEM"}
 STATUS_NAMES = {0: "OK", 1: "E_LEN", 2: "E_RANGE", 3: "E_STATE", 4: "E_CONFLICT", 5: "E_TYPE", 6: "E_REQID"}
 
 STATE_NET_READY = 0x01
@@ -53,10 +53,16 @@ STATE_MEAS_EN = 0x02
 STATE_FAULT = 0x04
 FAULT_NAMES = {0x01: "IMU", 0x02: "POOL", 0x04: "UART_ORE", 0x08: "UART_TX_STALL", 0x10: "HEAP"}
 
-RATE_MIN_HZ = 1
-RATE_MAX_HZ = 50
+# SET_RATE = IMU örnekleme hızı = TELEM hızı; kart yalnız bunları kabul eder (değilse E_RANGE).
+RATES_HZ = (10, 20, 50, 100, 200)
+RATE_DEFAULT_HZ = 100
 STATS_PAGES = 4
-IMU_REPLY_LEN = 35
+TELEM_LEN = 23
+TELEM_TARGET_MS = 10.0              # kart içi DRDY -> TX bitti hedefi
+TELEM_DEADLINE_MS = 12.0            # ... deadline'ı
+ATT_FLAG_BIAS_READY = 0x01
+ATT_FLAG_ACC_USED = 0x02
+TELEM_FLAG_PREV = 0x04              # prev_seq / prev_us geçerli
 
 
 def _crc8_table():
@@ -128,21 +134,15 @@ def parse_response(payload: bytes) -> dict:
 
 
 def parse_telem(payload: bytes) -> dict:
-    """TELEM: idx u32, tick u32, ax ay az gx gy gz i16 (ham LSB)."""
-    if len(payload) != 20:
+    """TELEM (her IMU örneğinde bir tane): ax ay az gx gy gz i16 (ham LSB), roll pitch yaw i16 (0,01 derece),
+    flags u8, prev_seq u16, prev_us u16. prev_*: bu mesajdan önce UART'tan çıkmış son TELEM'in SEQ'i ve
+    onun kartta ölçülen DRDY -> TX bitti süresi (flags & TELEM_FLAG_PREV ise geçerli)."""
+    if len(payload) != TELEM_LEN:
         raise PacketError("telem_len")
-    idx, tick, ax, ay, az, gx, gy, gz = struct.unpack(">IIhhhhhh", payload)
-    return {"idx": idx, "tick": tick, "acc": [ax, ay, az], "gyro": [gx, gy, gz]}
-
-
-def parse_imu_reply(extra: bytes) -> dict:
-    """GET_IMU cevabı (ortak kısımdan sonra 35 B): açılar 0,01 derece."""
-    if len(extra) != IMU_REPLY_LEN:
-        raise PacketError("imu_len")
-    idx, tick, ax, ay, az, gx, gy, gz, r, p, y, flags, prq, pus, t_rx = struct.unpack(">IIhhhhhhhhhBHHI", extra)
-    return {"idx": idx, "tick": tick, "acc": [ax, ay, az], "gyro": [gx, gy, gz],
-            "roll_cdeg": r, "pitch_cdeg": p, "yaw_cdeg": y, "flags": flags,
-            "prev_req_id": prq, "prev_us": pus}
+    ax, ay, az, gx, gy, gz, r, p, y, flags, prev_seq, prev_us = struct.unpack(">hhhhhhhhhBHH", payload)
+    return {"acc": [ax, ay, az], "gyro": [gx, gy, gz], "roll_cdeg": r, "pitch_cdeg": p, "yaw_cdeg": y,
+            "flags": flags, "prev_seq": prev_seq if flags & TELEM_FLAG_PREV else None,
+            "prev_us": prev_us if flags & TELEM_FLAG_PREV else None}
 
 
 def parse_stats_page(extra: bytes) -> dict:

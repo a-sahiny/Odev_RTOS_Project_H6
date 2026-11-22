@@ -2,7 +2,7 @@
 
 Kanal: RPMsg `rpmsg-tty` uç noktası. Linux'ta `/dev/ttyRPMSG0`, M33'te FreeRTOS varyantında `VIRT_UART0`, Zephyr varyantında `tty_ept`. İki varyant **aynı** protokolü konuşur; Linux tarafındaki `f7hub` hangisinin çalıştığını yalnız `RDY` satırından anlar.
 
-**Neden metin satırı?** Elle denenebilir: kartta `cat /dev/ttyRPMSG0` ile M33'ü dinleyebilir, `echo "HB 1" > /dev/ttyRPMSG0` ile mesaj yollayabilirsin. Hız ihtiyacı küçük (en çok ~120 satır/s).
+**Neden metin satırı?** Elle denenebilir: kartta `cat /dev/ttyRPMSG0` ile M33'ü dinleyebilir, `echo "HB 1" > /dev/ttyRPMSG0` ile mesaj yollayabilirsin. Hız ihtiyacı en çok ~410 satır/s (200 Hz'de TM + AT, artı HB); f7hub TM ve AT'yi tek yazımda yollar.
 
 ## Kurallar
 
@@ -15,8 +15,8 @@ Kanal: RPMsg `rpmsg-tty` uç noktası. Linux'ta `/dev/ttyRPMSG0`, M33'te FreeRTO
 | Satır | Alanlar ve aralık | Ne zaman |
 |---|---|---|
 | `HB <n>` | n: 0..65535 sayaç | 100 ms'de bir (f7hub `heartbeat`) |
-| `TM <seq> <ax> <ay> <az> <gx> <gy> <gz>` | seq 0..65535 (F746 TELEM paketinin SEQ'i), eksenler −32768..32767 ham LSB | her TELEM paketinde |
-| `AT <roll> <pitch> <yaw> <flags>` | açılar −36000..36000 (0,01 derece), flags 0..255 | her GET_IMU cevabında (varsayılan 20 ms) |
+| `TM <seq> <ax> <ay> <az> <gx> <gy> <gz>` | seq 0..65535 (F746 TELEM paketinin SEQ'i), eksenler −32768..32767 ham LSB | her TELEM paketinde (her IMU örneği: 10 / 20 / 50 / 100 / 200 Hz) |
+| `AT <roll> <pitch> <yaw> <flags>` | açılar −36000..36000 (0,01 derece), flags 0..255 (TELEM'in bayrak baytı) | her TELEM'de, TM'nin hemen ardından |
 | `ST <state> <why>` | state 0..255 (bit0 NET_READY, bit1 MEAS_EN, bit2 FAULT), why 0..255 (FAULT nedenleri) | F746 durumu değişince |
 | `LIM <cdeg>` | 100..18000 | kanal açılınca, `RDY` gelince, PC'den değişince |
 

@@ -3,7 +3,7 @@
 
     python3 /home/root/f7kopru/tools/f7_dinle.py /dev/ttyACM0
 
-HELLO yollar, gelen satırları ekrana yazar: {"type":"hello",...} görünüyorsa hat ve 625000 baud doğru.
+HELLO yollar, gelen satırları ekrana yazar: {"type":"hello",...} görünüyorsa hat ve 1000000 baud doğru.
 f7linkd çalışıyorsa önce durdur (seri portun tek sahibi olmalı): systemctl stop f7linkd
 """
 

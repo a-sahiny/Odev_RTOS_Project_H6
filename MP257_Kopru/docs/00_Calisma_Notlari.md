@@ -1,6 +1,6 @@
 # Çalışma notları — MP257_Kopru
 
-Bir sonraki oturumda kaynakları yeniden aramadan devam etmek için. Son güncelleme: 21.11.2026.
+Bir sonraki oturumda kaynakları yeniden aramadan devam etmek için. Son güncelleme: 22.11.2026.
 Kart tarafı genel notları: `C:\Users\Asus\Documents\GitHub\STM32MP257F_DK\docs\00_Calisma_Notlari.md`.
 
 ## Durum
@@ -9,11 +9,11 @@ Kart tarafı genel notları: `C:\Users\Asus\Documents\GitHub\STM32MP257F_DK\docs
 - Denenmedi: CubeIDE derlemesi, Zephyr derlemesi, TAP ve termios2 (Windows'ta yok), f7hub'un HTTP kısmı (termios import'u Windows'ta çalışmaz).
 
 ## F746 tarafından okunan gerçekler (Odev_RTOS_Project_H6)
-- USART1 625000 8N1 → ST-LINK VCP (PA9/PB7). USART6 230400 CubeMX'te açık ama `App/` kullanmıyor.
+- USART1 1000000 8N1 (8x oversampling; PCLK2 12,5 MHz'de tam), önceden 625000 → ST-LINK VCP (PA9/PB7). USART6 230400 CubeMX'te açık ama `App/` kullanmıyor.
 - IP 192.168.50.2, ağ geçidi 192.168.50.1; UDP 5000 komut, 5001 ENV/BULK/CAL, 5002 telemetri kaynağı. Host portu 6000 (eski host).
 - Telemetri ve komut cevapları **gönderenin IP/port'una** gider (`cmd.c:465`, `cmd.c:617`); IP filtresi yok.
 - UART satırı: `FRAME 1 <hex+FCS>` (FCS CRC-32 LE), çerçeve 60–256 B (FCS hariç); JSON satırları `{"type":…}`. `st`/`state` raporlarında `ep`, `s` (durum, bit0 NET_READY bit1 MEAS_EN bit2 FAULT), `why`. `fault` raporunda `set`, `why`.
-- Konsol: HELLO, STATE, HOLD n, TXDELAY n. GET_IMU cevabı 35 B (`>IIhhhhhhhhhBHHI`).
+- Konsol: HELLO, STATE, HOLD n, TXDELAY n. GET_IMU (0x05) kaldırıldı (E_TYPE). TELEM 23 B (`>hhhhhhhhhBHH`): ivme, jiro, roll/pitch/yaw, flags, prev_seq, prev_us; her IMU örneğinde bir tane. SET_RATE = IMU hızı: 10/20/50/100/200 Hz (varsayılan 100). prev_us = bir önceki TELEM'in DRDY → TX bitti süresi (kart içi, hedef 10 ms, deadline 12 ms).
 
 ## MP257 / CubeMP2
 - UM3385: CN19 iki USB-A host (hub üzerinden); LD9 turuncu PH6 aktif yüksek (BSP `LED3`); LD7 kırmızı PH4, LD8 yeşil PH5; USER2 = B4 = PC11 (aktif düşük, BSP `BSP_PB_GetState` ham pin döner).
@@ -32,7 +32,7 @@ USB VCP bağlantısı · f7linkd seri portun tek sahibi + TAP (MTU 242, IPv6 kap
 
 ## Açık işler (kartta teyit)
 1. `python3`, `/dev/net/tun`, `cdc_acm` (adım 1.1).
-2. ST-LINK PID `374b` ve 625000 baud'un Linux'ta çalışması (1.2, 2.2).
+2. ST-LINK PID `374b` ve 1000000 baud'un çalışması (1.2, 2.2; 1 Mbaud PC'de de henüz denenmedi).
 3. Birleşik FreeRTOS projesinin ilk derlemesi (3.3).
 4. Zephyr Kapı Z1 (imzalı ELF) ve Z2 (RPMsg).
 5. LD9/USER2'nin m33-examples imajında M33'e açık olması (ST GPIO_EXTI örneği öyle kullanıyor).

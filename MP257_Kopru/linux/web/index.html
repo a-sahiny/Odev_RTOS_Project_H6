@@ -66,7 +66,7 @@ canvas{width:100%;height:220px;display:block;background:#fff;border:1px solid va
       <button class="go" data-cmd="start">START</button>
       <button class="stop" data-cmd="stop">STOP</button>
       <label for="rate" class="mu" style="font:600 13px var(--mono);color:var(--muted-d)">hız</label>
-      <select id="rate" aria-label="Telemetri hızı"><option>1</option><option>5</option><option selected>10</option><option>20</option><option>50</option></select>
+      <select id="rate" aria-label="IMU ve telemetri hızı"><option>10</option><option>20</option><option>50</option><option selected>100</option><option>200</option></select>
       <button data-cmd="rate">SET_RATE</button>
       <button data-cmd="stats">GET_STATS 0</button>
       <button data-cmd="hello">HELLO</button>
@@ -80,7 +80,7 @@ canvas{width:100%;height:220px;display:block;background:#fff;border:1px solid va
     <div class="grid c3">
       <div class="card"><h3>İvme (ham LSB, 8192 = 1 g)</h3><div class="big" id="acc">-</div><div class="mu" id="tmInfo">-</div></div>
       <div class="card"><h3>Jiroskop (ham LSB)</h3><div class="big" id="gyro">-</div></div>
-      <div class="card"><h3>Açı (GET_IMU)</h3><div class="big" id="att">-</div><div class="mu" id="imuInfo">-</div></div>
+      <div class="card"><h3>Açı (roll pitch yaw)</h3><div class="big" id="att">-</div><div class="mu" id="imuInfo">-</div></div>
     </div>
     <div class="card" style="margin-top:14px">
       <h3>Roll / pitch, son 10 s</h3>
@@ -152,8 +152,10 @@ canvas{width:100%;height:220px;display:block;background:#fff;border:1px solid va
   var es=new EventSource('/events');
   es.onopen=function(){chip('cSse','panel: canlı','ok');};
   es.onerror=function(){chip('cSse','panel: bağlantı yok','bad');};
-  es.addEventListener('telem',function(e){var d=JSON.parse(e.data); $('acc').textContent=d.acc.join('  '); $('gyro').textContent=d.gyro.join('  '); $('tmInfo').textContent='seq '+d.seq+' · idx '+d.idx;});
-  es.addEventListener('imu',function(e){var d=JSON.parse(e.data); $('att').textContent=(d.roll_cdeg/100).toFixed(1)+'°  '+(d.pitch_cdeg/100).toFixed(1)+'°  '+(d.yaw_cdeg/100).toFixed(1)+'°'; $('imuInfo').textContent='roll pitch yaw · RTT '+d.rtt_ms+' ms'; hist.push({t:performance.now(),r:d.roll_cdeg,p:d.pitch_cdeg});});
+  es.addEventListener('telem',function(e){var d=JSON.parse(e.data); $('acc').textContent=d.acc.join('  '); $('gyro').textContent=d.gyro.join('  '); $('tmInfo').textContent='seq '+d.seq;
+    $('att').textContent=(d.roll_cdeg/100).toFixed(1)+'°  '+(d.pitch_cdeg/100).toFixed(1)+'°  '+(d.yaw_cdeg/100).toFixed(1)+'°';
+    $('imuInfo').textContent='kart DRDY→TX (önceki TELEM): '+(d.prev_us===null?'-':(d.prev_us/1000).toFixed(2)+' ms');
+    hist.push({t:performance.now(),r:d.roll_cdeg,p:d.pitch_cdeg});});
   es.addEventListener('f7state',function(e){var d=JSON.parse(e.data); chip('cF7','F746: '+d.text,(d.state&4)?'bad':((d.state&2)?'ok':'info')); log('F746 durum '+d.text+' why='+d.why);});
   es.addEventListener('m33',function(e){var d=JSON.parse(e.data); chip('cM33','M33: '+d.mode_text,MODE_CLS[d.mode_text]); kv('m33kv',{mod:d.mode_text,'TM yaşı ms':d.tm_age_ms,'TM sayısı':d.tm_count,'TM kayıp':d.tm_gaps,'TM aralık us':d.dt_min_us+' .. '+d.dt_max_us,'HB yaşı ms':d.hb_age_ms,'bozuk satır':d.bad});});
   es.addEventListener('m33_rdy',function(e){var d=JSON.parse(e.data); $('rtos').textContent=d.rtos; log('M33 hazır: '+d.rtos);});

@@ -190,7 +190,7 @@ footer a{color:var(--cyan)}
             <!-- kablolar ve kart içi hatlar -->
             <path class="wire-p usb" d="M146 330 H226 V180 H300"/>
             <text class="wl" x="111" y="404">USB kablosu</text>
-            <text class="wl" x="111" y="420">ST-LINK · 625000 baud</text>
+            <text class="wl" x="111" y="420">ST-LINK · 1000000 baud</text>
             <path class="wire-p" d="M440 180 H480"/>
             <path class="wire-p" d="M620 180 H660"/>
             <path class="wire-p" d="M370 120 V100 H740 V120" style="stroke-dasharray:5 6"/>
@@ -235,7 +235,7 @@ footer a{color:var(--cyan)}
               <rect class="box" x="660" y="120" width="160" height="120" rx="12"/>
               <text class="nt" x="740" y="152">f7hub</text>
               <text class="ns" x="740" y="174">UDP :6000</text>
-              <text class="ns" x="740" y="192">GET_IMU · CSV</text>
+              <text class="ns" x="740" y="192">TELEM · CSV</text>
               <text class="ns" x="740" y="222" style="font-family:var(--mono);font-size:11px">HTTP :8080</text>
               <path class="xmark" d="M700 140 L780 220 M780 140 L700 220"/>
             </g>
@@ -405,23 +405,22 @@ footer a{color:var(--cyan)}
       { t:'Panelde START\'a basılır', w:'Düğme f7hub\'a küçük bir JSON isteği gönderir. F746\'ya henüz hiçbir şey gitmedi.', c:'POST /api/cmd   {"cmd":"start"}', who:['PC tarayıcısı'], m:[['pc>hub','POST {"cmd":"start"}',C.cyan]] },
       { t:'f7hub F746 paketini kurar', w:'10 bayt: A5 başlangıç, 01 sürüm, 01 START, 00 bayrak, SEQ 7, REQ_ID 0x1A2B, uzunluk 0, son bayt CRC-8. Paket sıradan bir UDP soketiyle 192.168.50.2:5000\'e gönderilir.', c:'A5 01 01 00 00 07 1A 2B 00 11', who:['f7hub · proto.encode'], m:[['hub>kernel','A5 01 01 00 … 11',C.mag]] },
       { t:'Linux çekirdeği paketi sarar', w:'Çekirdek UDP (8 B), IPv4 (20 B) ve Ethernet (14 B) başlıklarını ekler ve çerçeveyi tap-f7 arayüzüne verir. F746\'nın MAC adresini daha önce ARP ile öğrenmiştir. Ayrıntısı aşağıdaki bölümde.', c:'Ethernet 14 + IPv4 20 + UDP 8 + paket 10 = 52 bayt', who:['Linux çekirdeği · tap-f7'], m:[['kernel>linkd','Ethernet · 52 B',C.mag]] },
-      { t:'f7linkd tek satıra çevirir', w:'Çerçeve 60 bayta doldurulur, 4 baytlık FCS (CRC-32) eklenir ve büyük harf hex yazılır. 137 karakter; 625000 baud\'da yaklaşık 2,2 ms.', c:LINE, who:['f7linkd · frame_to_line'], m:[['linkd>f7','FRAME 1 0280E1A1…',C.mag]] },
+      { t:'f7linkd tek satıra çevirir', w:'Çerçeve 60 bayta doldurulur, 4 baytlık FCS (CRC-32) eklenir ve büyük harf hex yazılır. 137 karakter; 1 Mbaud\'da yaklaşık 1,4 ms.', c:LINE, who:['f7linkd · frame_to_line'], m:[['linkd>f7','FRAME 1 0280E1A1…',C.mag]] },
       { t:'F746 komutu işler', w:'F746 satırı çözer; FCS, IP/UDP sağlamaları ve CRC-8\'i denetler, ölçümü başlatır. Cevapta durum OK ve STATE baytı 03 (NET_READY | MEAS_EN).', c:'A5 01 01 01 00 07 1A 2B 06 │ 00  00 01  03  00 2A │ 5B\n            RESP              OK  ep=1  st  lat=42 µs', who:['F746 · cmd.c'], m:[], hl:['f7'] },
       { t:'Cevap aynı yoldan döner', w:'f7hub cevabı REQ_ID 0x1A2B ile bekleyen isteğe eşler. 150 ms içinde gelmeseydi aynı REQ_ID ile yeniden yollardı (en çok 3 kez); F746 tekrarı tanır, ölçümü iki kez başlatmaz.', c:'FRAME 1 0200000000010280…  →  tap-f7  →  UDP :6000\nA5 01 01 01 00 07 1A 2B 06 00 00 01 03 00 2A 5B', who:['F746','f7linkd','çekirdek','f7hub'], m:[['f7>linkd','FRAME 1 02000000…',C.mag],['linkd>kernel','Ethernet',C.mag],['kernel>hub','A5 01 01 01 … 5B',C.mag]] },
       { t:'PC sonucu görür, M33 haberdar olur', w:'f7hub sonucu PC\'ye döner ve F746\'nın durum değişikliğini M33\'e de bildirir (ST 3 0: NET_READY | MEAS_EN, arıza yok).', c:'{"ok":true,"status_name":"OK","state_text":"NET_READY|MEAS_EN","rtt_ms":6.8}\nST 3 0', who:['f7hub'], m:[['hub>pc','{"ok":true,…}',C.cyan],['hub>m33','ST 3 0',C.vio,1]], fx:{pc:'START: OK', pcSub:'F746: MEAS_EN'} }
     ]},
     { name:'Telemetri', c:C.lime, init:{mode:'NO_DATA', pc:'START: OK', pcSub:'F746: MEAS_EN', hub:true}, steps:[
-      { t:'F746 bir TELEM paketi yollar', w:'Ölçüm açıkken F746 IMU\'yu 100 Hz okur ve seçilen hızda (varsayılan 10 Hz) 30 baytlık TELEM paketini START\'ı gönderen adrese yollar: 192.168.50.1:6000.', c:'A5 01 30 00 03 2C 00 00 14 │ 00 00 32 B8 00 01 F4 A0 00 78 FF D8 1F FE 00 03 FF FF 00 00 │ 0D', who:['F746 · meas_task'], m:[['f7>linkd','FRAME 1 … TELEM',C.lime]] },
-      { t:'Linux paketi f7hub\'a teslim eder', w:'f7linkd FCS\'yi denetleyip çerçeveyi tap-f7\'ye yazar; çekirdek IP ve UDP\'yi açar ve 30 baytlık paketi f7hub\'un soketine verir.', c:'seq 812 · idx 12984 · ivme 120 -40 8190 · jiro 3 -1 0', who:['f7linkd','çekirdek'], m:[['linkd>kernel','Ethernet',C.lime],['kernel>hub','TELEM seq 812',C.lime]] },
-      { t:'f7hub veriyi üç yere dağıtır', w:'M33\'e TM satırı, PC\'ye canlı olay, karttaki CSV dosyasına bir satır. Aynı veri, üç farklı ihtiyaç.', c:'TM 812 120 -40 8190 3 -1 0\nevent: telem {"seq":812,"acc":[120,-40,8190],…}\nf7_20261122_….csv  ←  1763800000.12,TM,812,12984,…', who:['f7hub'], m:[['hub>m33','TM 812 120 -40 8190…',C.vio],['hub>pc','event: telem',C.cyan,1]], fx:{mode:'RUN', pc:'ivme 120 -40 8190'} },
+      { t:'F746 bir TELEM paketi yollar', w:'Ölçüm açıkken IMU her örnekte (DRDY, SET_RATE hızında; varsayılan 100 Hz) F746\'yı uyandırır; F746 33 baytlık TELEM paketini START\'ı gönderen adrese yollar: 192.168.50.1:6000. İçinde ivme, jiroskop, roll / pitch / yaw ve bir önceki TELEM\'in kart içi gecikmesi (DRDY → satır UART\'tan çıktı) var. Satır 167 karakter: 1 Mbaud\'da 1,67 ms.', c:'A5 01 30 00 03 2C 00 00 17 │ 00 78 FF D8 1F FE │ 00 03 FF FF 00 00 │ F2 4A 00 F0 05 F0 │ 07 │ 03 2B 08 3E │ BA', who:['F746 · meas_task'], m:[['f7>linkd','FRAME 1 … TELEM',C.lime]] },
+      { t:'Linux paketi f7hub\'a teslim eder', w:'f7linkd FCS\'yi denetleyip çerçeveyi tap-f7\'ye yazar; çekirdek IP ve UDP\'yi açar ve 33 baytlık paketi f7hub\'un soketine verir.', c:'seq 812 · ivme 120 -40 8190 · jiro 3 -1 0 · roll -35,10° pitch 2,40° yaw 15,20° · önceki (811) 2,11 ms', who:['f7linkd','çekirdek'], m:[['linkd>kernel','Ethernet',C.lime],['kernel>hub','TELEM seq 812',C.lime]] },
+      { t:'f7hub veriyi üç yere dağıtır', w:'M33\'e TM ve AT satırları (tek yazımda), PC\'ye canlı olay, karttaki CSV dosyasına bir satır. Aynı veri, üç farklı ihtiyaç.', c:'TM 812 120 -40 8190 3 -1 0\nAT -3510 240 1520 7\nevent: telem {"seq":812,"acc":[120,-40,8190],…,"prev_us":2110}\nf7_20261122_….csv  ←  1763800000.12,812,120,-40,…,811,2110', who:['f7hub'], m:[['hub>m33','TM 812 120 -40 8190…',C.vio],['hub>pc','event: telem',C.cyan,1]], fx:{mode:'RUN', pc:'ivme 120 -40 8190'} },
       { t:'M33 kendi saatiyle ölçer', w:'M33 satır geldiği an zaman damgası vurur (FreeRTOS\'ta DWT, 1 µs). İki TM arasındaki süreyi ve SEQ boşluklarını sayar. Bu, Linux\'un veriyi ne kadar düzgün akıttığının dışarıdan ölçümüdür.', c:'dt_min 99 870 µs   dt_max 100 410 µs   tm_gaps 0', who:['M33 · supervisor.c'], m:[], hl:['m33'] },
       { t:'500 ms\'de bir SUP raporu', w:'Alanlar sırasıyla: mod 2 (RUN), son TM 12 ms önce, toplam 2481 TM, kayıp 0, en kısa ve en uzun aralık (µs), son HB 40 ms önce, bozuk satır 0.', c:'SUP 2 12 2481 0 99870 100410 40 0', who:['M33 · sup task'], m:[['m33>hub','SUP 2 12 2481 0 …',C.vio],['hub>pc','event: m33',C.cyan]], fx:{pc:'M33: RUN'} },
-      { t:'Akış sürer', w:'Bu tur saniyede 10 kez (en çok 50) tekrarlanır. Arada f7hub her 100 ms\'de HB yollamaya devam eder.', c:'TELEM 813 → TM 813 …\nTELEM 814 → TM 814 …', who:['F746','f7hub','M33'], m:[['f7>linkd','TELEM 813',C.lime],['f7>linkd','TELEM 814',C.lime,1],['kernel>hub','TELEM 813',C.lime],['hub>m33','TM 813 …',C.vio]] }
+      { t:'Akış sürer', w:'Bu tur her IMU örneğinde tekrarlanır: SET_RATE ile 10, 20, 50, 100 ya da 200 Hz. Arada f7hub her 100 ms\'de HB yollamaya devam eder.', c:'TELEM 813 → TM 813 …\nTELEM 814 → TM 814 …', who:['F746','f7hub','M33'], m:[['f7>linkd','TELEM 813',C.lime],['f7>linkd','TELEM 814',C.lime,1],['kernel>hub','TELEM 813',C.lime],['hub>m33','TM 813 …',C.vio]] }
     ]},
     { name:'Açı ve alarm', c:C.red, init:{mode:'RUN', pc:'M33: RUN', pcSub:'F746: MEAS_EN', hub:true}, steps:[
-      { t:'f7hub her 20 ms\'de açı sorar', w:'Ölçüm açıkken f7hub F746\'ya GET_IMU komutu yollar. Bu sorgu karta yakın yapılıyor; PC\'nin ağ gecikmesi araya girmiyor.', c:'A5 01 05 00 00 08 1A 2C 00 ..   (GET_IMU)', who:['f7hub · imu_poller'], m:[['hub>kernel','GET_IMU',C.mag],['kernel>linkd','Ethernet',C.mag],['linkd>f7','FRAME 1 …',C.mag]] },
-      { t:'F746 açılarla cevap verir', w:'Cevapta F746\'nın tamamlayıcı filtreyle hesapladığı roll, pitch, yaw var (0,01 derece). F746 kendi içinde 12 ms\'lik süre sınırını da ölçüp bildirir.', c:'roll -3510   pitch 240   yaw 1520   flags 03', who:['F746 · meas_task'], m:[['f7>linkd','FRAME 1 …',C.mag],['linkd>kernel','Ethernet',C.mag],['kernel>hub','roll -35,10°',C.mag]] },
-      { t:'Açı M33\'e gider', w:'f7hub her açı cevabını tek satırla M33\'e verir.', c:'AT -3510 240 1520 3', who:['f7hub'], m:[['hub>m33','AT -3510 240 1520 3',C.vio]] },
+      { t:'Açı TELEM\'in içinde gelir', w:'Kimse sormaz: F746 her IMU örneğinde tamamlayıcı filtreyle roll, pitch, yaw\'u (0,01 derece) hesaplar ve aynı TELEM\'e koyar. Aynı mesaj bir önceki TELEM\'in kart içi gecikmesini de taşır (hedef 10 ms, deadline 12 ms).', c:'roll -3510   pitch 240   yaw 1520   flags 07   önceki 2110 µs', who:['F746 · meas_task'], m:[['f7>linkd','FRAME 1 … TELEM',C.lime],['linkd>kernel','Ethernet',C.lime],['kernel>hub','roll -35,10°',C.lime]] },
+      { t:'Açı M33\'e gider', w:'f7hub her TELEM\'de TM satırının hemen ardından açıyı AT satırıyla M33\'e verir.', c:'AT -3510 240 1520 7', who:['f7hub'], m:[['hub>m33','AT -3510 240 1520 7',C.vio]] },
       { t:'M33 alarm verir', w:'|roll| 35,10° > sınır 30,00°. Karar M33\'ün 10 ms\'lik döngüsünde, Linux\'tan bağımsız verilir; LD9 10 Hz yanıp söner.', c:'|-3510| = 3510  >  LIM 3000   →   ALARM', who:['M33 · supervisor.c'], m:[['m33>led','LD9 10 Hz',C.red]], fx:{mode:'ALARM'} },
       { t:'PC alarmı görür', w:'Sonraki SUP raporunda mod 3. f7hub bunu panele iletir; etiket kırmızıya döner.', c:'SUP 3 8 2733 0 99910 100380 22 0', who:['M33','f7hub'], m:[['m33>hub','SUP 3 …',C.vio],['hub>pc','event: m33 ALARM',C.red]], fx:{pc:'M33: ALARM'} }
     ]},
@@ -744,8 +743,7 @@ footer a{color:var(--cyan)}
   /* ---------- Ritim ---------- */
   var LANES = [
     {n:'M33 döngüsü', d:'10 ms · sup task / sup_thread', per:10, c:'#4B2FD1', w:2},
-    {n:'GET_IMU', d:'20 ms · f7hub → F746 → AT', per:20, c:'#A3007F', w:3},
-    {n:'TELEM → TM', d:'100 ms · 10 Hz (en çok 50 Hz)', per:100, c:'#2B4A00', w:5},
+    {n:'TELEM → TM + AT', d:'10 ms · 100 Hz (10–200 Hz)', per:10, off:3, c:'#2B4A00', w:3},
     {n:'HB', d:'100 ms · f7hub → M33', per:100, off:50, c:'#006B7A', w:5},
     {n:'SUP', d:'500 ms · M33 → f7hub', per:500, c:'#7E5200', w:9}
   ];
