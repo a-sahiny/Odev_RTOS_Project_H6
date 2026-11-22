@@ -330,7 +330,7 @@ footer.band{padding:40px 0;font-size:14px}
     <div class="phase-head">
       <div class="num">01</div>
       <div><div class="eyebrow">Faz 1</div><h2>Donanım ve kartta ön koşullar</h2></div>
-      <div class="goal"><strong>Çıkış kriteri:</strong> kartta <code>python3</code>, <code>/dev/net/tun</code> ve F746'nın seri portu (<code>/dev/ttyACM0</code>, kimlik <code>0483:374b</code>) var.</div>
+      <div class="goal"><strong>Çıkış kriteri:</strong> kartta <code>python3</code>, <code>/dev/net/tun</code> ve F746'nın seri portu (<code>/dev/ttyACM0</code>, kimlik <code>0483:3752</code>) var.</div>
       <div class="pbar"><i></i></div>
     </div>
     <div class="steps">
@@ -364,10 +364,10 @@ zcat /proc/config.gz 2&gt;/dev/null | grep -E "CONFIG_USB_ACM|CONFIG_TUN=|CONFIG
 dmesg | tail -n 15
 <span class="c"># Seri port dosyası oluştu mu</span>
 ls -l /dev/ttyACM*
-<span class="c"># Aygıtın üretici ve ürün kimliği (ST-LINK/V2-1 için 0483 ve 374b)</span>
+<span class="c"># Aygıtın üretici ve ürün kimliği (bu kartta 0483 ve 3752)</span>
 cat /sys/class/tty/ttyACM0/device/../idVendor /sys/class/tty/ttyACM0/device/../idProduct</code></pre>
         <div class="lbl">Beklenen sonuç</div>
-        <p><code>cdc_acm … ttyACM0: USB ACM device</code>; <code>/dev/ttyACM0</code>; kimlik <code>0483</code> ve <code>374b</code>. ST-LINK ayrıca küçük bir USB disk (<code>DIS_F746NG</code>) gösterebilir; zararsız, kullanmıyoruz.</p>
+        <p><code>cdc_acm … ttyACM0: USB ACM device</code>; <code>/dev/ttyACM0</code>; kimlik <code>0483</code> ve <code>3752</code> (22.11.2026'da kartta görüldü). ST-LINK ayrıca küçük bir USB disk (<code>DIS_F746NG</code>) gösterebilir; zararsız, kullanmıyoruz.</p>
         <div class="lbl">Olmazsa</div>
         <p>Ürün kimliği farklıysa (ör. ST-LINK yazılımı güncellenmişse <code>374e</code>/<code>3752</code>) <span class="path">C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257_Kopru\linux\udev\99-f746-stlink.rules</span> içindeki <code>374b</code>'yi değiştir. Hiç <code>ttyACM</code> yoksa: <code>dmesg</code>'de "over-current" ya da güç hatası var mı bak; varsa F746'yı kendi besleme kaynağından besle (K1 riski, Riskler tablosu).</p>
         <p class="src"><span class="b b-st">ST</span> UM3385 §8.1 (CN19, iki USB 2.0 HS host) · <span class="b b-gn">GENEL</span> ST-LINK/V2-1 kimliği, cdc_acm</p>

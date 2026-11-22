@@ -4,6 +4,7 @@ Bir sonraki oturumda kaynakları yeniden aramadan devam etmek için. Son güncel
 Kart tarafı genel notları: `C:\Users\Asus\Documents\GitHub\STM32MP257F_DK\docs\00_Calisma_Notlari.md`.
 
 ## Durum
+- 22.11.2026 kartta: adım 1.1 tamam (Python 3.14.7, bütün modüller, TUN/USB_ACM/RPMSG_TTY modül), adım 1.2 tamam (ttyACM0, `0483:3752`, full-speed). Kartın saati ayarlı değil (13 Mart).
 - Kod ve plan yazıldı; **kartta hiçbir adım uygulanmadı.** Kullanıcı derleme/flash/kart adımlarını kendisi yapıyor.
 - PC'de doğrulanan: `m33/common` gcc testleri (0 hata, `-Wconversion` uyarısız); `linux/tests/test_uyumluluk.py` 5/5 (F746 simülatörüyle uçtan uca); `tools/freertos_projesi_olustur.py --kontrol` 35 bağlantı çözüldü; rapor ve panel 375 px / masaüstü taşmasız.
 - Denenmedi: CubeIDE derlemesi, Zephyr derlemesi, TAP ve termios2 (Windows'ta yok), f7hub'un HTTP kısmı (termios import'u Windows'ta çalışmaz).
@@ -32,7 +33,7 @@ USB VCP bağlantısı · f7linkd seri portun tek sahibi + TAP (MTU 242, IPv6 kap
 
 ## Açık işler (kartta teyit)
 1. `python3`, `/dev/net/tun`, `cdc_acm` (adım 1.1).
-2. ST-LINK PID `374b` ve 1000000 baud'un çalışması (1.2, 2.2; 1 Mbaud PC'de de henüz denenmedi).
+2. ~~ST-LINK PID~~ kartta görüldü: `0483:3752` (udev kuralı buna göre). 1000000 baud'un çalışması (2.2; 1 Mbaud PC'de de henüz denenmedi).
 3. Birleşik FreeRTOS projesinin ilk derlemesi (3.3).
 4. Zephyr Kapı Z1 (imzalı ELF) ve Z2 (RPMsg).
 5. LD9/USER2'nin m33-examples imajında M33'e açık olması (ST GPIO_EXTI örneği öyle kullanıyor).

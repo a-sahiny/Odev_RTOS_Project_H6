@@ -1,4 +1,4 @@
 # F746G-DISCO'nun ST-LINK/V2-1 seri portuna sabit ad: /dev/f746
-# 0483:374b = STMicroelectronics ST-LINK/V2-1. Kartta `lsusb` ile doğrula; MP257'nin kendi ST-LINK'i
-# (CN21) PC'ye bağlıdır, bu karta USB ile bağlı değildir, karışmaz.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", SYMLINK+="f746", MODE="0660"
+# 0483:3752 = STMicroelectronics ST-LINK/V2-1 (yazılımı güncel, USB disksiz); kartta 22.11.2026'da görüldü
+# (sysfs idProduct). MP257'nin kendi ST-LINK'i (CN21) PC'ye bağlıdır, bu karta USB ile bağlı değildir, karışmaz.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3752", SYMLINK+="f746", MODE="0660"
