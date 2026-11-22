@@ -69,10 +69,15 @@ class DesignExamples(unittest.TestCase):
         self.assertEqual(self.enc(proto.CAL, 0, 0x0300, 0, proto.payload_cal([10, -5, 0, 3, -2, 1])),
                          hx("A5 01 22 00 03 00 00 00 0C 00 0A FF FB 00 00 00 03 FF FE 00 01 FA"))
         self.assertEqual(self.enc(proto.CAL, 0, 3, 0, proto.payload_cal([10, -5, 0, 3, -2, 1]))[-1], 0xEE)
-        tel = hx("A5 01 30 00 00 00 00 00 14 00 00 00 01 00 01 E2 40 00 0A FF EC 40 00 00 01 00 02 00 03 B2")
+        # TELEM 23 B (meas_task.c prvSendTelemetry sırası); CRC8 kartın crc.c'siyle de 8C.
+        tel = hx("A5 01 30 00 00 05 00 00 17 00 0A FF EC 40 00 00 01 00 02 00 03 11 94 FB 2E B9 B0 07 02 00 12 5C 8C")
         t = proto.parse_telem(proto.decode(tel))
-        self.assertEqual((t.seq, t.index, t.tick, t.accel, t.gyro), (0, 1, 123456, (10, -20, 16384), (1, 2, 3)))
-        self.assertEqual(self.enc(proto.TELEM, 0, 0, 0, proto.payload_telem(1, 123456, (10, -20, 16384), (1, 2, 3))),
+        self.assertEqual((t.seq, t.accel, t.gyro, t.roll, t.pitch, t.yaw, t.flags, t.prev_seq, t.prev_us),
+                         (5, (10, -20, 16384), (1, 2, 3), 45.0, -12.34, -180.0, 7, 0x0200, 4700))
+        self.assertTrue(t.bias_ready and t.acc_used and t.prev_valid)
+        self.assertEqual(t.prev_ms, 4.7)
+        self.assertEqual(self.enc(proto.TELEM, 0, 5, 0, proto.payload_telem((10, -20, 16384), (1, 2, 3),
+                                                                          (4500, -1234, -18000), 7, 0x0200, 4700)),
                          tel)
 
     def test_uart_lines(self):
@@ -154,22 +159,20 @@ class CounterTable(unittest.TestCase):
         if not os.path.exists(hdr):
             self.skipTest("app_stats.h yok")
         self.assertEqual(stats_ids.parse_header(hdr), stats_ids.COUNTER_NAMES)
-        self.assertEqual(len(stats_ids.COUNTER_NAMES), 128)
+        self.assertEqual(len(stats_ids.COUNTER_NAMES), 127)
 
-    def test_imu_reply_layout(self):
-        """GET_IMU cevabı (raporlar 086, 091): 35 B, cmd.c prvWriteImu sırası; prev, t_rx son 8 B."""
-        b = proto.payload_imu_reply(77, 0x12345, (8000, 8001, 8002), (-8000, -8001, -8002), (4500, -1234, -18000), 3,
-                                    0xDEADBEEF, 0x0200, 4700)
-        self.assertEqual(len(b), proto.IMU_REPLY_LEN)
-        self.assertEqual(b[-8:], bytes.fromhex("0200125CDEADBEEF"))
-        self.assertEqual(b[20:27], bytes.fromhex("1194FB2EB9B003"))
-        r = proto.parse_imu_reply(b)
-        self.assertEqual((r.index, r.tick, r.accel, r.gyro, r.roll, r.pitch, r.yaw, r.flags, r.t_rx),
-                         (77, 0x12345, (8000, 8001, 8002), (-8000, -8001, -8002), 45.0, -12.34, -180.0, 3, 0xDEADBEEF))
-        self.assertEqual((r.prev_req_id, r.prev_us), (0x0200, 4700))
-        self.assertTrue(r.bias_ready and r.acc_used)
+    def test_telem_line_time(self):
+        """TELEM satırı UART'ta ≤ 2 ms: 'FRAME 1 ' + hex(Ethernet 14 + IPv4 20 + UDP 8 + paket 10 + 23 + FCS 4) + '\\n'
+        = 167 karakter, 1 Mbaud'da (10 bit / karakter) 1,67 ms."""
+        payload = proto.payload_telem((0, 0, 0), (0, 0, 0), (0, 0, 0), 0)
+        self.assertEqual(len(payload), proto.TELEM_LEN)
+        pkt = proto.encode(proto.Packet(proto.TELEM, 0, 1, 0, payload))
+        fr = eth.build_udp_frame(eth.HOST_MAC, BOARD_MAC, eth.BOARD_IP, eth.HOST_IP, 5002, 6000, pkt)
+        line = lines.frame_line(fr, 1)
+        self.assertEqual(len(line), 167)
+        self.assertLessEqual(len(line) * 10 / 1000000.0, 0.002)
         with self.assertRaises(proto.PacketError):
-            proto.parse_imu_reply(b[:-1])
+            proto.parse_telem(proto.Packet(proto.TELEM, payload=payload[:-1]))
 
     def test_stats_page_parse(self):
         extra = bytes([1]) + struct.pack(">I", 777) + bytes([3]) + struct.pack(">3I", 5, 6, 7)

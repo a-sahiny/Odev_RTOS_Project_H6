@@ -19,7 +19,7 @@
 /*----------------------------------------------------------------------------
  * Firmware identity (HELLO reply)
  *--------------------------------------------------------------------------*/
-#define APP_FW_VERSION_STR              "0.3"
+#define APP_FW_VERSION_STR              "0.4"   /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud */
 #define APP_BOARD_STR                   "STM32F746G-DISCO"
 
 /*----------------------------------------------------------------------------
@@ -29,7 +29,7 @@
 #define APP_PRIO_CRIT_PARSER            ( configMAX_PRIORITIES - 1 )    /* 6 */
 #define APP_PRIO_CTRL                   ( configMAX_PRIORITIES - 1 )    /* 6 */
 #define APP_PRIO_VNET_RX                4
-#define APP_PRIO_UART_TX                5       /* report 091: GET_IMU reply out at once */
+#define APP_PRIO_UART_TX                5       /* TELEM line out at once (DRDY -> TX done) */
 #define APP_PRIO_MEAS                   3
 #define APP_PRIO_LOW_PARSER             1
 #define APP_PRIO_WORKER                 1
@@ -74,9 +74,13 @@
 /*----------------------------------------------------------------------------
  * UART1 link to the host (docs 13). 10 bits per character on the wire.
  *--------------------------------------------------------------------------*/
-#define APP_UART_BAUD                   625000U /* report 086: GET_IMU deadline */
-#define APP_UART_CHAR_US                16U     /* 10 / 625000 s = 16 us     */
-#define APP_UART_RX_DMA_BYTES           256U    /* circular, ~4 ms of data   */
+/* 1 Mbaud: the TELEM line (167 characters) leaves in 1.67 ms, under the 2 ms
+ * limit; at 625000 even an empty UDP frame line (137 characters) took
+ * 2.19 ms. USART1 runs on PCLK2 = 12.5 MHz: 1 Mbaud is exact only with
+ * 8x oversampling (USARTDIV = 2 x 12.5 MHz / 1 Mbaud = 25; main.c). */
+#define APP_UART_BAUD                   1000000U
+#define APP_UART_CHAR_US                10U     /* 10 / 1000000 s = 10 us    */
+#define APP_UART_RX_DMA_BYTES           256U    /* circular, ~2.6 ms of data */
 #define APP_UART_RX_SB_BYTES            2048U   /* ISR -> vnetRx             */
 #define APP_UART_RX_SB_TRIGGER          1U
 #define APP_UART_RX_WAIT_MS             20U     /* vnetRx read timeout       */
@@ -125,7 +129,7 @@
 #define APP_TYPE_CMD_STOP               0x02U
 #define APP_TYPE_CMD_SET_RATE           0x03U
 #define APP_TYPE_CMD_GET_STATS          0x04U
-#define APP_TYPE_CMD_GET_IMU            0x05U   /* report 086 */
+/* 0x05 was GET_IMU: TELEM carries the attitude at every IMU sample now. */
 #define APP_TYPE_ENV                    0x20U
 #define APP_TYPE_BULK                   0x21U
 #define APP_TYPE_CAL                    0x22U
@@ -147,30 +151,34 @@
 /* Payload sizes and ranges per type */
 #define APP_LEN_SET_RATE                2U
 #define APP_LEN_GET_STATS               1U
-#define APP_LEN_GET_IMU                 0U
-#define APP_RATE_MIN_HZ                 1U
-#define APP_RATE_MAX_HZ                 50U     /* docs 8.3; kept at 625000 (report 086 K4) */
-#define APP_RATE_DEFAULT_HZ             10U
+/* SET_RATE sets the IMU sample rate (SMPLRT_DIV and DLPF, imu_spi.c); every
+ * sample is one TELEM. Only these rates: each divides the IMU's 1 kHz. */
+#define APP_RATE_LIST_HZ                { 10U, 20U, 50U, 100U, 200U }
+#define APP_RATE_COUNT                  5U
+#define APP_RATE_MIN_HZ                 10U
+#define APP_RATE_MAX_HZ                 200U
+#define APP_RATE_DEFAULT_HZ             100U
 #define APP_STATS_PAGES                 4U
 #define APP_ENV_MAX_CHANNELS            8U
 #define APP_BULK_SEED_BYTES             4U
 #define APP_BULK_MIN_PATTERN            1U
 #define APP_BULK_MAX_PATTERN            196U
 #define APP_LEN_CAL                     12U     /* 6 x int16                 */
-#define APP_LEN_TELEM                   20U     /* idx u32, tick u32, 6 x i16 */
 #define APP_CAL_MAX_ABS                 4096    /* raw LSB, either sign      */
-#define APP_TELEM_PAYLOAD_BYTES         20U
 
-/* GET_IMU reply after the common part (reports 086, 091): idx u32,
- * tick u32, a xyz i16, g xyz i16, roll pitch yaw i16 (0.01 deg), flags u8,
- * prev u32 (REQ_ID << 16 | M1 -> M6 us of the previous GET_IMU OK reply,
- * measured on the board), t_rx u32 (this request's M1; uartTx measures
- * M1 -> M6 with it). */
-#define APP_LEN_IMU_REPLY               35U
-#define APP_IMU_REPLY_PREV_OFFSET       27U     /* prev within those 35 B    */
-#define APP_IMU_REPLY_RX_OFFSET         31U     /* t_rx within those 35 B    */
-#define APP_IMU_REPLY_TARGET_MS         10U     /* M1 -> M6 goal             */
-#define APP_IMU_REPLY_DEADLINE_MS       12U     /* M1 -> M6 deadline         */
+/* TELEM (0x30), one per IMU sample, big-endian: a xyz i16, g xyz i16,
+ * roll pitch yaw i16 (0.01 deg), flags u8, prev_seq u16, prev_us u16.
+ * prev_*: the SEQ of the TELEM before this one and its DRDY -> TX done time
+ * (the last bit of its line left the UART), measured on the board; valid
+ * when APP_TELEM_FLAG_PREV is set. The sample order is the header SEQ. */
+#define APP_LEN_TELEM                   23U
+#define APP_TELEM_FLAGS_OFFSET          18U
+#define APP_TELEM_PREV_OFFSET           19U     /* prev_seq, then prev_us    */
+#define APP_TELEM_TARGET_MS             10U     /* DRDY -> TX done goal      */
+#define APP_TELEM_DEADLINE_MS           12U     /* DRDY -> TX done deadline  */
+/* meas -> uartTx: the DRDY time of each TELEM in flight, by SEQ (power of 2,
+ * at least the TX queue length). */
+#define APP_TELEM_DRDY_SLOTS            8U
 
 /*----------------------------------------------------------------------------
  * UDP input: callback -> MessageBuffer -> parser (docs 5.1). One message =
@@ -240,8 +248,10 @@
 #define APP_MEAS_SOURCE                 APP_MEAS_SOURCE_IMU
 #endif
 
-#define APP_IMU_ODR_HZ                  100U
-#define APP_IMU_DRDY_TIMEOUT_MS         20U
+/* The IMU rate is the SET_RATE rate (APP_RATE_*). A DRDY is waited for one
+ * sample period + this margin: 20 ms at 100 Hz, 110 ms at 10 Hz. */
+#define APP_IMU_DRDY_MARGIN_MS          10U
+#define APP_IMU_DRDY_TIMEOUT_MAX_MS     ( ( 1000U / APP_RATE_MIN_HZ ) + APP_IMU_DRDY_MARGIN_MS )
 #define APP_IMU_SPI_TIMEOUT_MS          5U
 #define APP_IMU_FAIL_LIMIT              3U      /* consecutive -> FAULT IMU  */
 #define APP_IMU_SPI_PRESC_CONFIG        SPI_BAUDRATEPRESCALER_8   /* 781 kHz <= 1 MHz */
@@ -254,9 +264,10 @@
 /*----------------------------------------------------------------------------
  * Attitude (report 086/087): complementary filter in meas, every sample.
  *--------------------------------------------------------------------------*/
-#define APP_ATT_BIAS_SAMPLES            100U    /* 1 s at 100 Hz after START */
+#define APP_ATT_BIAS_MS                 1000U   /* gyro bias: first 1 s after START */
 #define APP_ATT_FLAG_BIAS_READY         0x01U   /* gyro bias measured        */
 #define APP_ATT_FLAG_ACC_USED           0x02U   /* accel corrected this one  */
+#define APP_TELEM_FLAG_PREV             0x04U   /* prev_seq / prev_us valid  */
 
 /*----------------------------------------------------------------------------
  * FAULT conditions (docs 19). Reason bits live outside the event group.
@@ -296,7 +307,8 @@ _Static_assert( APP_SB_CRIT_BYTES >= ( 2U * ( APP_MB_LENGTH_BYTES + APP_REC_MAX_
 _Static_assert( APP_SB_LOW_BYTES >= ( 2U * ( APP_MB_LENGTH_BYTES + APP_REC_MAX_BYTES ) ), "sbLow must hold two largest records" );
 _Static_assert( APP_CRIT_DESC_DATA_BYTES >= APP_LEN_SET_RATE, "command payload must fit a crit descriptor" );
 _Static_assert( ( APP_BULK_SEED_BYTES + APP_BULK_MAX_PATTERN ) <= APP_LOW_DESC_DATA_BYTES, "BULK must fit a low descriptor" );
-_Static_assert( APP_RATE_MAX_HZ <= ( APP_IMU_ODR_HZ / 2U ), "telemetry is decimated from the IMU rate" );
+_Static_assert( APP_TELEM_DRDY_SLOTS >= APP_TXQ_LEN, "every TELEM the TX queue can hold has a DRDY slot" );
+_Static_assert( ( APP_TELEM_DRDY_SLOTS & ( APP_TELEM_DRDY_SLOTS - 1U ) ) == 0U, "DRDY slots: a power of 2" );
 _Static_assert( APP_CRIT_DESC_ISR_RESERVE < APP_CRIT_DESC_COUNT, "ISR reserve must leave blocks for an ISR" );
 _Static_assert( APP_LOW_DESC_ISR_RESERVE < APP_LOW_DESC_COUNT, "ISR reserve must leave blocks for an ISR" );
 _Static_assert( APP_REPORT_ISR_RESERVE < APP_REPORT_COUNT, "ISR reserve must leave blocks for an ISR" );

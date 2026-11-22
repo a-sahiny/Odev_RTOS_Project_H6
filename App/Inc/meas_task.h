@@ -1,8 +1,8 @@
 /**
   ******************************************************************************
   * @file    meas_task.h
-  * @brief   The measurement task meas (docs 3.3): IMU sample -> CAL ->
-  *          decimation -> TELEM. Step 17, künye report 079.
+  * @brief   The measurement task meas (docs 3.3): one IMU sample at every
+  *          DRDY -> CAL -> attitude -> TELEM. Step 17, künye report 079.
   ******************************************************************************
   */
 #ifndef MEAS_TASK_H
@@ -18,24 +18,24 @@ BaseType_t Meas_Init( void );
 
 /* ctrlTask (START): where telemetry goes, both in network byte order as the
  * stack gives them. One writer (ctrlTask), one reader (meas); meas never
- * sees the IP of one START with the port of another (critical section on
- * both sides, report 079 K1). Each call also starts a new measurement:
- * sample index and decimation begin again. */
+ * sees the IP of one START with the port of another (mailbox, report 092).
+ * Each call also starts a new measurement: the attitude begins again. */
 void Meas_SetDestination( uint32_t ulIpNet, uint16_t usPortNet );
 
-/* ctrlTask (SET_RATE): telemetry rate, APP_RATE_MIN_HZ..APP_RATE_MAX_HZ
- * (cmd.c validates; assert only); takes effect at the next sample. */
+/* pdTRUE if usHz is one of APP_RATE_LIST_HZ (cmd.c, SET_RATE). */
+BaseType_t Meas_IsRateValid( uint16_t usHz );
+
+/* ctrlTask (SET_RATE): the IMU sample rate = the TELEM rate, one of
+ * APP_RATE_LIST_HZ (cmd.c validates; assert only). meas sets the IMU to it
+ * before its next sample. */
 void Meas_SetRateHz( uint16_t usHz );
 
-/* The telemetry rate in force (any task). */
+/* The rate SET_RATE asked for (any task). */
 uint16_t Meas_GetRateHz( void );
 
-struct xIMU_ATTITUDE;
-
-/* ctrlTask (GET_IMU, report 086): a copy of the latest sample with its
- * roll / pitch / yaw, taken inside a critical section (meas writes it at
- * every sample). pdFAIL while the measurement of the current START has no
- * sample yet; the copy is then not written. */
-BaseType_t Meas_GetAttitude( struct xIMU_ATTITUDE * pxOut );
+/* uartTx: the DRDY time (DWT cycles) of the TELEM with header SEQ usSeq, kept
+ * by meas just before it sent that TELEM. pdFAIL if no TELEM in flight has
+ * that SEQ (its slot was taken by a later one). */
+BaseType_t Meas_GetTelemDrdy( uint16_t usSeq, uint32_t * pulCycles );
 
 #endif /* MEAS_TASK_H */

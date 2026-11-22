@@ -1,4 +1,4 @@
-"""Uçuş (IMU) sekmesi (rapor 086): GET_IMU ile gelen roll / pitch / yaw'ı 3B kağıt uçakla gösterir.
+"""Uçuş (IMU) sekmesi: her TELEM'le gelen roll / pitch / yaw'ı 3B kağıt uçakla gösterir.
 
 Yalnız tkinter Canvas: kendi 3x3 dönme matrisi ve basit perspektif izdüşüm; ek paket yok.
 
@@ -18,7 +18,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from . import proto
-from .hoststack import ImuPoller, HostError
+from .hoststack import HostError, TelemLatencyStats
 
 # ---------------------------------------------------------------- renk ve yazı tokenları
 C = {
@@ -321,8 +321,8 @@ class FlightCanvas(tk.Canvas):
 
 
 class DeadlineHistogram(tk.Canvas):
-    """Kartın ölçtüğü M1 -> M6 dağılımı (rapor 091): 0–20 ms, 1 ms kutular; 10 ms hedef ve 12 ms
-    deadline çizgileri etiketli. Windows / USB yok."""
+    """Kartın ölçtüğü TELEM gecikmesi (DRDY -> TX bitti) dağılımı: 0–20 ms, 1 ms kutular; 10 ms hedef ve
+    12 ms deadline çizgileri etiketli. Windows / USB yok."""
 
     MAX_MS = 20
 
@@ -346,7 +346,7 @@ class DeadlineHistogram(tk.Canvas):
             bins[min(self.MAX_MS, int(v))] += 1
         peak = max(bins) or 1
         bw = (right - left) / len(bins)
-        self.create_text(left, 4, anchor="nw", text="Kart M1 → M6 dağılımı (son %d cevap)" % len(self.values),
+        self.create_text(left, 4, anchor="nw", text="Kart DRDY → TX bitti dağılımı (son %d TELEM)" % len(self.values),
                          font=(FONT_UI, 9, "bold"))
         for i, n in enumerate(bins):
             x0 = left + i * bw
@@ -369,13 +369,15 @@ class DeadlineHistogram(tk.Canvas):
 
 
 class FlightTab(ttk.Frame):
-    """Sekme: sol uçuş görünümü, sağ sayısal panel + deadline paneli + düğmeler."""
+    """Sekme: sol uçuş görünümü, sağ sayısal panel + gecikme paneli + düğmeler. Veri TELEM'den gelir
+    (her IMU örneğinde bir tane); host hiçbir şey sormaz."""
 
     def __init__(self, master, app):
         super().__init__(master, padding=8)
         self.app = app                      # gui.App: .h (Host) ve .status_var
-        self.poller = None
-        self.latest = None                  # son ImuReply (poller thread'i yazar)
+        self.watching = None                # izlenen Host (dinleyici bağlıyken)
+        self.stats = TelemLatencyStats()
+        self.latest = None                  # son Telem (host'un alma thread'i yazar)
         self.drawn = None
         self.yaw_zero = 0.0
         self.board0 = None                  # izleme başında kart sayaçları (fark için)
@@ -390,21 +392,21 @@ class FlightTab(ttk.Frame):
         side = ttk.Frame(self)
         side.grid(row=0, column=1, sticky="nsew")
 
-        g = ttk.LabelFrame(side, text="GET_IMU (UDP 5000, önemli lane)", padding=8)
+        g = ttk.LabelFrame(side, text="TELEM (UDP 5002, her IMU örneği)", padding=8)
         g.pack(fill="x")
         g.columnconfigure((0, 1), weight=1)
         self.btn_start = ttk.Button(g, text="▶ START ve izle", command=self.start)
         self.btn_start.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
         self.btn_stop = ttk.Button(g, text="■ İzlemeyi durdur", command=self.stop, state="disabled")
         self.btn_stop.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
-        ttk.Label(g, text="İstek periyodu (ms)").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.period_var = tk.IntVar(value=int(proto.IMU_PERIOD_MS))
-        ttk.Spinbox(g, from_=10, to=200, increment=5, textvariable=self.period_var, width=6).grid(
+        ttk.Label(g, text="IMU hızı (Hz), START'tan önce").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.rate_var = tk.IntVar(value=proto.RATE_DEFAULT_HZ)
+        ttk.Combobox(g, textvariable=self.rate_var, values=proto.RATES_HZ, state="readonly", width=6).grid(
             row=1, column=1, sticky="w", pady=(6, 0))
         ttk.Button(g, text="Yaw sıfırla (görüntü)", command=self.zero_yaw).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
         ttk.Button(g, text="Kamerayı sıfırla", command=self.view.reset_camera).grid(row=2, column=1, sticky="ew", padx=2,
                                                                                    pady=2)
-        ttk.Label(g, text="GET_IMU yalnız START ile STOP arasında cevaplanır (değilse E_STATE).",
+        ttk.Label(g, text="Kart START ile STOP arasında her IMU örneğini (DRDY) TELEM olarak yollar.",
                   style="Small.TLabel", wraplength=300).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         g = ttk.LabelFrame(side, text="Açılar", padding=8)
@@ -424,7 +426,7 @@ class FlightTab(ttk.Frame):
         self.sample_var = tk.StringVar(value="—")
         ttk.Label(g, textvariable=self.sample_var, font=(FONT_NUM, 9), justify="left").pack(anchor="w")
 
-        g = ttk.LabelFrame(side, text="Deadline: hedef 10 ms, deadline 12 ms", padding=8)
+        g = ttk.LabelFrame(side, text="Gecikme: hedef 10 ms, deadline 12 ms", padding=8)
         g.pack(fill="both", expand=True, pady=(8, 0))
         self.hist = DeadlineHistogram(g, height=130)
         self.hist.pack(fill="x")
@@ -433,9 +435,9 @@ class FlightTab(ttk.Frame):
         self.board_var = tk.StringVar(value=self.board_text)
         ttk.Label(g, textvariable=self.board_var, font=(FONT_UI, 9, "bold"), wraplength=310,
                   justify="left").pack(anchor="w", pady=(6, 0))
-        ttk.Label(g, text="Yalnız kart zamanı: istek karta geldi (M1) → cevabın son biti UART'tan çıktı "
-                          "(M6, TX bitti kesmesi). Windows / USB yok. Her cevap bir öncekinin süresini taşır. "
-                          "İşleme = M1 → M3, gönderim = M3 → M6. Durdurunca panel sıfırlanır.",
+        ttk.Label(g, text="Yalnız kart zamanı: IMU verisi hazır (DRDY kesmesi) → TELEM satırının son biti "
+                          "UART'tan çıktı (TX bitti kesmesi). PC / USB yok. Bir TELEM'in süresi o gittikten "
+                          "sonra bilinir, bu yüzden bir sonraki TELEM'de gelir. Durdurunca panel sıfırlanır.",
                   style="Small.TLabel", wraplength=310, justify="left").pack(anchor="w", pady=(4, 0))
 
         self.after(33, self._frame)
@@ -451,24 +453,27 @@ class FlightTab(ttk.Frame):
             self.app.status_var.set("Önce karta ya da simülatöre bağlanın.")
             return
         self.btn_start.config(state="disabled")
-        period = max(10, int(self.period_var.get() or proto.IMU_PERIOD_MS))
+        hz = int(self.rate_var.get() or proto.RATE_DEFAULT_HZ)
         self._reset_panel()
 
         def go():
             try:
-                # Kart sayaçları yalnız izlemenin başında ve sonunda okunur: izleme sırasında
-                # GET_STATS göndermek hatta uzun satırlar (481 karakter) koyar ve IMU cevabını
-                # bekletir (rapor 091).
                 c = h.get_counters()
-                self.board0 = (c["imu_reply_over10"], c["imu_reply_miss"])
+                self.board0 = (c["telem_over10"], c["telem_miss"])
+                r = h.set_rate(hz)
+                if not r.ok:
+                    raise HostError("SET_RATE %d reddedildi: %s" % (hz, r.status_name))
+                self.stats.reset()
+                self.watching = h
+                h.listeners.append(self._on_event)
                 r = h.start()
                 if not r.ok:
+                    h.listeners.remove(self._on_event)
+                    self.watching = None
                     self.app.events.put(("error", "START reddedildi: %s" % r.status_name))
                     self.after(0, lambda: self.btn_start.config(state="normal"))
                     return
-                self.poller = ImuPoller(h, period_ms=float(period), on_sample=self._on_sample)
-                self.poller.start()
-                self.app.events.put(("done", ("", "GET_IMU izleniyor (%d ms)" % period)))
+                self.app.events.put(("done", ("", "TELEM izleniyor (%d Hz)" % hz)))
                 self.after(0, lambda: self.btn_stop.config(state="normal"))
             except HostError as e:
                 self.app.events.put(("error", str(e)))
@@ -476,32 +481,35 @@ class FlightTab(ttk.Frame):
         threading.Thread(target=go, daemon=True).start()
 
     def stop(self):
-        """İzleme durur; deadline paneli sıfırlanır (bir sonraki izleme baştan başlar). Kartın bu
+        """İzleme durur; gecikme paneli sıfırlanır (bir sonraki izleme baştan başlar). Kartın bu
         izleme boyunca saydığı aşımlar durum çubuğuna yazılır."""
-        p, h, b0 = self.poller, self._host(), self.board0
-        if p is not None:
-            p.stop()
-        self.poller = None
+        h, w, b0 = self._host(), self.watching, self.board0
+        if w is not None:
+            try:
+                w.listeners.remove(self._on_event)
+            except ValueError:
+                pass
+        self.watching = None
         self.board0 = None
+        s = self.stats.summary()
         self._reset_panel()
         self.btn_stop.config(state="disabled")
         self.btn_start.config(state="normal")
-        self.app.status_var.set("İzleme durdu, deadline paneli sıfırlandı (ölçüm sürüyor; STOP için Kontrol sekmesi)")
-        if p is not None and h is not None and b0 is not None:
-            s = p.stats.summary()
-
+        self.app.status_var.set("İzleme durdu, gecikme paneli sıfırlandı (ölçüm sürüyor; STOP için Kontrol sekmesi)")
+        if w is not None and h is w and b0 is not None:
             def go():
                 try:
                     c = h.get_counters()
-                    self.app.events.put(("done", ("", "Son izleme: kart M1→M6 >10 ms %d, >12 ms %d (sayaç farkı); "
-                                                  "cevaplarla gelen %d ölçümde en çok %.2f ms" % (
-                                                      c["imu_reply_over10"] - b0[0], c["imu_reply_miss"] - b0[1],
-                                                      s["board_n"], s["board_max_ms"]))))
+                    self.app.events.put(("done", ("", "Son izleme: kart DRDY→TX >10 ms %d, >12 ms %d (sayaç farkı); "
+                                                  "TELEM'lerle gelen %d ölçümde en çok %.2f ms" % (
+                                                      c["telem_over10"] - b0[0], c["telem_miss"] - b0[1],
+                                                      s["n"], s["max_ms"]))))
                 except Exception:
                     pass
             threading.Thread(target=go, daemon=True).start()
 
     def _reset_panel(self):
+        self.stats.reset()
         self.hist.set_values([])
         self.dl_var.set("—")
         self.board_var.set(self.board_text)
@@ -509,7 +517,6 @@ class FlightTab(ttk.Frame):
     def detach(self):
         """Bağlantı kesilince."""
         self.stop()
-        self.poller = None
         self.latest = None
 
     def zero_yaw(self):
@@ -517,54 +524,52 @@ class FlightTab(ttk.Frame):
             self.yaw_zero = self.latest.yaw
         self.drawn = None
 
-    def _on_sample(self, imu):
-        self.latest = imu                   # tek atama: çizim thread'i en sonuncuyu okur
+    def _on_event(self, kind, data):
+        if kind == "telem":
+            self.stats.add(data)
+            self.latest = data              # tek atama: çizim döngüsü en sonuncuyu okur
 
     # ------------------------------------------------------------ çizim döngüleri
     def _frame(self):
-        imu = self.latest
-        if imu is not None and imu is not self.drawn and self.winfo_ismapped():
-            yaw = ((imu.yaw - self.yaw_zero + 180.0) % 360.0) - 180.0
-            self.view.set_sample(imu.roll, imu.pitch, yaw, imu.accel_g, imu.bias_ready)
+        t = self.latest
+        if t is not None and t is not self.drawn and self.winfo_ismapped():
+            yaw = ((t.yaw - self.yaw_zero + 180.0) % 360.0) - 180.0
+            self.view.set_sample(t.roll, t.pitch, yaw, t.accel_g, t.bias_ready)
             self.view.draw()
-            self.drawn = imu
-            self.ang_vars["roll"].set("%+.2f°" % imu.roll)
-            self.ang_vars["pitch"].set("%+.2f°" % imu.pitch)
+            self.drawn = t
+            self.ang_vars["roll"].set("%+.2f°" % t.roll)
+            self.ang_vars["pitch"].set("%+.2f°" % t.pitch)
             self.ang_vars["yaw"].set("%+.2f°" % yaw)
-            a, g = imu.accel_g, imu.gyro_dps
+            a, g = t.accel_g, t.gyro_dps
             self.sample_var.set(
-                "idx %d   tick %d ms\n"
+                "SEQ %d\n"
                 "ivme  (g)    x %+6.3f  y %+6.3f  z %+6.3f\n"
                 "jiro  (°/s)  x %+7.1f  y %+7.1f  z %+7.1f\n"
-                "bias %s · ivme düzeltmesi %s · LAT_US %d µs" % (
-                    imu.index, imu.tick, a[0], a[1], a[2], g[0], g[1], g[2],
-                    "hazır" if imu.bias_ready else "ölçülüyor", "var" if imu.acc_used else "yok", imu.lat_us))
-        elif self.drawn is None and imu is None and self.winfo_ismapped():
+                "bias %s · ivme düzeltmesi %s · önceki TELEM %s" % (
+                    t.seq, a[0], a[1], a[2], g[0], g[1], g[2],
+                    "hazır" if t.bias_ready else "ölçülüyor", "var" if t.acc_used else "yok",
+                    "SEQ %d: %.2f ms" % (t.prev_seq, t.prev_ms) if t.prev_valid else "yok"))
+        elif self.drawn is None and t is None and self.winfo_ismapped():
             self.view.draw()
             self.drawn = False
         self.after(33, self._frame)
 
     def _panel(self):
-        p = self.poller
-        if p is not None and self.winfo_ismapped():
-            s = p.stats
-            self.hist.set_values(list(s.board)[-500:])
-            n = max(s.board_n, 1)
-            last = s.board[-1] if s.board else 0.0
-            pct = s._pct
+        h = self.watching
+        if h is not None and self.winfo_ismapped():
+            s = self.stats
+            self.hist.set_values(list(s.values)[-500:])
+            n = max(s.n, 1)
+            last = s.values[-1] if s.values else 0.0
             self.dl_var.set(
-                "istek %d  OK %d  zaman aşımı %d  hata %s\n"
-                "M1→M6  son %.2f  ort %.2f  p99 %.2f  en çok %.2f ms\n"
-                "  işleme  M1→M3  ort %.2f  en çok %.2f ms\n"
-                "  gönderim M3→M6 ort %.2f  en çok %.2f ms\n"
+                "TELEM %d  %.1f Hz  kayıp (SEQ boşluğu) %d\n"
+                "DRDY→TX  son %.2f  ort %.2f  p99 %.2f  en çok %.2f ms\n"
                 "≤10 ms %5.1f%%   ≤12 ms %5.1f%%   >12 ms %d\n"
-                "aynı örnek %d  atlanan örnek %d%s" % (
-                    s.requests, s.ok, s.timeouts, dict(s.errors) or "-", last, s.mean(), s.percentile(0.99), s.board_max,
-                    sum(s.proc) / len(s.proc) if s.proc else 0.0, max(s.proc) if s.proc else 0.0,
-                    sum(s.send) / len(s.send) if s.send else 0.0, max(s.send) if s.send else 0.0,
-                    100.0 * s.le_target / n, 100.0 * s.le_deadline / n, s.over_deadline, s.same_index, s.index_gaps,
-                    "\nson hata: " + p.last_error if p.last_error else ""))
-            self.board_var.set("Kart M1 → M6 (%d ölçüm): %s" % (
-                s.board_n, "✓ deadline tuttu (hepsi ≤ 12 ms)" if s.over_deadline == 0 else
-                "✗ %d cevap 12 ms'yi aştı" % s.over_deadline))
+                "ölçüm %d  (bir öncekinden eski: %d)" % (
+                    h.telem.received, h.telem.rate_hz(), h.telem.gaps,
+                    last, s.mean(), s.percentile(0.99), s.max,
+                    100.0 * s.le_target / n, 100.0 * s.le_deadline / n, s.over_deadline, s.n, s.behind))
+            self.board_var.set("Kart DRDY → TX bitti (%d ölçüm): %s" % (
+                s.n, "✓ deadline tuttu (hepsi ≤ 12 ms)" if s.over_deadline == 0 else
+                "✗ %d TELEM 12 ms'yi aştı" % s.over_deadline))
         self.after(500, self._panel)

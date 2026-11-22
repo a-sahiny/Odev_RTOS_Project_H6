@@ -41,15 +41,13 @@ extern SPI_HandleTypeDef hspi2;
 #define IMU_REG_WHO_AM_I        0x75U
 #define IMU_READ_FLAG           0x80U
 
-/* Values (app_imu.c:105-121): 100 Hz, DLPF 41 Hz, +-1000 dps, +-4 g */
+/* Values (app_imu.c:105-121): +-1000 dps, +-4 g. Rate and DLPF: xImuRates. */
 #define IMU_PWR_RESET           0x80U
 #define IMU_PWR_CLKSEL_PLL      0x01U
 #define IMU_USER_I2C_IF_DIS     0x10U   /* SPI only                              */
-#define IMU_CFG_SMPLRT_DIV      9U      /* 1 kHz / (1 + 9) = 100 Hz              */
-#define IMU_CFG_DLPF            0x03U   /* gyro 41 Hz, fs 1 kHz                  */
+#define IMU_INTERNAL_HZ         1000U   /* DLPF_CFG 1..6: internal rate 1 kHz    */
 #define IMU_CFG_GYRO_FS         0x10U   /* +-1000 dps -> 32.8 LSB/dps            */
 #define IMU_CFG_ACCEL_FS        0x08U   /* +-4 g -> 8192 LSB/g                   */
-#define IMU_CFG_ACCEL_DLPF      0x03U   /* 41 Hz                                 */
 #define IMU_CFG_INT_PIN         0x00U   /* active high, push-pull, 50 us pulse   */
 #define IMU_CFG_INT_ENABLE      0x01U   /* RAW_RDY_EN                            */
 
@@ -67,14 +65,40 @@ extern SPI_HandleTypeDef hspi2;
 #define IMU_BIT_SPI_ERROR       0x04UL
 #define IMU_BITS_SPI            ( IMU_BIT_SPI_DONE | IMU_BIT_SPI_ERROR )
 
-_Static_assert( ( 1000U / ( 1U + IMU_CFG_SMPLRT_DIV ) ) == APP_IMU_ODR_HZ, "SMPLRT_DIV gives the IMU rate" );
 _Static_assert( ( IMU_REG_ACCEL_XOUT_H + IMU_BURST_BYTES - 1U ) == 0x48U, "the burst ends at GYRO_ZOUT_L" );
+
+/* One entry per SET_RATE rate. SMPLRT_DIV = 1 kHz / rate - 1. The DLPF
+ * index goes into CONFIG (gyro) and ACCEL_CONFIG2 (accel, A_DLPF_CFG with
+ * ACCEL_FCHOICE_B = 0): its bandwidth is at most about half the rate, so
+ * nothing above the Nyquist frequency folds into the samples (MPU-6500
+ * register map: gyro / accel bandwidth 2: 92 / 99 Hz, 3: 41 / 44.8 Hz,
+ * 4: 20 / 21.2 Hz, 5: 10 / 10.2 Hz, 6: 5 / 5.05 Hz). A lower bandwidth
+ * also delays the signal more (5 Hz: ~19 ms); that is inside the IMU,
+ * before DRDY, so the TELEM latency does not include it. */
+typedef struct xIMU_RATE
+{
+    uint16_t usHz;
+    uint8_t ucDlpf;
+} ImuRate_t;
+
+static const ImuRate_t xImuRates[] =
+{
+    {  10U, 0x06U },
+    {  20U, 0x05U },
+    {  50U, 0x04U },
+    { 100U, 0x03U },    /* the values before SET_RATE changed the IMU rate */
+    { 200U, 0x02U },
+};
+
+_Static_assert( ( sizeof( xImuRates ) / sizeof( xImuRates[ 0 ] ) ) == APP_RATE_COUNT, "one entry per SET_RATE rate" );
 
 /* The task the ISRs wake; written by Imu_Init before DRDY is enabled. */
 static TaskHandle_t xMeasTask = NULL;
 
-/* The tick of the last DRDY (ISR writes, meas reads; one aligned word). */
+/* The tick and the DWT cycle count of the last DRDY (ISR writes, meas
+ * reads; one aligned word each). */
 static volatile TickType_t xDrdyTick;
+static volatile uint32_t ulDrdyCycles;
 
 /* DMA buffers. D-cache is off: no cache maintenance, no MPU region. Byte 0
  * of the TX buffer is the address; byte 1 the value of a register write,
@@ -91,13 +115,14 @@ static void prvSetPrescaler( uint32_t ulPrescaler );
 static void prvWriteReg( uint8_t ucReg, uint8_t ucValue );
 static uint8_t prvReadReg( uint8_t ucReg );
 static BaseType_t prvWhoAmIOk( uint8_t ucValue );
+static BaseType_t prvWriteRate( uint16_t usRateHz );
 
 /*---------------------------------------------------------------------------*/
 /* Imu_Init: app_imu.c:215-286 (K1). reset -> 100 ms -> SPI only -> PLL      */
 /* clock -> 10 ms -> WHO_AM_I -> configuration -> read-back -> DRDY on ->   */
-/* read speed (K7).                                                         */
+/* read speed (K7). The rate and the DLPF come from xImuRates.              */
 /*---------------------------------------------------------------------------*/
-BaseType_t Imu_Init( TaskHandle_t xNotifyTask )
+BaseType_t Imu_Init( TaskHandle_t xNotifyTask, uint16_t usRateHz )
 {
     configASSERT( xNotifyTask != NULL );
     xMeasTask = xNotifyTask;
@@ -120,17 +145,14 @@ BaseType_t Imu_Init( TaskHandle_t xNotifyTask )
     }
 
     prvWriteReg( IMU_REG_PWR_MGMT_2, 0x00U );     /* all axes on */
-    prvWriteReg( IMU_REG_SMPLRT_DIV, IMU_CFG_SMPLRT_DIV );
-    prvWriteReg( IMU_REG_CONFIG, IMU_CFG_DLPF );
     prvWriteReg( IMU_REG_GYRO_CONFIG, IMU_CFG_GYRO_FS );
     prvWriteReg( IMU_REG_ACCEL_CONFIG, IMU_CFG_ACCEL_FS );
-    prvWriteReg( IMU_REG_ACCEL_CONFIG2, IMU_CFG_ACCEL_DLPF );
 
     /* Read-back (app_imu.c:272-277): the writes are not checked one by one;
      * a wrong value here means the SPI link or the part is bad. */
-    if( ( prvReadReg( IMU_REG_SMPLRT_DIV ) != IMU_CFG_SMPLRT_DIV ) ||
-        ( prvReadReg( IMU_REG_GYRO_CONFIG ) != IMU_CFG_GYRO_FS ) ||
-        ( prvReadReg( IMU_REG_ACCEL_CONFIG ) != IMU_CFG_ACCEL_FS ) )
+    if( ( prvReadReg( IMU_REG_GYRO_CONFIG ) != IMU_CFG_GYRO_FS ) ||
+        ( prvReadReg( IMU_REG_ACCEL_CONFIG ) != IMU_CFG_ACCEL_FS ) ||
+        ( prvWriteRate( usRateHz ) != pdPASS ) )
     {
         Stats_Inc( eStatImuWhoAmI );        /* K2 */
         return pdFAIL;
@@ -142,6 +164,59 @@ BaseType_t Imu_Init( TaskHandle_t xNotifyTask )
     prvSetPrescaler( APP_IMU_SPI_PRESC_DATA );
 
     return pdPASS;
+}
+
+/*---------------------------------------------------------------------------*/
+/* Imu_SetRate: SET_RATE on a running IMU. The register writes run at the    */
+/* configuration speed (<= 1 MHz), as in Imu_Init; the read speed again      */
+/* after them. A DRDY during the writes is dropped by the caller.            */
+/*---------------------------------------------------------------------------*/
+BaseType_t Imu_SetRate( uint16_t usRateHz )
+{
+    BaseType_t xResult;
+
+    prvSetPrescaler( APP_IMU_SPI_PRESC_CONFIG );
+    xResult = prvWriteRate( usRateHz );
+    prvSetPrescaler( APP_IMU_SPI_PRESC_DATA );
+
+    if( xResult != pdPASS )
+    {
+        Stats_Inc( eStatImuWhoAmI );        /* K2: the SPI link or the part is bad */
+    }
+
+    return xResult;
+}
+
+/*---------------------------------------------------------------------------*/
+/* prvWriteRate: SMPLRT_DIV, CONFIG (gyro DLPF), ACCEL_CONFIG2 (accel DLPF)  */
+/* for usRateHz, then read back. cmd.c lets only APP_RATE_LIST_HZ through.   */
+/*---------------------------------------------------------------------------*/
+static BaseType_t prvWriteRate( uint16_t usRateHz )
+{
+    const ImuRate_t * pxRate = NULL;
+    uint8_t ucDiv;
+    size_t x;
+
+    for( x = 0U; x < ( sizeof( xImuRates ) / sizeof( xImuRates[ 0 ] ) ); x++ )
+    {
+        if( xImuRates[ x ].usHz == usRateHz )
+        {
+            pxRate = &xImuRates[ x ];
+            break;
+        }
+    }
+
+    configASSERT( pxRate != NULL );         /* a bug, not an input (B8) */
+
+    ucDiv = ( uint8_t ) ( ( IMU_INTERNAL_HZ / pxRate->usHz ) - 1U );
+
+    prvWriteReg( IMU_REG_SMPLRT_DIV, ucDiv );
+    prvWriteReg( IMU_REG_CONFIG, pxRate->ucDlpf );
+    prvWriteReg( IMU_REG_ACCEL_CONFIG2, pxRate->ucDlpf );
+
+    return ( ( prvReadReg( IMU_REG_SMPLRT_DIV ) == ucDiv ) &&
+             ( prvReadReg( IMU_REG_CONFIG ) == pxRate->ucDlpf ) &&
+             ( prvReadReg( IMU_REG_ACCEL_CONFIG2 ) == pxRate->ucDlpf ) ) ? pdPASS : pdFAIL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -157,7 +232,7 @@ void Imu_DiscardStaleDrdy( void )
 /*---------------------------------------------------------------------------*/
 BaseType_t Imu_WaitDrdy( TickType_t xTimeout )
 {
-    configASSERT( xTimeout <= APP_MS( APP_IMU_DRDY_TIMEOUT_MS ) );
+    configASSERT( xTimeout <= APP_MS( APP_IMU_DRDY_TIMEOUT_MAX_MS ) );
 
     if( prvWaitBits( IMU_BIT_DRDY, xTimeout ) == pdFAIL )
     {
@@ -188,6 +263,7 @@ BaseType_t Imu_ReadSample( Sample_t * pxOut, TickType_t xTimeout )
 
     prvUnpack( pxOut );
     pxOut->ulTick = xDrdyTick;
+    pxOut->ulDrdyCycles = ulDrdyCycles;
 
     return pdPASS;
 }
@@ -302,6 +378,7 @@ void HAL_GPIO_EXTI_Callback( uint16_t GPIO_Pin )
 
     if( ( GPIO_Pin == MPU_DRDY_Pin ) && ( xMeasTask != NULL ) )
     {
+        ulDrdyCycles = DWT->CYCCNT;                 /* TELEM latency starts here */
         xDrdyTick = xTaskGetTickCountFromISR();     /* K6 */
         ( void ) xTaskNotifyFromISR( xMeasTask, IMU_BIT_DRDY, eSetBits, &xWoken );
         portYIELD_FROM_ISR( xWoken );

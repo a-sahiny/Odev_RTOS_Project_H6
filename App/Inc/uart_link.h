@@ -42,7 +42,7 @@ uint32_t UartLink_GetLossCount( void );
 
 /* uartTx only. Sends uxLen bytes (1..APP_UART_TX_DMA_BYTES) of pucData with
  * the TX DMA and blocks until the last bit has left the line, at most xWait
- * ticks (line time + APP_UART_TX_MARGIN_MS, <= 29 ms at 625000). pucData must stay
+ * ticks (line time + APP_UART_TX_MARGIN_MS, <= 26 ms at 1 Mbaud). pucData must stay
  * untouched until the call returns. pdPASS when sent; pdFAIL when the HAL
  * refused or the wait timed out (the transfer is then aborted and
  * eStatTxUartStall counted). The wait uses uartTx's task notification

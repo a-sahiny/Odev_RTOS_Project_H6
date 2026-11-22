@@ -51,9 +51,9 @@ void UartTx_SetInjectedDelay( uint16_t usMs );
  * B10): the console reads it for the "inj" report field. Any context. */
 uint16_t UartTx_GetInjectedDelay( void );
 
-/* GET_IMU (report 091): the last GET_IMU OK reply that left the UART, as
- * REQ_ID << 16 | its M1 -> M6 in us (limited to 65535); 0 before the first.
- * Written by uartTx, read by ctrlTask; one 32-bit atomic word. */
-uint32_t UartTx_GetLastImuReply( void );
+/* The last TELEM whose line left the UART, as SEQ << 16 | its DRDY -> TX
+ * done time in us (limited to 65535); 0 before the first. Written by uartTx,
+ * read by meas for the next TELEM; one 32-bit atomic word. */
+uint32_t UartTx_GetLastTelem( void );
 
 #endif /* UART_TX_H */

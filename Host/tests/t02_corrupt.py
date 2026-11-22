@@ -22,7 +22,7 @@ def _cmd_frame(h, hz, req_id=None, **kw):
 def run(h, **_):
     res = TestResult("T02", "Bozuk giriş")
     prepare(h, res, rate=10)
-    good_hz = [14, 15]
+    good_hz = [20, 50]
     current = {"hz": 10}
 
     def case(label, send, counter, report_reason=None, report_type="rx_err", expect_reply=None):

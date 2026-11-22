@@ -1,4 +1,4 @@
-"""GET_STATS sayaç adları: App/Inc/app_stats.h eStatId_t sırası (128 sayaç).
+"""GET_STATS sayaç adları: App/Inc/app_stats.h eStatId_t sırası (127 sayaç).
 
 Kart değişirse: python -m vnet_host.stats_ids ../App/Inc/app_stats.h ile yeniden kontrol edilir.
 """
@@ -28,13 +28,13 @@ COUNTER_NAMES = (
     "pool_report_empty", "pool_report_invalid", "pool_report_double", "pool_unregistered",
     "evt_handled_ctrl", "evt_handled_work", "evt_no_handler", "evt_net_posted",
     "evt_net_lost", "cmd_new", "cmd_replay", "cmd_conflict",
-    "cmd_invalid", "cmd_reply_fail", "cmd_imu_ok", "cmd_imu_refused", "env_pkts", "env_bad",
+    "cmd_invalid", "cmd_reply_fail", "env_pkts", "env_bad",
     "bulk_pkts", "bulk_bytes", "bulk_bad", "cal_applied",
     "cal_rejected", "telem_gen", "telem_sendto_ok", "telem_sendto_fail",
-    "imu_who_am_i", "imu_drdy_timeout", "imu_spi_timeout", "if_out",
+    "imu_who_am_i", "imu_drdy_timeout", "imu_spi_timeout", "imu_fail_run", "if_out",
     "tx_report_in", "txq_ok", "txq_full", "txq_reserve",
-    "tx_bad_len", "tx_lines", "tx_uart_stall", "imu_reply_over10",
-    "imu_reply_miss", "fault_raised",
+    "tx_bad_len", "tx_lines", "tx_uart_stall", "telem_over10",
+    "telem_miss", "fault_raised",
     "nb_get_fail", "sendto_no_buf", "ipq_event_lost", "arp_tx_dropped",
     "arp_delayed", "arp_delayed_full", "arp_expired", "ip_evt_rx",
     "ip_evt_tx", "ip_evt_arp_timer", "ip_evt_other",

@@ -72,7 +72,7 @@ static uint32_t ulActiveFaults;                 /* the last health check's resul
 typedef struct xCTRL_HEALTH
 {
     uint32_t ulWho;                             /* counters at the last check */
-    uint32_t ulTimeouts;
+    uint32_t ulFailRuns;
     uint32_t ulOre;
     uint32_t ulStall;
     uint32_t ulOreRing[ CTRL_ORE_CHECKS ];      /* overruns per period, last second */
@@ -206,15 +206,16 @@ static uint32_t prvEvalFaults( void )
 {
     uint32_t ulReasons = 0U;
     uint32_t ulWho = Stats_Get( eStatImuWhoAmI );
-    uint32_t ulTimeouts = Stats_Get( eStatImuDrdyTimeout ) + Stats_Get( eStatImuSpiTimeout );
+    uint32_t ulFailRuns = Stats_Get( eStatImuFailRun );
     uint32_t ulOre = Stats_Get( eStatUartOre );
     uint32_t ulStall = Stats_Get( eStatTxUartStall );
     uint32_t ulOreInWindow = 0U;
     uint32_t x;
 
-    /* IMU: a WHO_AM_I failure, or APP_IMU_FAIL_LIMIT timeouts in one period
-     * (~10 samples at 100 Hz). Unsigned differences: right across a wrap. */
-    if( ( ulWho != xHealth.ulWho ) || ( ( ulTimeouts - xHealth.ulTimeouts ) >= APP_IMU_FAIL_LIMIT ) )
+    /* IMU: a WHO_AM_I failure, or APP_IMU_FAIL_LIMIT failed reads in a row
+     * (meas counts IMU_FAIL_RUN). Counted by meas, not as timeouts per
+     * period: at 10 Hz one DRDY timeout lasts 110 ms, longer than a check. */
+    if( ( ulWho != xHealth.ulWho ) || ( ulFailRuns != xHealth.ulFailRuns ) )
     {
         ulReasons |= APP_FAULT_IMU;
     }
@@ -267,7 +268,7 @@ static uint32_t prvEvalFaults( void )
     }
 
     xHealth.ulWho = ulWho;
-    xHealth.ulTimeouts = ulTimeouts;
+    xHealth.ulFailRuns = ulFailRuns;
     xHealth.ulOre = ulOre;
     xHealth.ulStall = ulStall;
 

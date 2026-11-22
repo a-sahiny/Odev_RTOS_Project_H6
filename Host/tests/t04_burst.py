@@ -67,7 +67,7 @@ def _level(h, res, mult, seconds, rng, rate_hz):
     offered = sum(sent.values()) / seconds + cmd_rate
     res.info("%s gönderilen" % lbl, "%s, komut %d (%.1f frame/s sunulan)" % (sent, len(rtts) + fails[0], offered))
     res.info("%s hat: host→kart" % lbl, "%.0f bayt/s (%d baud ≈ %d bayt/s)" %
-             ((h.link.tx_bytes - tx0) / seconds, getattr(h.link, "baud", 625000), getattr(h.link, "baud", 625000) // 10))
+             ((h.link.tx_bytes - tx0) / seconds, getattr(h.link, "baud", 1000000), getattr(h.link, "baud", 1000000) // 10))
     # RTT seri hattı da içerir (hat dolunca komut satırı veri satırlarının arkasında bekler);
     # önemli lane'in kart içi gecikmesi LAT_US'tur ve seviyeden bağımsız kalmalıdır.
     if mult <= 2:

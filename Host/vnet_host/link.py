@@ -76,7 +76,7 @@ class Link:
 
     def hold(self):
         """Hattı bir dizi yazım için ayırır (rapor 092): `with link.hold():` içinde başka thread'in
-        satırı (ör. GUI'nin GET_IMU poller'ı) araya giremez. Yarım bırakılıp bekletilen satırlar
+        satırı (ör. ARP cevabı) araya giremez. Yarım bırakılıp bekletilen satırlar
         (T01, T02 satır timeout'u) bunu kullanır: tek seri hatta yarım satırın arasına başka satır
         girerse kart ikisini tek, bozuk bir satır görür."""
         return self._tx_lock
@@ -115,7 +115,7 @@ class Link:
 
 
 class SerialLink(Link):
-    def __init__(self, port: str, baud: int = 625000):
+    def __init__(self, port: str, baud: int = 1000000):
         super().__init__()
         if serial is None:
             raise RuntimeError("pyserial yüklü değil: pip install pyserial")

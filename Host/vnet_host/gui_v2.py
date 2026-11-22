@@ -1,7 +1,7 @@
 """Grafik arayüz v2: gui.App + 'SET_RATE_DEBUG' butonu.
 
-SET_RATE_DEBUG: kaydırıcıdaki hızla SET_RATE paketini bir kez (tekrar denemesiz) gönderir, ardından
-host'un hatta yazmasını kilitler: komut tekrarları, ARP cevapları, üreteç, GET_IMU poller'ı ve diğer
+SET_RATE_DEBUG: seçilen hızla SET_RATE paketini bir kez (tekrar denemesiz) gönderir, ardından
+host'un hatta yazmasını kilitler: komut tekrarları, ARP cevapları, üreteç ve diğer
 butonlar dahil hiçbir bayt gitmez. Alma (RX) sürer, cevaplar ve raporlar görünmeye devam eder.
 Kilit 'Debug kilidini kaldır' butonuyla ya da yeni bir bağlantıyla kalkar.
 """

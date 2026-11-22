@@ -22,10 +22,10 @@
   *   ucPadFrame[]       uartTx only.
   * Held without owning: the network buffer / report block of the item being
   * turned into a line; released before the line is sent.
-  * Report 091: a GET_IMU OK reply goes to the FRONT of the queue (it waits
-  * for at most the one line on the wire and nothing can get ahead of it);
-  * every other item goes to the back. Its M1 -> M6 (request in -> last bit
-  * out, board time only) is measured here.
+  * A TELEM line goes to the FRONT of the queue (it waits for at most the one
+  * line on the wire and nothing can get ahead of it); every other item goes
+  * to the back. Its DRDY -> M6 (IMU sample -> last bit out, board time only)
+  * is measured here; meas puts it into the next TELEM.
   */
 #include "uart_tx.h"
 
@@ -43,6 +43,7 @@
 #include "app_stats.h"
 #include "crc.h"            /* Crc32_Eth */
 #include "pkt_format.h"     /* Pkt_ReadU16: big-endian, no checks */
+#include "meas_task.h"      /* Meas_GetTelemDrdy */
 #include "report.h"         /* Report_Release */
 #include "uart_link.h"      /* UartLink_SendDma */
 
@@ -61,31 +62,25 @@ static QueueHandle_t xUartTxQueue = NULL;       /* NULL = UartTx_Init not called
 
 static uint16_t usInjectedDelayMs;              /* TXDELAY, 0 = off (atomic)    */
 
-/* The last GET_IMU OK reply out: REQ_ID << 16 | M1 -> M6 us (report 091).
- * uartTx writes, ctrlTask reads; __atomic 32-bit. */
-static uint32_t ulLastImuReply;
+/* The last TELEM out: SEQ << 16 | DRDY -> M6 us. uartTx writes, meas reads;
+ * __atomic 32-bit. */
+static uint32_t ulLastTelem;
 
-/* ucImu of prvAdmit (report 092) */
-#define UART_TX_IMU_NONE        0U      /* not a GET_IMU reply                    */
-#define UART_TX_IMU_OK          1U      /* GET_IMU OK reply: may go to the front  */
-#define UART_TX_IMU_OTHER       2U      /* GET_IMU error reply (E_STATE, E_LEN)   */
-
-/* The GET_IMU reply now at the front of the queue (its network buffer), NULL
- * if none (report 092). Set by prvAdmit with the scheduler suspended, cleared
+/* The TELEM now at the front of the queue (its network buffer), NULL if
+ * none (report 092). Set by prvAdmit with the scheduler suspended, cleared
  * by uartTx when it takes that item; __atomic. At most one item sits at the
- * front: a second GET_IMU reply that comes before the first left goes to the
- * back, so a host asking faster than the line can send cannot starve the
- * other command replies behind an endless row of front items. */
-static void * pvImuAtFront;
+ * front: a second TELEM that comes before the first left goes to the back,
+ * so telemetry faster than the line can send cannot starve the command
+ * replies behind an endless row of front items. */
+static void * pvTelemAtFront;
 
-/* 1: uartTx has taken an item that was not a front GET_IMU reply since the
- * last one went to the front (report 092). A GET_IMU reply goes to the front
- * only then: when the line is slower than the host asks (T06 TXDELAY), front
- * items and the others take turns instead of the others waiting forever. On
- * a normal line the queue is empty when the next request comes, and nothing
- * changes. uartTx sets it, prvAdmit clears it (scheduler suspended);
- * __atomic. */
-static uint8_t ucImuMayFront = 1U;
+/* 1: uartTx has taken an item that was not a front TELEM since the last one
+ * went to the front (report 092). A TELEM goes to the front only then: when
+ * the line is slower than the telemetry (T06 TXDELAY), front items and the
+ * others take turns instead of the others waiting forever. On a normal line
+ * the queue is empty when the next TELEM comes, and nothing changes. uartTx
+ * sets it, prvAdmit clears it (scheduler suspended); __atomic. */
+static uint8_t ucTelemMayFront = 1U;
 
 static StaticTask_t xUartTxTcb;
 static StackType_t xUartTxStack[ APP_STACK_UART_TX_WORDS ];
@@ -104,13 +99,12 @@ static const char cHexDigits[] = "0123456789ABCDEF";    /* upper case (U7) */
 #define UART_TX_PREFIX_CHARS    ( sizeof( cFramePrefix ) - 1U )
 
 static eUartTxClass_t prvClassifyFrame( const uint8_t * pucFrame, size_t uxLen );
-static BaseType_t prvAdmit( UartTxItem_t * pxItem, uint8_t ucImu );
-static BaseType_t prvIsImuReply( const uint8_t * pucFrame, size_t uxLen );
+static BaseType_t prvAdmit( UartTxItem_t * pxItem, BaseType_t xTelem );
 static void prvOnTaken( const UartTxItem_t * pxItem );
 static void prvUartTxTask( void * pvParameters );
 static BaseType_t prvSendFrameLine( NetworkBufferDescriptor_t * pxDesc, eUartTxClass_t eClass );
-static BaseType_t prvImuReplyRx( const uint8_t * pucFrame, size_t uxLen, uint32_t * pulRxCycles, uint16_t * pusReqId );
-static void prvImuReplyDone( uint32_t ulRxCycles, uint16_t usReqId );
+static BaseType_t prvTelemSeq( const uint8_t * pucFrame, size_t uxLen, uint16_t * pusSeq );
+static void prvTelemDone( uint16_t usSeq );
 static BaseType_t prvSendReportLine( ReportDesc_t * pxReport );
 static size_t prvWriteHex( uint8_t * pucDst, const uint8_t * pucSrc, size_t uxLen );
 static BaseType_t prvSendLine( size_t uxChars );
@@ -123,7 +117,7 @@ _Static_assert( APP_UART_TX_DMA_BYTES >= ( UART_TX_PREFIX_CHARS + ( 2U * ( APP_F
                 "longest frame line fits the DMA buffer" );
 _Static_assert( APP_FRAME_FCS_BYTES == 4U, "FCS is one CRC-32" );
 _Static_assert( ( APP_UART_CHAR_US * APP_UART_BAUD ) == 10000000U, "APP_UART_CHAR_US is exactly 10 bits at APP_UART_BAUD (U8)" );
-_Static_assert( APP_IMU_REPLY_TARGET_MS < APP_IMU_REPLY_DEADLINE_MS, "target before deadline" );
+_Static_assert( APP_TELEM_TARGET_MS < APP_TELEM_DEADLINE_MS, "target before deadline" );
 _Static_assert( sizeof( "uartTx" ) <= configMAX_TASK_NAME_LEN, "task name fits" );
 
 /*---------------------------------------------------------------------------*/
@@ -212,35 +206,19 @@ BaseType_t UartTx_PostFrame( struct xNETWORK_BUFFER * pxDesc )
     }
     else
     {
-        uint32_t ulRx;
-        uint16_t usReqId;
-        uint8_t ucImu = UART_TX_IMU_NONE;
+        uint16_t usSeq;
+        BaseType_t xTelem;
 
         xItem.eType = eUartTxFrame;
         xItem.eClass = prvClassifyFrame( pxDesc->pucEthernetBuffer, pxDesc->xDataLength );
         xItem.pvData = pxDesc;
         xItem.ulPostCycles = 0U;        /* set by prvAdmit at the send */
 
-        if( xItem.eClass == eUartTxClassCtrl )
-        {
-            /* The GET_IMU OK reply has the deadline: it alone goes first
-             * (report 091). Every GET_IMU reply is kept out of the slots
-             * reserved for the other commands (report 092). */
-            if( prvImuReplyRx( pxDesc->pucEthernetBuffer, pxDesc->xDataLength, &ulRx, &usReqId ) == pdTRUE )
-            {
-                ucImu = UART_TX_IMU_OK;
-            }
-            else if( prvIsImuReply( pxDesc->pucEthernetBuffer, pxDesc->xDataLength ) == pdTRUE )
-            {
-                ucImu = UART_TX_IMU_OTHER;
-            }
-            else
-            {
-                /* START / STOP / SET_RATE / GET_STATS reply */
-            }
-        }
+        /* TELEM has the deadline: it alone may go first. It never uses the
+         * slots reserved for command replies (class Other). */
+        xTelem = prvTelemSeq( pxDesc->pucEthernetBuffer, pxDesc->xDataLength, &usSeq );
 
-        xResult = prvAdmit( &xItem, ucImu );
+        xResult = prvAdmit( &xItem, xTelem );
     }
 
     return xResult;
@@ -263,7 +241,7 @@ BaseType_t UartTx_PostReport( ReportDesc_t * pxReport )
     xItem.pvData = pxReport;
     xItem.ulPostCycles = 0U;
 
-    return prvAdmit( &xItem, UART_TX_IMU_NONE );
+    return prvAdmit( &xItem, pdFALSE );
 }
 
 /*---------------------------------------------------------------------------*/
@@ -298,12 +276,11 @@ static eUartTxClass_t prvClassifyFrame( const uint8_t * pucFrame, size_t uxLen )
 
 /*---------------------------------------------------------------------------*/
 /* prvAdmit: queue the item if its class may use the free slots (docs 10.1). */
-/* xFront (a GET_IMU OK reply, report 091): to the front; uartTx sends it    */
-/* right after the line on the wire, nothing else can get ahead of it. Every */
-/* other item, other command replies too, to the back. Report 092: only ONE */
-/* item at the front at a time (pvImuAtFront), and the next one only after   */
-/* uartTx has taken some other item (ucImuMayFront): a second GET_IMU reply  */
-/* waits at the back like the other replies.                                 */
+/* xTelem (a TELEM frame): to the front; uartTx sends it right after the     */
+/* line on the wire, nothing else can get ahead of it. Every other item,     */
+/* command replies too, to the back. Report 092: only ONE item at the front  */
+/* at a time (pvTelemAtFront), and the next one only after uartTx has taken  */
+/* some other item (ucTelemMayFront): a second TELEM waits at the back.      */
 /* Four tasks post non-control items (P6, P5, P4, P1). With the scheduler    */
 /* suspended none of them can run between the check and the send, so the    */
 /* last APP_TXQ_RESERVE slots stay for control frames (U4-B). Interrupts     */
@@ -311,7 +288,7 @@ static eUartTxClass_t prvClassifyFrame( const uint8_t * pucFrame, size_t uxLen )
 /* suspended (queue.c:965 asserts only for a wait); a task it wakes is put   */
 /* on xPendingReadyList and moved at xTaskResumeAll (tasks.c:4097).          */
 /*---------------------------------------------------------------------------*/
-static BaseType_t prvAdmit( UartTxItem_t * pxItem, uint8_t ucImu )
+static BaseType_t prvAdmit( UartTxItem_t * pxItem, BaseType_t xTelem )
 {
     eStatId_t eOutcome;
     UBaseType_t uxSpaces;
@@ -323,16 +300,13 @@ static BaseType_t prvAdmit( UartTxItem_t * pxItem, uint8_t ucImu )
     {
         uxSpaces = uxQueueSpacesAvailable( xUartTxQueue );
 
-        /* Report 092: only the one GET_IMU OK reply that goes to the front
-         * may use the last slots; every other GET_IMU reply (a second OK one
-         * while the front is taken, an E_STATE one) is an ordinary item for
-         * the reserve. So a host asking for the IMU faster than the line can
-         * send never uses up the slots kept for START / STOP / SET_RATE /
-         * GET_STATS replies (T06 with TXDELAY and the GUI watching). */
-        xToFront = ( ( ucImu == UART_TX_IMU_OK ) &&
-                     ( __atomic_load_n( &pvImuAtFront, __ATOMIC_RELAXED ) == NULL ) &&
-                     ( __atomic_load_n( &ucImuMayFront, __ATOMIC_RELAXED ) != 0U ) ) ? pdTRUE : pdFALSE;
-        xMayUseReserve = ( ( pxItem->eClass == eUartTxClassCtrl ) && ( ( ucImu == UART_TX_IMU_NONE ) || ( xToFront == pdTRUE ) ) ) ? pdTRUE : pdFALSE;
+        /* Only command replies may use the last slots: TELEM (up to 200 a
+         * second) never uses up the slots kept for START / STOP / SET_RATE /
+         * GET_STATS replies, even when the line is slow (T06 with TXDELAY). */
+        xToFront = ( ( xTelem == pdTRUE ) &&
+                     ( __atomic_load_n( &pvTelemAtFront, __ATOMIC_RELAXED ) == NULL ) &&
+                     ( __atomic_load_n( &ucTelemMayFront, __ATOMIC_RELAXED ) != 0U ) ) ? pdTRUE : pdFALSE;
+        xMayUseReserve = ( pxItem->eClass == eUartTxClassCtrl ) ? pdTRUE : pdFALSE;
 
         if( uxSpaces == 0U )
         {
@@ -349,8 +323,8 @@ static BaseType_t prvAdmit( UartTxItem_t * pxItem, uint8_t ucImu )
             /* Cannot fail: a slot is free and no other task runs (B9). */
             if( xToFront == pdTRUE )
             {
-                __atomic_store_n( &pvImuAtFront, pxItem->pvData, __ATOMIC_RELAXED );
-                __atomic_store_n( &ucImuMayFront, 0U, __ATOMIC_RELAXED );
+                __atomic_store_n( &pvTelemAtFront, pxItem->pvData, __ATOMIC_RELAXED );
+                __atomic_store_n( &ucTelemMayFront, 0U, __ATOMIC_RELAXED );
                 xSent = xQueueSendToFront( xUartTxQueue, pxItem, 0U );
             }
             else
@@ -377,19 +351,19 @@ static BaseType_t prvAdmit( UartTxItem_t * pxItem, uint8_t ucImu )
 
 /*---------------------------------------------------------------------------*/
 /* prvOnTaken: uartTx took pxItem from the queue (report 092). The front    */
-/* GET_IMU reply has left: the front is free again. Any other item had its  */
-/* turn: the next GET_IMU reply may go to the front again. Only uartTx      */
-/* calls it; prvAdmit reads both inside its scheduler suspend.              */
+/* TELEM has left: the front is free again. Any other item had its turn:     */
+/* the next TELEM may go to the front again. Only uartTx calls it; prvAdmit  */
+/* reads both inside its scheduler suspend.                                  */
 /*---------------------------------------------------------------------------*/
 static void prvOnTaken( const UartTxItem_t * pxItem )
 {
-    if( pxItem->pvData == __atomic_load_n( &pvImuAtFront, __ATOMIC_RELAXED ) )
+    if( pxItem->pvData == __atomic_load_n( &pvTelemAtFront, __ATOMIC_RELAXED ) )
     {
-        __atomic_store_n( &pvImuAtFront, NULL, __ATOMIC_RELAXED );
+        __atomic_store_n( &pvTelemAtFront, NULL, __ATOMIC_RELAXED );
     }
     else
     {
-        __atomic_store_n( &ucImuMayFront, 1U, __ATOMIC_RELAXED );
+        __atomic_store_n( &ucTelemMayFront, 1U, __ATOMIC_RELAXED );
     }
 }
 
@@ -460,16 +434,12 @@ static BaseType_t prvSendFrameLine( NetworkBufferDescriptor_t * pxDesc, eUartTxC
     size_t uxPos;
     uint32_t ulFcs;
     uint8_t ucFcs[ APP_FRAME_FCS_BYTES ];
-    uint32_t ulRxCycles = 0U;
-    uint16_t usReqId = 0U;
-    BaseType_t xImuReply = pdFALSE;
+    uint16_t usSeq = 0U;
+    BaseType_t xTelem;
     BaseType_t xSent;
 
-    /* Read before the buffer goes back (report 086). */
-    if( eClass == eUartTxClassCtrl )
-    {
-        xImuReply = prvImuReplyRx( pucFrame, uxLen, &ulRxCycles, &usReqId );
-    }
+    /* Read before the buffer goes back. Command replies are never TELEM. */
+    xTelem = ( eClass == eUartTxClassOther ) ? prvTelemSeq( pucFrame, uxLen, &usSeq ) : pdFALSE;
 
     if( uxLen < APP_FRAME_MIN_BYTES )
     {
@@ -498,92 +468,95 @@ static BaseType_t prvSendFrameLine( NetworkBufferDescriptor_t * pxDesc, eUartTxC
 
     xSent = prvSendLine( uxPos );
 
-    if( ( xSent == pdPASS ) && ( xImuReply == pdTRUE ) )
+    if( ( xSent == pdPASS ) && ( xTelem == pdTRUE ) )
     {
-        prvImuReplyDone( ulRxCycles, usReqId );
+        prvTelemDone( usSeq );
     }
 
     return xSent;
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvImuReplyRx: is this frame a GET_IMU OK reply? Then its t_rx (the       */
-/* request's M1) and REQ_ID. prvClassifyFrame already found IPv4 / UDP /     */
-/* source port 5000; cmd.c built the packet, so its CRC is not checked here. */
+/* prvTelemSeq: is this frame a TELEM (IPv4, UDP from port 5002, TYPE TELEM, */
+/* LEN 23)? Then its header SEQ. meas built the packet, so its CRC is not   */
+/* checked here.                                                             */
 /*---------------------------------------------------------------------------*/
-static BaseType_t prvImuReplyRx( const uint8_t * pucFrame, size_t uxLen, uint32_t * pulRxCycles, uint16_t * pusReqId )
+static BaseType_t prvTelemSeq( const uint8_t * pucFrame, size_t uxLen, uint16_t * pusSeq )
 {
     BaseType_t xFound = pdFALSE;
-    const size_t uxPkt = UART_TX_ETH_HDR_BYTES + ( ( size_t ) ( pucFrame[ UART_TX_ETH_HDR_BYTES ] & 0x0FU ) * 4U ) + UART_TX_UDP_HDR_BYTES;
-    const uint8_t * pucPkt = &pucFrame[ uxPkt ];
+    size_t uxIpHdrBytes;
+    const uint8_t * pucPkt;
 
-    if( ( uxLen >= ( uxPkt + APP_PKT_OVERHEAD_BYTES + APP_RESP_COMMON_BYTES + APP_LEN_IMU_REPLY ) ) &&
-        ( pucPkt[ 0 ] == APP_PKT_SOF ) &&
-        ( pucPkt[ 2 ] == APP_TYPE_CMD_GET_IMU ) &&
-        ( pucPkt[ 3 ] == APP_PKT_FLAG_RESP ) &&
-        ( pucPkt[ 8 ] == ( APP_RESP_COMMON_BYTES + APP_LEN_IMU_REPLY ) ) )
+    if( ( uxLen >= ( UART_TX_ETH_HDR_BYTES + UART_TX_IP_MIN_HDR_BYTES ) ) &&
+        ( Pkt_ReadU16( &pucFrame[ UART_TX_ETH_TYPE_OFFSET ] ) == UART_TX_ETH_TYPE_IPV4 ) &&
+        ( ( pucFrame[ UART_TX_ETH_HDR_BYTES ] >> 4 ) == 4U ) &&
+        ( pucFrame[ UART_TX_ETH_HDR_BYTES + UART_TX_IP_PROTO_OFFSET ] == UART_TX_IP_PROTO_UDP ) )
     {
-        *pulRxCycles = Pkt_ReadU32( &pucPkt[ APP_PKT_HEADER_BYTES + APP_RESP_COMMON_BYTES + APP_IMU_REPLY_RX_OFFSET ] );
-        *pusReqId = Pkt_ReadU16( &pucPkt[ 6 ] );        /* REQ_ID (docs 15.1) */
-        xFound = pdTRUE;
+        uxIpHdrBytes = ( size_t ) ( pucFrame[ UART_TX_ETH_HDR_BYTES ] & 0x0FU ) * 4U;
+        pucPkt = &pucFrame[ UART_TX_ETH_HDR_BYTES + uxIpHdrBytes + UART_TX_UDP_HDR_BYTES ];
+
+        if( ( uxIpHdrBytes >= UART_TX_IP_MIN_HDR_BYTES ) &&
+            ( uxLen >= ( UART_TX_ETH_HDR_BYTES + uxIpHdrBytes + UART_TX_UDP_HDR_BYTES + APP_PKT_OVERHEAD_BYTES + APP_LEN_TELEM ) ) &&
+            ( Pkt_ReadU16( &pucFrame[ UART_TX_ETH_HDR_BYTES + uxIpHdrBytes ] ) == APP_UDP_PORT_TELEM ) &&
+            ( pucPkt[ 0 ] == APP_PKT_SOF ) &&
+            ( pucPkt[ 2 ] == APP_TYPE_TELEM ) &&
+            ( pucPkt[ 8 ] == APP_LEN_TELEM ) )
+        {
+            *pusSeq = Pkt_ReadU16( &pucPkt[ 4 ] );     /* SEQ (docs 15.1) */
+            xFound = pdTRUE;
+        }
     }
 
     return xFound;
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvIsImuReply: any reply to GET_IMU (OK or error), report 092. Same       */
-/* reading as prvImuReplyRx: prvClassifyFrame found IPv4 / UDP / port 5000.  */
+/* prvTelemDone: M6 = the instant the TX done interrupt saw the last bit of  */
+/* this TELEM line leave the UART. DRDY -> M6 into the histogram; over the   */
+/* target and over the deadline are counted; the value goes into the next   */
+/* TELEM. Board time only: no USB / PC part. Unsigned difference: right      */
+/* across a CYCCNT wrap. A TELEM whose DRDY slot is gone (more than          */
+/* APP_TELEM_DRDY_SLOTS in flight) is not measured.                          */
 /*---------------------------------------------------------------------------*/
-static BaseType_t prvIsImuReply( const uint8_t * pucFrame, size_t uxLen )
+static void prvTelemDone( uint16_t usSeq )
 {
-    const size_t uxPkt = UART_TX_ETH_HDR_BYTES + ( ( size_t ) ( pucFrame[ UART_TX_ETH_HDR_BYTES ] & 0x0FU ) * 4U ) + UART_TX_UDP_HDR_BYTES;
-    const uint8_t * pucPkt = &pucFrame[ uxPkt ];
-
-    return ( ( uxLen >= ( uxPkt + APP_PKT_HEADER_BYTES ) ) &&
-             ( pucPkt[ 0 ] == APP_PKT_SOF ) &&
-             ( pucPkt[ 2 ] == APP_TYPE_CMD_GET_IMU ) &&
-             ( ( pucPkt[ 3 ] & APP_PKT_FLAG_RESP ) != 0U ) ) ? pdTRUE : pdFALSE;
-}
-
-/*---------------------------------------------------------------------------*/
-/* prvImuReplyDone: M6 = the instant the TX done interrupt saw the last bit */
-/* leave the UART (report 091). M1 -> M6 into the histogram; over the target */
-/* and over the deadline are counted (report 086 G1); the value goes into    */
-/* the next GET_IMU reply. Board time only: no USB / Windows part. Unsigned  */
-/* difference: right across a CYCCNT wrap.                                   */
-/*---------------------------------------------------------------------------*/
-static void prvImuReplyDone( uint32_t ulRxCycles, uint16_t usReqId )
-{
-    const uint32_t ulCycles = UartLink_GetTxDoneCycles() - ulRxCycles;
     const uint32_t ulCyclesPerMs = ( uint32_t ) ( configCPU_CLOCK_HZ / 1000UL );
-    uint32_t ulUs = ulCycles / ( uint32_t ) ( configCPU_CLOCK_HZ / 1000000UL );
+    uint32_t ulDrdy;
+    uint32_t ulCycles;
+    uint32_t ulUs;
 
-    /* uartTx is the only writer of eLatImuReply. */
-    Stats_LatencyAdd( eLatImuReply, ulCycles );
-
-    if( ulCycles > ( APP_IMU_REPLY_TARGET_MS * ulCyclesPerMs ) )
+    if( Meas_GetTelemDrdy( usSeq, &ulDrdy ) == pdPASS )
     {
-        Stats_Inc( eStatImuReplyOver10 );
-    }
+        ulCycles = UartLink_GetTxDoneCycles() - ulDrdy;
+        ulUs = ulCycles / ( uint32_t ) ( configCPU_CLOCK_HZ / 1000000UL );
 
-    if( ulCycles > ( APP_IMU_REPLY_DEADLINE_MS * ulCyclesPerMs ) )
-    {
-        Stats_Inc( eStatImuReplyMiss );
-    }
+        /* uartTx is the only writer of eLatTelem. */
+        Stats_LatencyAdd( eLatTelem, ulCycles );
 
-    if( ulUs > 0xFFFFU )
-    {
-        ulUs = 0xFFFFU;
-    }
+        if( ulCycles > ( APP_TELEM_TARGET_MS * ulCyclesPerMs ) )
+        {
+            Stats_Inc( eStatTelemOver10 );
+        }
 
-    __atomic_store_n( &ulLastImuReply, ( ( uint32_t ) usReqId << 16 ) | ulUs, __ATOMIC_RELAXED );
+        if( ulCycles > ( APP_TELEM_DEADLINE_MS * ulCyclesPerMs ) )
+        {
+            Stats_Inc( eStatTelemMiss );
+        }
+
+        if( ulUs > 0xFFFFU )
+        {
+            ulUs = 0xFFFFU;
+        }
+
+        /* Never 0 (meas reads 0 as "none yet"): a line takes > 1 ms. */
+        __atomic_store_n( &ulLastTelem, ( ( uint32_t ) usSeq << 16 ) | ulUs, __ATOMIC_RELAXED );
+    }
 }
 
 /*---------------------------------------------------------------------------*/
-uint32_t UartTx_GetLastImuReply( void )
+uint32_t UartTx_GetLastTelem( void )
 {
-    return __atomic_load_n( &ulLastImuReply, __ATOMIC_RELAXED );
+    return __atomic_load_n( &ulLastTelem, __ATOMIC_RELAXED );
 }
 
 /*---------------------------------------------------------------------------*/
@@ -621,8 +594,8 @@ static size_t prvWriteHex( uint8_t * pucDst, const uint8_t * pucSrc, size_t uxLe
 
 /*---------------------------------------------------------------------------*/
 /* prvSendLine: send ucUartTxDma[ 0 .. uxChars ) and wait for the end, at   */
-/* most the line time + APP_UART_TX_MARGIN_MS (U8): ceil( n x 16 us ) ms +  */
-/* 20 ms at 625000 baud; 544 characters -> 9 + 20 = 29 ms, the limit        */
+/* most the line time + APP_UART_TX_MARGIN_MS (U8): ceil( n x 10 us ) ms +  */
+/* 20 ms at 1 Mbaud; 544 characters -> 6 + 20 = 26 ms, the limit            */
 /* UartLink_SendDma asserts.                                                 */
 /*---------------------------------------------------------------------------*/
 static BaseType_t prvSendLine( size_t uxChars )

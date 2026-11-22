@@ -137,8 +137,6 @@ typedef enum eSTAT_ID
     eStatCmdInvalid,            /* answered with an error status: E_LEN, E_RANGE,
                                  * E_STATE, E_TYPE, E_REQID                      */
     eStatCmdReplyFail,         /* FreeRTOS_sendto of a reply gave 0 / < 0 (report 065 K7) */
-    eStatCmdImuOk,              /* GET_IMU answered OK (report 092: not in CMD_NEW)          */
-    eStatCmdImuRefused,         /* GET_IMU answered with an error (not in CMD_INVALID)       */
     /* worker (report 072 K9): EnvPkts + EnvBad + BulkPkts + CalApplied +
      * CalRejected = evt_handled_work; BulkBad is a part of BulkPkts. */
     eStatEnvPkts,               /* ENV packets taken into the channel table   */
@@ -156,6 +154,7 @@ typedef enum eSTAT_ID
     eStatImuWhoAmI,
     eStatImuDrdyTimeout,
     eStatImuSpiTimeout,
+    eStatImuFailRun,            /* APP_IMU_FAIL_LIMIT reads in a row failed (-> FAULT IMU) */
 
     /* L7 UART TX. txq_ok = count( eLatTxqCtrl ) + count( eLatTxqOther ) once
      * the queue is empty (report 062, B2). */
@@ -167,8 +166,8 @@ typedef enum eSTAT_ID
     eStatTxBadLen,              /* frame refused before the queue: length 0 or > 256 */
     eStatTxLines,
     eStatTxUartStall,
-    eStatImuReplyOver10,        /* GET_IMU reply: M1 -> M6 > 10 ms (target; report 086) */
-    eStatImuReplyMiss,          /* GET_IMU reply: M1 -> M6 > 12 ms (deadline missed)    */
+    eStatTelemOver10,           /* TELEM: DRDY -> TX done > 10 ms (target)       */
+    eStatTelemMiss,             /* TELEM: DRDY -> TX done > 12 ms (deadline missed) */
 
     /* System state (sys_state.c) */
     eStatFaultRaised,           /* FAULT went 0 -> 1 (SysState_RaiseFault)     */
@@ -248,7 +247,7 @@ typedef enum eLAT_ID
     eLatCmd,                    /* M1 -> M3: callback -> reply built (LAT_US)  writer: ctrlTask   */
     eLatTxqCtrl,                /* M4 -> M5: in xUartTxQueue, CTRL class       writer: uartTx     */
     eLatTxqOther,               /* M4 -> M5: every other item (B2)             writer: uartTx     */
-    eLatImuReply,               /* M1 -> M6: GET_IMU request -> reply line out writer: uartTx     */
+    eLatTelem,                  /* DRDY -> M6: IMU sample -> TELEM line out    writer: uartTx     */
     eLatCount
 } eLatId_t;
 

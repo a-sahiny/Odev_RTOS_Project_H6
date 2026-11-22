@@ -125,8 +125,8 @@ class App:
         self.port_cb.pack(side="left", padx=(4, 2))
         ttk.Button(top, text="↻", width=3, command=self._refresh_ports).pack(side="left")
         ttk.Label(top, text="Baud").pack(side="left", padx=(10, 2))
-        self.baud_var = tk.StringVar(value="625000")
-        ttk.Combobox(top, textvariable=self.baud_var, values=("625000", "576000", "460800", "115200"), width=8).pack(side="left")
+        self.baud_var = tk.StringVar(value="1000000")
+        ttk.Combobox(top, textvariable=self.baud_var, values=("1000000", "625000", "115200"), width=8).pack(side="left")
         self.btn_conn = ttk.Button(top, text="Karta bağlan", command=self._connect_serial)
         self.btn_conn.pack(side="left", padx=(10, 2))
         self.btn_sim = ttk.Button(top, text="Simülatör", command=self._connect_sim)
@@ -187,13 +187,13 @@ class App:
         g.columnconfigure((0, 1), weight=1)
         ttk.Button(g, text="▶ START", command=lambda: self._cmd("START")).grid(row=0, column=0, sticky="ew", padx=3, pady=3)
         ttk.Button(g, text="■ STOP", command=lambda: self._cmd("STOP")).grid(row=0, column=1, sticky="ew", padx=3, pady=3)
-        ttk.Label(g, text="Telemetri hızı (Hz)").grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        self.rate_var = tk.IntVar(value=10)
+        ttk.Label(g, text="IMU / telemetri hızı (Hz): her IMU örneği bir TELEM").grid(row=1, column=0, columnspan=2,
+                                                                                    sticky="w", pady=(8, 0))
+        self.rate_var = tk.IntVar(value=proto.RATE_DEFAULT_HZ)
         rr = ttk.Frame(g)
         rr.grid(row=2, column=0, columnspan=2, sticky="ew")
-        ttk.Scale(rr, from_=1, to=50, variable=self.rate_var, orient="horizontal",
-                  command=lambda v: self.rate_var.set(int(float(v)))).pack(side="left", fill="x", expand=True)
-        ttk.Label(rr, textvariable=self.rate_var, width=3).pack(side="left")
+        ttk.Combobox(rr, textvariable=self.rate_var, values=proto.RATES_HZ, state="readonly",
+                     width=6).pack(side="left")
         ttk.Button(g, text="SET_RATE uygula", command=lambda: self._cmd("RATE")).grid(row=3, column=0, columnspan=2,
                                                                                     sticky="ew", padx=3, pady=3)
         ttk.Button(g, text="GET_STATS (Sayaçlar)", command=self._read_counters).grid(row=4, column=0, columnspan=2,
@@ -249,8 +249,9 @@ class App:
         self.nb.add(f, text="Telemetri")
         bar = ttk.Frame(f)
         bar.pack(fill="x")
-        self.tel_vars = {k: tk.StringVar(value="—") for k in ("rx", "hz", "gap", "idx", "last")}
-        for k, txt in (("rx", "Alınan"), ("hz", "Hız (Hz)"), ("gap", "Kayıp (SEQ boşluğu)"), ("idx", "Örnek indeksi")):
+        self.tel_vars = {k: tk.StringVar(value="—") for k in ("rx", "hz", "gap", "lat", "last")}
+        for k, txt in (("rx", "Alınan"), ("hz", "Hız (Hz)"), ("gap", "Kayıp (SEQ boşluğu)"),
+                       ("lat", "Kart gecikmesi DRDY→TX (ms)")):
             box = ttk.Frame(bar, padding=(0, 0, 24, 0))
             box.pack(side="left")
             ttk.Label(box, text=txt, style="Small.TLabel").pack(anchor="w")
@@ -681,7 +682,7 @@ class App:
             self.plot_a.add(data.accel)
             self.plot_g.add(data.gyro)
         elif kind == "response":
-            if data.state != getattr(self, "_last_state", None):     # GET_IMU 100 Hz: değişince çiz
+            if data.state != getattr(self, "_last_state", None):     # değişince çiz
                 self._last_state = data.state
                 self._state_chips(data.state)
         elif kind == "resp_show":
@@ -796,6 +797,7 @@ class App:
     def _telem_reset(self):
         if self.h:
             self.h.telem.reset()
+            self.h.telem_lat.reset()
         self.plot_a.clear()
         self.plot_g.clear()
 
@@ -805,10 +807,15 @@ class App:
             self.tel_vars["rx"].set(str(t.received))
             self.tel_vars["hz"].set("%.1f" % t.rate_hz() if t.received > 1 else "—")
             self.tel_vars["gap"].set(str(t.gaps))
+            lat = self.h.telem_lat
+            if lat.n:
+                self.tel_vars["lat"].set("%.2f / %.2f" % (lat.values[-1], lat.max))
             if t.last is not None:
-                self.tel_vars["idx"].set(str(t.last.index))
-                self.tel_vars["last"].set("son: SEQ %d, tick %d ms, ivme %s LSB, jiroskop %s LSB" % (
-                    t.last.seq, t.last.tick, t.last.accel, t.last.gyro))
+                self.tel_vars["last"].set(
+                    "son: SEQ %d, ivme %s LSB, jiroskop %s LSB, roll %+.2f° pitch %+.2f° yaw %+.2f° | "
+                    "gecikme son / en çok, %d ölçüm, >12 ms %d" % (
+                        t.last.seq, t.last.accel, t.last.gyro, t.last.roll, t.last.pitch, t.last.yaw,
+                        lat.n, lat.over_deadline))
             self.plot_a.redraw()
             self.plot_g.redraw()
             lk = self.h.link

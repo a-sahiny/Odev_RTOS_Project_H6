@@ -2,8 +2,8 @@
   ******************************************************************************
   * @file    cmd.c
   * @brief   Command handler of ctrlTask (docs 16.1-16.4): validate, execute,
-  *          reply. Künye: report 065. GET_IMU (roll / pitch / yaw, deadline
-  *          12 ms): report 086 / 088.
+  *          reply. Künye: report 065. SET_RATE sets the IMU rate (one of
+  *          APP_RATE_LIST_HZ); the attitude goes out in every TELEM.
   ******************************************************************************
   * No RTOS object. Runs in ctrlTask only; its state (reply buffer, reply
   * SEQ) is touched by that task alone.
@@ -27,12 +27,11 @@
 #include "app_config.h"
 #include "app_stats.h"
 #include "ctrl_task.h"      /* CtrlTask_GetActiveFaults */
-#include "meas_task.h"      /* Meas_SetDestination / SetRateHz / GetRateHz / GetAttitude */
+#include "meas_task.h"      /* Meas_SetDestination / IsRateValid / SetRateHz / GetRateHz */
 #include "pkt_format.h"
 #include "report.h"         /* Report_Fault (START clears a FAULT) */
 #include "sys_state.h"
 #include "udp_in.h"         /* UdpIn_GetCtrlSocket */
-#include "uart_tx.h"        /* UartTx_GetLastImuReply (GET_IMU, report 091) */
 #include "worker_task.h"    /* Worker_GetEnvStats (GET_STATS page 3; step 16) */
 
 /* Largest reply payload: the common part plus GET_STATS (step 15c). */
@@ -77,15 +76,12 @@ static uint16_t usReplySeq;                          /* board -> host replies  *
 static CmdDedup_t xDedup[ APP_DEDUP_SLOTS ];
 static uint8_t ucDedupNext;                          /* the oldest slot: the next one written */
 static StatsSnapshot_t xSnap;                        /* GET_STATS; too big for ctrlTask's stack */
-static ImuAttitude_t xImu;                           /* GET_IMU: the copy prvValidate took */
 
 static eCmdSeen_t prvDedupCheck( const AppDesc_t * pxDesc, const CmdDedup_t ** ppxEntry );
 static void prvDedupStore( const AppDesc_t * pxDesc, uint8_t ucStatus, const uint8_t * pucExtra, size_t uxExtra );
 static size_t prvKeptBytes( const AppDesc_t * pxDesc );
 static uint8_t prvValidate( const AppDesc_t * pxDesc );
 static uint8_t prvValidateStart( void );
-static uint8_t prvValidateGetImu( void );
-static size_t prvWriteImu( const AppDesc_t * pxDesc, uint8_t * pucOut );
 static void prvExecute( const AppDesc_t * pxDesc );
 static size_t prvTypeSpecific( const AppDesc_t * pxDesc, uint8_t ucStatus, uint8_t * pucOut );
 static size_t prvExecGetStats( uint8_t ucPage, uint8_t * pucOut );
@@ -100,10 +96,6 @@ _Static_assert( CMD_COUNTERS_PER_PAGE <= UINT8_MAX, "n is one byte" );
 _Static_assert( APP_RESP_COMMON_BYTES == 6U, "STATUS EPOCH(2) STATE LAT_US(2)" );
 _Static_assert( ( APP_LEN_SET_RATE == 2U ) && ( APP_LEN_GET_STATS == 1U ), "payload layout below" );
 _Static_assert( APP_DEDUP_PAYLOAD_BYTES >= APP_LEN_SET_RATE, "a command payload fits a dedup entry whole" );
-_Static_assert( APP_LEN_IMU_REPLY == ( 4U + 4U + ( 9U * 2U ) + 1U + 4U + 4U ), "GET_IMU reply layout below (reports 086, 091)" );
-_Static_assert( APP_IMU_REPLY_PREV_OFFSET == 27U, "prev follows flags" );
-_Static_assert( ( APP_IMU_REPLY_RX_OFFSET + 4U ) == APP_LEN_IMU_REPLY, "t_rx is the last field" );
-_Static_assert( APP_LEN_IMU_REPLY <= CMD_EXTRA_MAX_BYTES, "the GET_IMU reply fits" );
 _Static_assert( ( APP_DEDUP_SLOTS > 0U ) && ( APP_DEDUP_SLOTS <= UINT8_MAX ), "slot index is 8 bits" );
 
 /*---------------------------------------------------------------------------*/
@@ -134,19 +126,6 @@ eAppDescAction_t Cmd_Handle( void * pvData )
         /* A command must carry an id (docs 15.1); not stored. */
         ucStatus = APP_ST_E_REQID;
         Stats_Inc( eStatCmdInvalid );
-        uxExtra = prvTypeSpecific( pxDesc, ucStatus, &ucPayload[ APP_RESP_COMMON_BYTES ] );
-    }
-    else if( pxDesc->ucType == APP_TYPE_CMD_GET_IMU )
-    {
-        /* A read with no side effect that the host asks up to 100 times a
-         * second: it stays out of the duplicate window, which would
-         * otherwise forget START / STOP within 80 ms (report 086 G2). A
-         * repeated REQ_ID simply reads the attitude again. */
-        ucStatus = prvValidate( pxDesc );
-        /* Its own counters (report 092): the GET_IMU stream (up to 50 per
-         * second) does not change what START / STOP / SET_RATE / GET_STATS
-         * counted, so those stay readable while the IMU is being watched. */
-        Stats_Inc( ( ucStatus == APP_ST_OK ) ? eStatCmdImuOk : eStatCmdImuRefused );
         uxExtra = prvTypeSpecific( pxDesc, ucStatus, &ucPayload[ APP_RESP_COMMON_BYTES ] );
     }
     else
@@ -325,7 +304,9 @@ static uint8_t prvValidate( const AppDesc_t * pxDesc )
             {
                 usRate = Pkt_ReadU16( pxDesc->ucData );
 
-                if( ( usRate < APP_RATE_MIN_HZ ) || ( usRate > APP_RATE_MAX_HZ ) )
+                /* Only the rates of APP_RATE_LIST_HZ (10 / 20 / 50 / 100 /
+                 * 200 Hz): each is an exact IMU rate. */
+                if( Meas_IsRateValid( usRate ) == pdFALSE )
                 {
                     ucStatus = APP_ST_E_RANGE;
                 }
@@ -346,10 +327,6 @@ static uint8_t prvValidate( const AppDesc_t * pxDesc )
             {
                 /* a valid page */
             }
-            break;
-
-        case APP_TYPE_CMD_GET_IMU:
-            ucStatus = ( pxDesc->usLen != APP_LEN_GET_IMU ) ? APP_ST_E_LEN : prvValidateGetImu();
             break;
 
         default:
@@ -384,60 +361,6 @@ static uint8_t prvValidateStart( void )
     }
 
     return ucStatus;
-}
-
-/*---------------------------------------------------------------------------*/
-/* prvValidateGetImu: report 086: only while a measurement runs (after START,*/
-/* before STOP / FAULT) and once it has a sample. Takes the copy the reply   */
-/* is written from (meas cannot change the START in between: only ctrlTask   */
-/* handles START).                                                           */
-/*---------------------------------------------------------------------------*/
-static uint8_t prvValidateGetImu( void )
-{
-    uint8_t ucStatus = APP_ST_OK;
-
-    if( ( SysState_Get() & APP_BIT_MEAS_EN ) == 0U )
-    {
-        ucStatus = APP_ST_E_STATE;
-    }
-    else if( Meas_GetAttitude( &xImu ) != pdPASS )
-    {
-        /* The first sample of this START is not in yet (<= 10 ms). */
-        ucStatus = APP_ST_E_STATE;
-    }
-    else
-    {
-        /* a sample to answer with */
-    }
-
-    return ucStatus;
-}
-
-/*---------------------------------------------------------------------------*/
-/* prvWriteImu: the 35 B after the common part, big-endian (086, 091).      */
-/*---------------------------------------------------------------------------*/
-static size_t prvWriteImu( const AppDesc_t * pxDesc, uint8_t * pucOut )
-{
-    size_t x;
-
-    Pkt_WriteU32( &pucOut[ 0 ], xImu.ulIndex );
-    Pkt_WriteU32( &pucOut[ 4 ], xImu.ulTick );
-
-    for( x = 0U; x < 3U; x++ )
-    {
-        Pkt_WriteU16( &pucOut[ 8U + ( 2U * x ) ], ( uint16_t ) xImu.sAccel[ x ] );
-        Pkt_WriteU16( &pucOut[ 14U + ( 2U * x ) ], ( uint16_t ) xImu.sGyro[ x ] );
-        Pkt_WriteU16( &pucOut[ 20U + ( 2U * x ) ], ( uint16_t ) xImu.sAngle[ x ] );
-    }
-
-    pucOut[ 26 ] = xImu.ucFlags;
-    /* The board's own M1 -> M6 of the previous reply (uartTx measured it
-     * after that line left): the host sees the deadline in board time,
-     * without its USB / Windows part (report 091). */
-    Pkt_WriteU32( &pucOut[ APP_IMU_REPLY_PREV_OFFSET ], UartTx_GetLastImuReply() );
-    Pkt_WriteU32( &pucOut[ APP_IMU_REPLY_RX_OFFSET ], pxDesc->ulRxCycles );     /* M1 */
-
-    return APP_LEN_IMU_REPLY;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -476,7 +399,7 @@ static void prvExecute( const AppDesc_t * pxDesc )
             break;
 
         default:
-            /* GET_STATS and GET_IMU only read (step 15c, report 086). */
+            /* GET_STATS only reads (step 15c). */
             break;
     }
 
@@ -501,11 +424,6 @@ static size_t prvTypeSpecific( const AppDesc_t * pxDesc, uint8_t ucStatus, uint8
     {
         /* Only a valid page has data; prvValidate checked 0..3. */
         uxLen = prvExecGetStats( pxDesc->ucData[ 0 ], pucOut );
-    }
-    else if( ( pxDesc->ucType == APP_TYPE_CMD_GET_IMU ) && ( ucStatus == APP_ST_OK ) )
-    {
-        /* prvValidate took the copy; an error reply has the common part only. */
-        uxLen = prvWriteImu( pxDesc, pucOut );
     }
     else
     {
