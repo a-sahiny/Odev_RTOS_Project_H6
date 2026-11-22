@@ -7,10 +7,9 @@
   * Address : APP_NET_IP_ADDR / APP_NET_NETMASK (192.168.50.2/24), static; no
   *           DHCP, DNS or TCP in this project (FreeRTOSIPConfig.h, D8).
   * MAC     : locally administered, derived from the 96-bit unique device ID.
-  * Random  : xorshift PRNG seeded from the device ID and the cycle counter.
-  *           The F746 RNG needs the 48 MHz PLL clock, which this project does
-  *           not run (SYSCLK = HSE 25 MHz). Good enough for a lab, not for
-  *           security-relevant use: enable RNG + PLL48CLK for that.
+  * Random  : xorshift PRNG; tohum = cihaz kimliği ^ donanım RNG'si (PLLQ
+  *           48 MHz). NetApp_RandomInit, App_Init'te SysState_Init'ten
+  *           (EPOCH) önce çağrılır. Laboratuvar için; güvenlik için değil.
   * Hook    : vApplicationIPNetworkEventHook_Multi sets / clears NET_READY for
   *           the VNET end-point (IP task context, docs 12) and posts
   *           NetUp / NetDown to ctrlQueue (wait 0, report 056).
@@ -63,6 +62,9 @@ static const uint8_t ucEthGateway[ 4 ]   = { 192, 168, 1, 1 };
 
 static uint32_t ulPrngState;
 
+// RNG'den sayı alınamayan açılış sayısı (debugger'dan okunur); 0 olmalı
+static volatile uint32_t rng_fail_count;
+
 /*---------------------------------------------------------------------------*/
 static uint32_t prvPrngNext(void)
 {
@@ -75,25 +77,83 @@ static uint32_t prvPrngNext(void)
   return x;
 }
 
-static void prvPrngSeed(void)
+/* RNG'de yeni sayı hazır olana kadar bekler; hazır ve hatasızsa 1 döner. */
+static int rng_wait(void)
 {
-  const uint32_t *pulUid = (const uint32_t *)UID_BASE;
+    // 48 MHz'de bir sayı ~1 µs sürer; 10000 tur 216 MHz'de en az 46 µs: bol pay, açılışı uzatmaz
+    uint32_t spins = 10000U;
+    while (((RNG->SR & RNG_SR_DRDY) == 0U) && (spins > 0U))
+    {
+        --spins;
+    }
 
-  /* Cycle counter adds the (variable) boot time to the fixed device ID. It is
-   * also the time base of the latency histograms (M1..M5, docs 8.1).
-   * Cortex-M7: while the DWT software lock is set, writes to DWT->CTRL are
-   * ignored and CYCCNT would not count without a debugger. The key unlocks
-   * it; without a lock the write has no effect (V6). */
-  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  DWT->LAR = 0xC5ACCE55U;
-  DWT->CYCCNT = 0U;
-  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    if (spins == 0U)
+    {
+        return 0;                                       // zaman aşımı: RNG saati yok
+    }
 
-  ulPrngState = pulUid[0] ^ (pulUid[1] << 7) ^ (pulUid[2] << 13) ^ SysTick->VAL ^ 0x9E3779B9U;
-  if (ulPrngState == 0U)
-  {
-    ulPrngState = 0x2545F491U;
-  }
+    if ((RNG->SR & (RNG_SR_SECS | RNG_SR_CECS)) != 0U)
+    {
+        return 0;                                       // tohum ya da saat hatası
+    }
+
+    return 1;
+}
+
+/* Donanım RNG'sinden bir sayı okur; başarıda 1, hatada 0 döner. */
+static int rng_read(uint32_t *value)
+{
+    /* RNG saati PLLQ: 432 MHz / 9 = 48 MHz (CK48MSEL sıfırlamada PLLQ) */
+    RCC->AHB2ENR |= RCC_AHB2ENR_RNGEN;
+    (void)RCC->AHB2ENR;                                 // geri okuma: saat açılmadan RNG'ye yazılmaz
+    RNG->CR |= RNG_CR_RNGEN;
+
+    /* İki sayı okunur, ikincisi kullanılır; ikisi aynıysa RNG bozuk sayılır. */
+    int ok = 0;
+    if (rng_wait() == 1)
+    {
+        const uint32_t first = RNG->DR;
+        if (rng_wait() == 1)
+        {
+            *value = RNG->DR;
+            ok = (*value != first) ? 1 : 0;
+        }
+    }
+
+    /* Yalnız açılışta kullanılıyor: RNG ve saati kapatılır */
+    RNG->CR &= ~RNG_CR_RNGEN;
+    RCC->AHB2ENR &= ~RCC_AHB2ENR_RNGEN;
+    return ok;
+}
+
+/* DWT çevrim sayacını açar ve PRNG'yi tohumlar. App_Init'te SysState_Init'ten
+ * önce bir kez çağrılır: EPOCH ilk rastgele sayıdan alınır. */
+void NetApp_RandomInit(void)
+{
+    const uint32_t *pulUid = (const uint32_t *)UID_BASE;
+
+    /* CYCCNT gecikme ölçümlerinin zaman tabanı (M1..M5, docs 8.1).
+     * Cortex-M7: DWT yazılım kilidi açıkken DWT->CTRL yazımı yok sayılır,
+     * debugger yoksa CYCCNT saymaz; anahtar kilidi açar (V6). */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->LAR = 0xC5ACCE55U;
+    DWT->CYCCNT = 0U;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    /* UID sabit, CYCCNT az önce sıfırlandı ve SysTick zamanlayıcıdan önce
+     * çalışmıyor: açılıştan açılışa değişen tek kaynak RNG. */
+    uint32_t random = 0U;
+    if (rng_read(&random) == 0)
+    {
+        ++rng_fail_count;                               // EPOCH her açılışta aynı olabilir
+        random = DWT->CYCCNT;
+    }
+
+    ulPrngState = pulUid[0] ^ (pulUid[1] << 7) ^ (pulUid[2] << 13) ^ random ^ 0x9E3779B9U;
+    if (ulPrngState == 0U)
+    {
+        ulPrngState = 0x2545F491U;                      // xorshift 0'da takılı kalır
+    }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -101,8 +161,6 @@ BaseType_t NetApp_Init(void)
 {
   const uint8_t *pucUid = (const uint8_t *)UID_BASE;
   uint8_t ucMAC[6];
-
-  prvPrngSeed();
 
   /* 02:xx:xx:xx:xx:xx = locally administered, unicast. */
   ucMAC[0] = 0x02;

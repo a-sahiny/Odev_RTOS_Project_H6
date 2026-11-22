@@ -10,6 +10,10 @@
 
 #include "FreeRTOS.h"
 
+/* DWT çevrim sayacını açar, PRNG'yi cihaz kimliği ve donanım RNG'siyle
+ * tohumlar. App_Init'te SysState_Init'ten (EPOCH) önce bir kez çağrılır. */
+void NetApp_RandomInit(void);
+
 /* Creates the network interface(s) + end-point(s) and starts the IP task.
  * Call once, before vTaskStartScheduler(), after SysState_Init (the network
  * event hook writes NET_READY). Returns pdPASS on success. The network state
