@@ -11,6 +11,8 @@ STM32F746G-DISCO'daki telemetri istasyonunu (`C:\Users\Asus\Documents\GitHub\Ode
 
 **Animasyonlu anlatım:** [docs/02_Iletisim_Animasyonu.html](docs/02_Iletisim_Animasyonu.html) — mesajların F746, A35, M33 ve PC arasında gerçek baytlarıyla nasıl aktığı (altı senaryo, katman katman paketleme, zamanlama, LED desenleri). Yayımlanmış kopya: https://claude.ai/artifact/R5o32skxFq8uVyHjQEs7s8
 
+**Öğrenme sayfası:** [docs/04_MP257_Anlatim.html](docs/04_MP257_Anlatim.html) — MP257 tarafında şu ana kadar yapılanlar, kartın komutları nasıl çalıştırdığı, `f7linkd`'nin içi, kontrol komutları ve 22.11.2026 kart testleri (animasyonlu).
+
 ## Klasörler
 
 | Klasör | İçerik |

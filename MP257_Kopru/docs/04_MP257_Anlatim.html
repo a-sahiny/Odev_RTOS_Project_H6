@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MP257 Köprüsü Anlatımı</title>
+<meta name="description" content="STM32MP257F-DK tarafında şu ana kadar yapılanlar: mimari, komutların ne yaptığı, f7linkd'nin içi, testler ve bulgular.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* ---------- Tokens (referans belgeyle aynı) ---------- */
+:root{
+  --ink:#0B0F1A; --ink-2:#131B2C; --ink-line:#26324A;
+  --paper:#FAFAF7; --paper-2:#F0F1EA; --paper-line:#DFE2D8;
+  --text:#14171F; --muted:#565E6E; --text-d:#EEF2F8; --muted-d:#A6B1C4;
+  --lime:#A8D84A; --cyan:#22E4FF; --magenta:#FF3DCB; --amber:#FFC21A; --violet:#9B88FF; --mint:#4FD1A0; --red:#FF4D5E;
+  --lime-band:#D3E8A2;
+  --lime-ink:#3D6900; --cyan-ink:#006B7A; --magenta-ink:#A3007F; --amber-ink:#7E5200; --violet-ink:#4B2FD1; --mint-ink:#00704A;
+  --code-bg:#070A12; --code-text:#E6EDF3;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Cascadia Mono",monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:72px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;font:16px/1.65 var(--sans);background:var(--paper);color:var(--text)}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+@media (min-width:760px){.wrap{padding:0 32px}}
+
+/* ---------- Bantlar ---------- */
+.band{--bg:var(--paper);--fg:var(--text);--mu:var(--muted);--card:#fff;--card-line:var(--paper-line);--chip:var(--paper-2);
+  background:var(--bg);color:var(--fg);padding:56px 0;position:relative}
+.band.dark{--bg:var(--ink);--fg:var(--text-d);--mu:var(--muted-d);--card:var(--ink-2);--card-line:var(--ink-line);--chip:rgba(255,255,255,.08)}
+.band.dark::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--acc,var(--lime))}
+.band.tint{--bg:#F6F2FF;--card:#fff;--card-line:#E3DBFA;--chip:#ECE6FD}
+.band.neon{--bg:var(--lime-band);--fg:#0B0F1A;--mu:#36421C;--card:rgba(255,255,255,.55);--card-line:rgba(11,15,26,.18);--chip:rgba(11,15,26,.08)}
+.band.amber{--bg:var(--amber);--fg:#0B0F1A;--mu:#4A3500;--card:rgba(255,255,255,.6);--card-line:rgba(11,15,26,.2);--chip:rgba(11,15,26,.08)}
+.band a{color:var(--acc-ink,var(--lime-ink))}
+.band.dark a{color:var(--acc,var(--lime))}
+.band.neon a,.band.amber a{color:#0B0F1A;text-decoration-thickness:2px}
+.mu{color:var(--mu)}
+
+/* ---------- Yazı ---------- */
+h1,h2,h3{line-height:1.2;margin:0;letter-spacing:-.01em;overflow-wrap:anywhere}
+h1{font-size:clamp(30px,6vw,56px);font-weight:700}
+h2{font-size:clamp(24px,3.6vw,34px);font-weight:700}
+h3{font-size:18px;font-weight:600}
+.eyebrow{font:600 12px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--acc-ink,var(--lime-ink));margin-bottom:12px}
+.dark .eyebrow{color:var(--acc,var(--lime))}
+.neon .eyebrow,.amber .eyebrow{color:#0B0F1A}
+p{margin:10px 0}
+code{font-family:var(--mono);font-size:.86em;background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}
+pre{background:var(--code-bg);color:var(--code-text);border-left:3px solid var(--acc,var(--lime));border-radius:8px;padding:12px 14px;margin:10px 0;overflow-x:auto;font:13.5px/1.6 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+pre code{background:none;padding:0;font-size:inherit;overflow-wrap:anywhere}
+pre .c{color:#8B97AB}
+ul,ol{padding-left:22px}
+li{margin:4px 0}
+
+/* ---------- Giriş ---------- */
+.hero{--acc:var(--lime);padding:72px 0 56px;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:auto -10% -40% auto;width:620px;height:620px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(168,216,74,.16),rgba(34,228,255,.10) 55%,transparent);pointer-events:none}
+.hero .lead{font-size:18px;max-width:760px;color:var(--muted-d)}
+.hero h1 span{background:linear-gradient(90deg,var(--lime),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpis{display:grid;gap:12px;margin-top:28px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.kpi{border:1px solid var(--ink-line);border-radius:var(--r);padding:16px 18px;background:rgba(255,255,255,.03);position:relative;z-index:1;min-width:0}
+.kpi b{display:block;font:800 24px/1.25 var(--mono);color:#fff}
+.kpi b em{font-style:normal;color:var(--lime)}
+.kpi span{color:var(--muted-d);font-size:14px}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:22px;font-size:14px;color:var(--muted-d);position:relative;z-index:1}
+
+/* ---------- Rozetler ---------- */
+.b{display:inline-block;font:700 11.5px/1.5 var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:999px;color:#0B0F1A;white-space:nowrap;vertical-align:1px}
+.b-ok{background:var(--mint)} .b-test{background:var(--lime)} .b-yr{background:var(--cyan)} .b-bek{background:var(--amber)} .b-hata{background:#FF8A96} .b-gn{background:#D5D9E0}
+.band.neon .b-test{background:#0B0F1A;color:var(--lime)}
+
+/* ---------- Gezinme ---------- */
+.topnav{position:sticky;top:0;z-index:20;background:rgba(11,15,26,.92);backdrop-filter:saturate(1.4) blur(8px);-webkit-backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--ink-line)}
+.topnav .wrap{display:flex;align-items:center;gap:10px;min-height:56px;overflow-x:auto;scrollbar-width:none}
+.topnav .wrap::-webkit-scrollbar{display:none}
+.pill{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:44px;padding:6px 12px;border-radius:999px;border:1px solid var(--ink-line);color:var(--text-d);text-decoration:none;font:600 13px/1 var(--mono);transition:border-color .2s,background-color .2s}
+.pill:hover,.pill:focus-visible,.pill.cur{border-color:var(--c);background:rgba(255,255,255,.06)}
+.pill i{width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+.overall{margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:10px;color:var(--text-d);font:700 13px/1 var(--mono)}
+.scrollbar{width:120px;height:8px;border-radius:99px;background:var(--ink-line);overflow:hidden}
+.scrollbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--lime),var(--cyan))}
+
+/* ---------- Bölüm başı ---------- */
+.phase-head{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 20px;align-items:end}
+.num{font:800 clamp(64px,11vw,120px)/.8 var(--mono);color:transparent;-webkit-text-stroke:2px var(--acc-ink);letter-spacing:-.04em}
+.dark .num{-webkit-text-stroke-color:var(--acc);text-shadow:0 0 28px color-mix(in srgb,var(--acc) 35%,transparent)}
+.neon .num,.amber .num{-webkit-text-stroke-color:#0B0F1A}
+.goal{grid-column:1/-1;margin-top:14px;padding:12px 16px;border-radius:10px;background:var(--chip);font-size:15px}
+.goal strong{color:var(--acc-ink)}
+.dark .goal strong{color:var(--acc)}
+.neon .goal strong,.amber .goal strong{color:#0B0F1A}
+
+/* ---------- Kartlar ---------- */
+.grid{display:grid;gap:16px;margin-top:24px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:980px){.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.grid>*{min-width:0}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:20px 22px;min-width:0}
+@media (max-width:600px){.card{padding:16px}}
+.card.stripe{border-left:5px solid var(--sc,var(--acc,var(--lime)))}
+.src{font-size:13.5px;color:var(--mu);margin-top:12px;line-height:1.7}
+.lbl{font:700 11.5px/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mu);margin-top:16px}
+.where{display:inline-block;font:700 12px/1.4 var(--mono);padding:3px 10px;border-radius:6px;background:var(--ink);color:var(--text-d);margin-top:12px}
+.where.pc{background:#1D3B7A;color:#fff}
+.dark .where{background:rgba(255,255,255,.12)}
+
+/* ---------- "Ne oluyor?" ---------- */
+.why{border-left:4px solid var(--acc);background:var(--chip);border-radius:0 10px 10px 0;padding:10px 14px;margin:12px 0}
+.why b:first-child{color:var(--acc-ink)}
+.dark .why b:first-child{color:var(--acc)}
+.neon .why,.amber .why{border-left-color:#0B0F1A}
+.neon .why b:first-child,.amber .why b:first-child{color:#0B0F1A}
+.path{display:block;font:600 13px/1.5 var(--mono);background:var(--chip);border:1px dashed var(--card-line);border-radius:8px;padding:8px 10px;margin:8px 0;overflow-wrap:anywhere}
+
+/* ---------- Uyarılar ---------- */
+.note{border-radius:10px;padding:12px 16px;margin:12px 0;border:1px solid}
+.note.warn{background:#FFF6D9;border-color:#F3D27A;color:#3E2C00}
+.note.danger{background:#FFE5E8;border-color:#FFB3BC;color:#5A0A14}
+.note.ok{background:#E3F7EE;border-color:#9FDCC0;color:#053B26}
+.dark .note.warn{background:rgba(255,194,26,.1);border-color:rgba(255,194,26,.45);color:#FFE7A6}
+.dark .note.danger{background:rgba(255,77,94,.1);border-color:rgba(255,77,94,.5);color:#FFC7CD}
+.dark .note.ok{background:rgba(79,209,160,.1);border-color:rgba(79,209,160,.45);color:#C9F5E2}
+
+/* ---------- Tablolar ---------- */
+.tbl{overflow-x:auto;margin-top:16px;border-radius:var(--r);border:1px solid var(--card-line);background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--card-line)}
+tr:last-child td{border-bottom:0}
+th{font:700 11.5px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+
+/* ---------- Animasyon kontrolleri ---------- */
+.anim{margin-top:22px;background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:18px;min-width:0}
+@media (max-width:600px){.anim{padding:14px 12px}}
+.ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.ctl button{min-height:44px;min-width:44px;padding:0 14px;border-radius:10px;border:1px solid var(--card-line);background:var(--chip);color:var(--fg);font:700 13px/1 var(--mono);cursor:pointer}
+.ctl button:hover{border-color:var(--acc-ink,var(--acc))}
+.dark .ctl button:hover{border-color:var(--acc)}
+.ctl button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.ctl .cnt{font:700 13px/1 var(--mono);color:var(--mu);margin-left:4px}
+.ctl .bar{flex:1 1 120px;height:6px;border-radius:99px;background:var(--chip);overflow:hidden;min-width:80px}
+.ctl .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .35s ease-out}
+.cap{display:none;margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--chip);font-size:15px}
+.cap.on{display:block;animation:fade .35s ease-out}
+.cap b{color:var(--acc-ink)}
+.dark .cap b{color:var(--acc)}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* A1: paketin yolculuğu */
+.route{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (min-width:760px){.route{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.hop{position:relative;border:1px solid var(--card-line);border-radius:12px;padding:12px;background:var(--bg);min-width:0;transition:border-color .3s,box-shadow .3s,transform .3s}
+.hop .n{font:800 12px/1 var(--mono);color:var(--mu)}
+.hop h3{font-size:15px;margin-top:6px}
+.hop p{font-size:13px;margin:6px 0 0;color:var(--mu)}
+.hop .b{margin-top:8px}
+.hop.on{border-color:var(--acc-ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 45%,transparent);transform:translateY(-2px)}
+.hop.seen{border-color:var(--acc-ink)}
+.hop .pk{position:absolute;right:10px;top:10px;width:14px;height:14px;border-radius:4px;background:var(--acc);opacity:0;transform:scale(.4);transition:opacity .3s,transform .3s}
+.hop.on .pk{opacity:1;transform:scale(1);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 60%,transparent)}50%{box-shadow:0 0 0 8px transparent}}
+.bytes{margin-top:12px;font:600 12.5px/1.6 var(--mono);background:var(--code-bg);color:var(--code-text);border-radius:8px;padding:10px 12px;overflow-wrap:anywhere;min-height:3.4em}
+.bytes .hl{color:var(--acc);font-weight:800}
+
+/* A2: Enter'a basınca */
+.chain{display:grid;gap:8px;grid-template-columns:minmax(0,1fr)}
+.lnk{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border-radius:10px;border:1px solid var(--card-line);background:var(--bg);transition:border-color .3s,background-color .3s,opacity .3s;opacity:.55}
+.lnk .k{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--chip);font:800 13px/1 var(--mono)}
+.lnk h3{font-size:15px}
+.lnk p{margin:4px 0 0;font-size:14px;color:var(--mu)}
+.lnk.seen{opacity:1}
+.lnk.on{opacity:1;border-color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,var(--bg))}
+.lnk.on .k{background:var(--acc);color:#0B0F1A}
+
+/* A3: select döngüsü şeritleri */
+.lanes{display:grid;gap:12px;margin-top:8px}
+.lane{border:1px solid var(--card-line);border-radius:12px;padding:12px;background:var(--bg);min-width:0}
+.lane h3{font-size:15px}
+.lane p{font-size:13.5px;margin:6px 0 0;color:var(--mu)}
+.track{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;font:600 12px/1.3 var(--mono)}
+.track span{padding:7px 8px;border-radius:7px;background:var(--chip);text-align:center;overflow-wrap:anywhere;position:relative;z-index:1}
+.track::after{content:"";position:absolute;top:50%;left:0;width:12px;height:12px;margin-top:-6px;border-radius:50%;background:var(--lc,var(--acc));box-shadow:0 0 10px var(--lc,var(--acc));animation:run 3.2s linear infinite;animation-delay:var(--d,0s);z-index:2}
+@keyframes run{0%{left:0;opacity:0}8%{opacity:1}92%{opacity:1}100%{left:calc(100% - 12px);opacity:0}}
+
+/* A4: ping sırası */
+.seqwrap{overflow-x:auto}
+.seq{min-width:560px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));row-gap:4px;position:relative}
+.seq .who{font:700 12px/1.3 var(--mono);text-align:center;padding:8px 4px;border-radius:8px;background:var(--chip);margin:0 3px 6px}
+.seq .life{grid-row:2/span 12;border-left:2px dashed var(--card-line);justify-self:center;width:0}
+.msg{position:relative;height:30px;opacity:.12;transition:opacity .3s}
+.msg.seen{opacity:.55}
+.msg.on{opacity:1}
+.msg .ln{position:absolute;top:14px;left:12%;right:12%;height:2px;background:var(--fg);transform:scaleX(0);transform-origin:left;transition:transform .45s ease-out}
+.msg.r .ln{transform-origin:right}
+.msg.seen .ln,.msg.on .ln{transform:scaleX(1)}
+.msg.on .ln{background:var(--acc);height:3px}
+.msg .ln::after{content:"";position:absolute;top:-5px;border:6px solid transparent}
+.msg:not(.r) .ln::after{right:-2px;border-left-color:inherit;border-left:8px solid var(--fg);border-right:0}
+.msg.r .ln::after{left:-2px;border-right:8px solid var(--fg);border-left:0}
+.msg.on .ln::after{border-left-color:var(--acc);border-right-color:var(--acc)}
+.msg .t{position:absolute;left:0;right:0;top:-2px;text-align:center;font:600 11.5px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px}
+.msg.arp .ln{background:var(--violet-ink)}
+.dark .msg.arp .ln{background:var(--violet)}
+@media (max-width:600px){
+  .seq{min-width:300px}
+  .seq .who{font-size:10.5px;padding:6px 2px;margin:0 2px 6px;overflow-wrap:anywhere}
+  .msg .t{font-size:10px;padding:0 2px}
+}
+
+/* A5: sıra karşılaştırması */
+.cmp{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.cmp{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.col{border:1px solid var(--card-line);border-radius:12px;padding:12px;background:var(--bg);min-width:0}
+.col h3{font-size:15px;margin-bottom:8px}
+.row{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;align-items:start;padding:8px 10px;border-radius:8px;margin-top:6px;opacity:.35;transition:opacity .3s,background-color .3s;font-size:14px}
+.row .k{font:800 13px/1.6 var(--mono)}
+.row.seen{opacity:.8}
+.row.on{opacity:1;background:var(--chip)}
+.row.bad.on{background:rgba(255,77,94,.18)}
+.row.good.on{background:rgba(79,209,160,.18)}
+.dir{font:600 12.5px/1.4 var(--mono);margin-top:4px;color:var(--mu);overflow-wrap:anywhere}
+
+/* Zaman çizelgesi */
+.tl{position:relative;margin-top:24px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.tl::before{content:"";position:absolute;left:17px;top:6px;bottom:6px;width:3px;border-radius:3px;background:rgba(11,15,26,.2)}
+.ev{position:relative;padding-left:48px;min-width:0}
+.ev::before{content:"";position:absolute;left:8px;top:22px;width:21px;height:21px;border-radius:50%;background:var(--dc,#0B0F1A);border:4px solid var(--bg)}
+.ev .card{padding:16px 18px}
+
+footer.band{padding:40px 0;font-size:14px}
+
+/* Belirme */
+.js .reveal{opacity:0;transform:translateY(14px);transition:opacity .5s ease-out,transform .5s ease-out}
+.js .reveal.in{opacity:1;transform:none}
+
+@media (prefers-reduced-motion:reduce){
+  .js .reveal{opacity:1;transform:none;transition:none}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .track::after{display:none}
+}
+
+@media print{
+  .topnav,.hero::after,.ctl{display:none}
+  .band,.band.dark,.band.neon,.band.amber,.band.tint{background:#fff!important;color:#000!important;padding:20px 0;--fg:#000;--mu:#333;--card:#fff;--card-line:#bbb;--chip:#eee;--bg:#fff}
+  .band.dark::before{display:none}
+  .num{-webkit-text-stroke-color:#000!important;text-shadow:none!important}
+  .js .reveal{opacity:1;transform:none}
+  .cap{display:block}
+  .hop,.lnk,.msg,.row{opacity:1!important}
+  .msg .ln{transform:none!important}
+  .track::after{display:none}
+  .card,.anim{break-inside:avoid}
+  pre,.bytes{border:1px solid #999;background:#fff!important;color:#000!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= GİRİŞ (koyu) ================= -->
+<header class="band dark hero">
+  <div class="wrap" style="position:relative;z-index:1">
+    <div class="eyebrow">MP257_Kopru · Öğrenme sayfası · 22.11.2026</div>
+    <h1>F746'yı MP257'ye bağlamak:<br><span>ne yaptık, nasıl çalışıyor?</span></h1>
+    <p class="lead">STM32MP257F-DK tarafında şu ana kadar yapılan her şey, baştan. Kartın bir komutu nasıl çalıştırdığı, <code style="background:rgba(255,255,255,.08)">f7linkd</code>'nin içinde neler döndüğü, kontrol komutlarının ne sorduğu ve bugünkü testlerin sonuçları. Animasyonları ▶ ile oynatabilir, ◀ ve ▶▶ ile adım adım gezebilirsin.</p>
+    <div class="kpis">
+      <div class="kpi"><b><em>Faz 1</em> tamam</b><span>1.1 Python, TUN, USB seri sürücü · 1.2 F746 kartta <code style="background:rgba(255,255,255,.08)">/dev/ttyACM0</code></span></div>
+      <div class="kpi"><b><em>2.1 · 2.2</em> tamam</b><span>Dosyalar kartta, F746 → MP257 hattı sağlam (bozuk satır 0)</span></div>
+      <div class="kpi"><b><em>2.3</em> bekliyor</b><span>f7linkd açılışta çöktü; sebep bulundu, düzeltmeyi sen yapacaksın</span></div>
+    </div>
+    <div class="legend">
+      <span><span class="b b-ok">TAMAM</span> Kartta yapıldı ve doğrulandı</span>
+      <span><span class="b b-test">TEST</span> Bu oturumda ölçüldü</span>
+      <span><span class="b b-yr">KOD</span> Depodaki koddan okundu</span>
+      <span><span class="b b-bek">SIRADA</span> Henüz yapılmadı</span>
+      <span><span class="b b-hata">HATA</span> Bulunan sorun</span>
+    </div>
+  </div>
+</header>
+
+<nav class="topnav" aria-label="Bölümler">
+  <div class="wrap" id="navWrap">
+    <div class="overall"><span id="secCount">1/8</span><div class="scrollbar" aria-hidden="true"><i id="scrollFill"></i></div></div>
+  </div>
+</nav>
+
+<!-- ================= 01 MİMARİ (açık · camgöbeği) ================= -->
+<section class="band sec" id="mimari" data-name="Büyük resim" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">01</div>
+      <div><div class="eyebrow">Büyük resim</div><h2>Dört düğüm, tek veri yolu</h2></div>
+      <div class="goal"><strong>Amaç:</strong> F746'daki telemetri istasyonu <b>hiç değişmeden</b> MP257'ye takılsın. MP257'nin Linux'u (Cortex-A35) F746'yı gerçek bir ağ cihazı gibi görsün, veriyi işleyip PC'ye web sayfası olarak sunsun. MP257'nin Cortex-M33'ü RTOS ile bütün zinciri gözetsin.</div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card stripe">
+        <h3>Kim, ne iş yapıyor?</h3>
+        <ul>
+          <li><b>F746 (STM32F746G-DISCO):</b> FreeRTOS + FreeRTOS-Plus-TCP, IMU. Adresi <code>192.168.50.2</code>. Ağ çerçevelerini USART1'den <code>FRAME 1 &lt;hex&gt;</code> satırı olarak 1 Mbaud'da yollar. Bu satırlar kartın üstündeki ST-LINK'ten USB'ye çıkar.</li>
+          <li><b>MP257 Cortex-A35 (Linux):</b> iki Python servisi. <code>f7linkd</code> F746'nın seri hattını <code>tap-f7</code> ağ arayüzüne çevirir. <code>f7hub</code> F746'ya komut yollar, telemetriyi alır, M33'e aktarır ve PC'ye panel sunar.</li>
+          <li><b>MP257 Cortex-M33 (RTOS):</b> FreeRTOS ya da Zephyr. Linux'un kalp atışını, telemetrinin tazeliğini ve eğim alarmını gözetir, LD9 LED'ini yönetir.</li>
+          <li><b>PC:</b> tarayıcıda <code>http://192.168.7.1:8080/</code>. Hiçbir şey kurmak gerekmez.</li>
+        </ul>
+        <p class="src"><span class="b b-yr">KOD</span> <code>MP257_Kopru/README.md</code>, <code>linux/f7linkd.py</code>, <code>linux/f7hub.py</code></p>
+      </div>
+      <div class="card stripe" style="--sc:var(--violet)">
+        <h3>İki kablo, iki ayrı iş</h3>
+        <p><b>F746 ST-LINK USB → MP257 CN19:</b> F746'nın verisi bu kablodan gelir. Linux'ta <code>/dev/ttyACM0</code> olarak görünür (kimlik <code>0483:3752</code>, 12 Mb/s full-speed).</p>
+        <p><b>MP257 CN15 (USB-C) → PC:</b> PC ile kart arasında USB üzerinden bir ağ kurar. Kartın adresi <code>192.168.7.1</code>, PC'nin adresi <code>192.168.7.66</code> (Windows'ta "UsbNcm Host Device"). SSH, <code>scp</code> ve panel bu yoldan gider.</p>
+        <p class="src"><span class="b b-test">TEST</span> Bugün kartta <code>lsusb</code> ve <code>/sys</code> ile, PC'de ağ bağdaştırıcısı listesiyle görüldü.</p>
+      </div>
+    </div>
+
+    <div class="anim" data-anim data-max="8" data-auto="2600" aria-label="Bir telemetri paketinin yolculuğu animasyonu">
+      <div class="ctl">
+        <button type="button" data-act="prev" aria-label="Önceki adım">◀</button>
+        <button type="button" data-act="play" aria-label="Oynat ya da durdur">▶ Oynat</button>
+        <button type="button" data-act="next" aria-label="Sonraki adım">▶▶</button>
+        <span class="cnt"></span><span class="bar"><i></i></span>
+      </div>
+      <div class="route">
+        <div class="hop" data-on="1"><span class="pk"></span><div class="n">1 · F746</div><h3>Telemetri paketi doğar</h3><p>IMU örneği hazır (DRDY) → TELEM (23 B) → UDP</p><span class="b b-ok">2.2'de görüldü</span></div>
+        <div class="hop" data-on="2"><span class="pk"></span><div class="n">2 · F746 USART1</div><h3>Satıra çevrilir</h3><p><code>FRAME 1 &lt;hex&gt;</code>, 1 Mbaud</p><span class="b b-ok">2.2'de görüldü</span></div>
+        <div class="hop" data-on="3"><span class="pk"></span><div class="n">3 · ST-LINK → CN19</div><h3>USB'ye çıkar</h3><p>Sanal COM portu, 12 Mb/s</p><span class="b b-ok">1.2'de görüldü</span></div>
+        <div class="hop" data-on="4"><span class="pk"></span><div class="n">4 · cdc_acm</div><h3>/dev/ttyACM0</h3><p>Linux sürücüsü baytları dosyaya koyar</p><span class="b b-ok">2.2'de görüldü</span></div>
+        <div class="hop" data-on="5"><span class="pk"></span><div class="n">5 · f7linkd</div><h3>Satır → çerçeve</h3><p>Hex çözülür, FCS (CRC-32) denetlenir</p><span class="b b-bek">2.3</span></div>
+        <div class="hop" data-on="6"><span class="pk"></span><div class="n">6 · tap-f7 + çekirdek</div><h3>Gerçek ağ paketi</h3><p>Linux IP/UDP'yi kendisi işler</p><span class="b b-bek">2.3</span></div>
+        <div class="hop" data-on="7"><span class="pk"></span><div class="n">7 · f7hub</div><h3>UDP 6000'de alır</h3><p>Çözer, CSV'ye yazar, M33'e ve PC'ye aktarır</p><span class="b b-bek">2.4</span></div>
+        <div class="hop" data-on="8"><span class="pk"></span><div class="n">8 · M33 ve PC</div><h3>Gözetim ve panel</h3><p>M33: <code>TM</code>/<code>AT</code> satırı · PC: canlı grafik</p><span class="b b-bek">2.4 · Faz 3</span></div>
+      </div>
+      <div class="bytes" aria-live="polite">
+        <span class="cap" data-s="1"><b>F746:</b> IMU'nun "veri hazır" kesmesi (DRDY) gelir. Ölçüm görevi ivmeyi, jiroskopu, roll/pitch/yaw açılarını ve bir önceki TELEM'in kart içi süresini 23 baytlık bir TELEM paketine koyar ve UDP 5002 portundan <code>192.168.50.1:6000</code>'e (f7hub) yollar.</span>
+        <span class="cap" data-s="2"><b>FreeRTOS-Plus-TCP</b> paketi Ethernet çerçevesine sarar. F746'nın sanal ağ sürücüsü çerçeveyi büyük harf hex'e çevirip başına <code>FRAME 1 </code> koyar: <code>FRAME 1 <span class="hl">020000000001</span><span class="hl">0280E1126049</span>0800…</code> İlk 6 bayt hedef (MP257'deki <code>tap-f7</code>), sonraki 6 bayt kaynak (F746), <code>0800</code> = IPv4. Sonda 4 baytlık FCS (CRC-32) var.</span>
+        <span class="cap" data-s="3"><b>ST-LINK:</b> F746 kartının üstündeki ST-LINK, USART1'den gelen baytları USB'ye "sanal COM portu" olarak verir. PC'ye takınca COM6 olan şey, MP257'ye takınca Linux'a bir USB cihazı olarak görünür.</span>
+        <span class="cap" data-s="4"><b>cdc_acm:</b> Linux çekirdeğinin USB seri sürücüsü cihazı tanır ve <code>/dev/ttyACM0</code> dosyasını açar. Bu dosyayı okuyan program F746'nın yolladığı baytları alır, dosyaya yazan program F746'ya bayt yollar.</span>
+        <span class="cap" data-s="5"><b>f7linkd:</b> satırı <code>\n</code>'e kadar biriktirir. <code>FRAME 1 </code> ile başlıyorsa hex'i çözer, uzunluğu (60–256 B + 4 B FCS) ve FCS'yi denetler. Tutmuyorsa <code>rx_bad</code> sayacını artırır ve atar. <code>{</code> ile başlıyorsa bu bir JSON rapordur; kart içinde UDP 7101'e aktarılır.</span>
+        <span class="cap" data-s="6"><b>tap-f7:</b> f7linkd çerçeveyi <code>tap-f7</code> arayüzüne yazar. Linux bunu kablodan gelmiş bir Ethernet çerçevesi sayar: ARP'yi, IP'yi, UDP sağlama toplamını kendisi işler. Eski PC host'undaki elle yazılmış ağ yığınına burada gerek kalmaz.</span>
+        <span class="cap" data-s="7"><b>f7hub:</b> sıradan bir UDP soketiyle <code>192.168.50.1:6000</code>'i dinler. TELEM'i çözer, SEQ boşluklarını sayar, her TELEM'i bir CSV satırı olarak yazar.</span>
+        <span class="cap" data-s="8"><b>M33 ve PC:</b> f7hub M33'e <code>/dev/ttyRPMSG0</code> üzerinden <code>TM …</code> ve <code>AT …</code> satırlarını yollar; M33 tazeliği ve eğimi ölçer, LD9'u yakar. PC'deki tarayıcı da aynı veriyi canlı olay akışıyla (SSE) alır.</span>
+      </div>
+    </div>
+    <p class="src"><span class="b b-yr">KOD</span> <code>linux/f7common/proto.py</code> (<code>frame_to_line</code>, <code>line_to_frame</code>, <code>HOST_MAC 02:00:00:00:00:01</code>) · F746 MAC <code>02:80:E1:12:60:49</code> bugün <code>hello</code> raporunda görüldü · Ayrıntılı bayt animasyonu: <a href="02_Iletisim_Animasyonu.html">02_Iletisim_Animasyonu.html</a></p>
+  </div>
+</section>
+
+<!-- ================= 02 YAPILANLAR (yumuşak yeşil) ================= -->
+<section class="band neon sec" id="yapilanlar" data-name="Yapılanlar" style="--acc:var(--lime);--acc-ink:var(--lime-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">02</div>
+      <div><div class="eyebrow">Hızlı bakış</div><h2>Şu ana kadar ne yapıldı?</h2></div>
+      <div class="goal"><strong>Faz 2'nin çıkış kriteri:</strong> kartta <code>ping 192.168.50.2</code> cevap alıyor, PC tarayıcısında panel canlı telemetri gösteriyor ve iki servis yeniden açılışta kendiliğinden başlıyor.</div>
+    </div>
+    <div class="tl">
+      <div class="ev" style="--dc:#0B0F1A"><div class="card">
+        <h3>Önceki oturumlar · Kod ve plan <span class="b b-yr">KOD</span></h3>
+        <p>Linux servisleri (<code>f7linkd</code>, <code>f7hub</code>), web paneli, M33'ün ortak C çekirdeği (<code>m33/common</code>), A35↔M33 satır protokolü ve adım adım plan (<a href="01_Proje_Raporu.html">01_Proje_Raporu.html</a>) yazıldı.</p>
+        <p><b>Nasıl test edildi:</b> kart olmadan, PC'de. Köprü testleri F746 simülatörüne karşı uçtan uca 5/5 geçti. M33 C çekirdeği gcc ile derlenip birim testleri 0 hatayla geçti.</p>
+      </div></div>
+      <div class="ev" style="--dc:#00704A"><div class="card">
+        <h3>1.1 · Kartta ön koşullar <span class="b b-ok">TAMAM</span></h3>
+        <p><b>Ne için:</b> servisler Python ile yazıldı ve F746'yı bir TAP arayüzüne çeviriyor. Bunun için kartta üç şey gerekiyordu: Python 3, çekirdekte TUN/TAP desteği ve ST-LINK'i tanıyan <code>cdc_acm</code> sürücüsü.</p>
+        <p><b>Sonuç:</b> Python 3.14.7 ve gereken bütün standart modüller var. <code>CONFIG_TUN</code>, <code>CONFIG_USB_ACM</code> ve <code>CONFIG_RPMSG_TTY</code> modül olarak (<code>=m</code>) derlenmiş. <code>ip</code>, <code>sysctl</code>, <code>modprobe</code>, <code>udevadm</code> ve <code>systemctl</code> tam sürüm.</p>
+      </div></div>
+      <div class="ev" style="--dc:#00704A"><div class="card">
+        <h3>1.2 · F746'yı MP257'ye tak <span class="b b-ok">TAMAM</span></h3>
+        <p><b>Ne için:</b> F746'nın USB'si Linux'ta bir seri port olmalı.</p>
+        <p><b>Sonuç:</b> <code>/dev/ttyACM0</code> oluştu, full-speed USB. ST-LINK'in kimliği plandaki <code>374b</code> değil, <code>0483:3752</code> çıktı. Bu yüzden udev kuralı (<code>linux/udev/99-f746-stlink.rules</code>) <code>3752</code>'ye göre düzeltildi.</p>
+      </div></div>
+      <div class="ev" style="--dc:#00704A"><div class="card">
+        <h3>2.1 · Dosyaları karta kopyala <span class="b b-ok">TAMAM</span></h3>
+        <p><b>Nasıl:</b> PC'den <code>scp -r</code> ile <code>MP257_Kopru\linux</code> klasörü kartta <code>/home/root/f7kopru</code> olarak kopyalandı. Kartın saati UTC'ye, saat dilimi Europe/Istanbul'a ayarlandı. Saat kalıcı değil; kart yeniden açılınca kayıyor.</p>
+        <p><b>Bugün doğrulandı:</b> karttaki 11 dosyanın içeriği depodakiyle aynı (sha256 özeti). Ancak 7 dosya Windows satır sonuyla (CRLF) kopyalanmış; ayrıntısı <a href="#dikkat">Dikkat</a> bölümünde.</p>
+      </div></div>
+      <div class="ev" style="--dc:#00704A"><div class="card">
+        <h3>2.2 · F746 hattını servis olmadan dinle <span class="b b-ok">TAMAM</span></h3>
+        <p><b>Nasıl:</b> <code>tools/f7_dinle.py</code> seri portu 1 Mbaud'da açtı, HELLO yolladı ve 5 saniye dinledi.</p>
+        <p><b>Sonuç:</b> F746'dan MP257'ye gelen yön sağlam: saniyede bir <code>st</code> ve <code>env</code> satırı, bozuk satır 0. Port açılır açılmaz yollanan ilk HELLO kayboluyor. Bunu ölçtük ve <b>önemli değil</b> kararı verdik (<a href="#testler">Testler</a>).</p>
+      </div></div>
+      <div class="ev" style="--dc:#A3007F"><div class="card">
+        <h3>2.3 · f7linkd'yi elle başlat <span class="b b-hata">HATA</span> <span class="b b-bek">SIRADA</span></h3>
+        <p><b>Ne oldu:</b> <code>f7linkd</code> açılırken bir <code>sysctl</code> komutu hata verdi ve program çıktı. Sebep bulundu ve kartta doğrulandı: komutların sırası (<a href="#f7linkd">f7linkd'nin içi</a>). Düzeltmeyi sen yapacaksın.</p>
+      </div></div>
+      <div class="ev" style="--dc:#7E5200"><div class="card">
+        <h3>F746 tarafında MP257'yi etkileyen değişiklikler <span class="b b-ok">TAMAM</span></h3>
+        <p>Firmware 0.4–0.10: hat 1 Mbaud (16x örnekleme, F746 216 MHz), her IMU örneğinde bir TELEM, SET_RATE = IMU hızı (10/20/50/100/200 Hz). 0.10'da EPOCH soğuk açılışta da rastgele: bugün F746 MP257'ye takılıp sıfırdan açılınca <code>ep=63842</code> geldi (0.9 bu durumda 0 verirdi).</p>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 03 KOMUT NASIL ÇALIŞIR (açık · pembe) ================= -->
+<section class="band sec" id="komut" data-name="Komut nasıl çalışır" style="--acc:var(--magenta);--acc-ink:var(--magenta-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">03</div>
+      <div><div class="eyebrow">Enter'a basınca</div><h2>Kart <code>python3 … f7linkd.py --tty /dev/ttyACM0</code> komutunu nasıl çalıştırıyor?</h2></div>
+      <div class="goal"><strong>Kısaca:</strong> PC'deki pencereye yazdığın satır SSH ile karta gider. Kartın kabuğu satırı kelimelere ayırır, <code>python3</code> programını bulup başlatır. Python <code>f7linkd.py</code> dosyasını yukarıdan aşağı okuyup çalıştırır. Program sen <b>Ctrl+C</b>'ye basana kadar çalışmaya devam eder.</div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card stripe">
+        <h3>Komutun parçaları</h3>
+        <pre><code>python3 /home/root/f7kopru/f7linkd.py --tty /dev/ttyACM0</code></pre>
+        <ul>
+          <li><code>python3</code>: Python yorumlayıcısı. Kartta <code>/usr/bin/python3</code>, sürüm 3.14.7. Yazılan Python kodunu satır satır çalıştıran programdır; derleme gerekmez.</li>
+          <li><code>/home/root/f7kopru/f7linkd.py</code>: çalıştırılacak program dosyası. 2.1'de PC'den kopyalanan dosya.</li>
+          <li><code>--tty</code>: <code>f7linkd</code>'nin kendi ayarı. "Hangi seri portu kullanayım?" sorusunun cevabı ondan sonra gelir.</li>
+          <li><code>/dev/ttyACM0</code>: F746'nın seri portu. Verilmezse <code>f7linkd</code> <code>/dev/f746</code>'yı arar; o ad 2.5'te kurulacak udev kuralıyla oluşacak, bugün yok. Bu yüzden elle denerken <code>--tty /dev/ttyACM0</code> yazıyoruz.</li>
+        </ul>
+      </div>
+      <div class="card stripe" style="--sc:var(--cyan)">
+        <h3>Verilmeyen ayarlar ne oluyor?</h3>
+        <p>Komutta yazmadığın her ayar <code>f7linkd</code>'nin varsayılan değerini alır:</p>
+        <div class="tbl"><table style="min-width:0">
+          <thead><tr><th>Ayar</th><th>Varsayılan</th><th>Anlamı</th></tr></thead>
+          <tbody>
+            <tr><td><code>--baud</code></td><td><code>1000000</code></td><td>Seri hat hızı, F746 ile aynı</td></tr>
+            <tr><td><code>--tap</code></td><td><code>tap-f7</code></td><td>Açılacak ağ arayüzünün adı</td></tr>
+            <tr><td><code>--ip</code></td><td><code>192.168.50.1/24</code></td><td>Linux'un bu ağdaki adresi</td></tr>
+            <tr><td><code>--mtu</code></td><td><code>242</code></td><td>256 B çerçeve sınırı − 14 B başlık</td></tr>
+            <tr><td><code>--ctl-port</code></td><td><code>7100</code></td><td>Kart içinden konsol komutu almak için</td></tr>
+            <tr><td><code>--json-port</code></td><td><code>7101</code></td><td>F746 raporlarını f7hub'a vermek için</td></tr>
+          </tbody></table></div>
+        <p class="src"><span class="b b-yr">KOD</span> <code>f7linkd.py</code> <code>main()</code> içindeki <code>argparse</code> satırları</p>
+      </div>
+    </div>
+
+    <div class="anim" data-anim data-max="9" data-auto="2800" aria-label="Komutun çalışma adımları animasyonu">
+      <div class="ctl">
+        <button type="button" data-act="prev" aria-label="Önceki adım">◀</button>
+        <button type="button" data-act="play" aria-label="Oynat ya da durdur">▶ Oynat</button>
+        <button type="button" data-act="next" aria-label="Sonraki adım">▶▶</button>
+        <span class="cnt"></span><span class="bar"><i></i></span>
+      </div>
+      <div class="chain">
+        <div class="lnk" data-on="1"><span class="k">1</span><div><h3>PC: <code>ssh root@192.168.7.1</code></h3><p>SSH istemcisi USB ağı üzerinden kartın SSH sunucusuna (TCP 22) bağlanır ve <code>root</code> kullanıcısıyla oturum açar. Kart sana bir kabuk (<code>sh</code>) başlatır. Bundan sonra yazdığın her şey şifreli olarak karta gider, kartta çalışır.</p></div></div>
+        <div class="lnk" data-on="2"><span class="k">2</span><div><h3>Kabuk satırı kelimelere ayırır</h3><p>Boşluklardan bölünür: <code>python3</code> · <code>/home/root/f7kopru/f7linkd.py</code> · <code>--tty</code> · <code>/dev/ttyACM0</code>. İlk kelime çalıştırılacak program, geri kalanlar ona verilecek değerler.</p></div></div>
+        <div class="lnk" data-on="3"><span class="k">3</span><div><h3>Kabuk <code>python3</code>'ü bulur</h3><p>Komut dosyalarının durduğu klasörlere (<code>PATH</code>, ör. <code>/usr/bin</code>) bakar ve <code>/usr/bin/python3</code>'ü bulur.</p></div></div>
+        <div class="lnk" data-on="4"><span class="k">4</span><div><h3>Çekirdek yeni bir süreç başlatır</h3><p>Linux <code>python3</code> için yeni bir süreç (çalışan program) açar ve diğer kelimeleri ona verir. Kabuk bu süreç bitene kadar bekler; komut "ön planda" çalışır, pencere başka komut almaz.</p></div></div>
+        <div class="lnk" data-on="5"><span class="k">5</span><div><h3>Python dosyayı okur ve çalıştırmaya başlar</h3><p>Önce standart kütüphaneden gereken parçaları yükler (<code>os</code>, <code>select</code>, <code>socket</code>, <code>termios</code> …). Sonra dosyanın klasöründeki <code>f7common/proto.py</code>'yi yükler; bütün protokol tanımları orada. En sonda <code>main()</code> fonksiyonunu çağırır.</p></div></div>
+        <div class="lnk" data-on="6"><span class="k">6</span><div><h3><code>main()</code> ayarları okur</h3><p><code>argparse</code>, <code>--tty /dev/ttyACM0</code>'ı alır; yazılmayan ayarlar için varsayılanları koyar (yukarıdaki tablo).</p></div></div>
+        <div class="lnk" data-on="7"><span class="k">7</span><div><h3>Hazırlık: TAP arayüzü ve iki UDP soketi</h3><p><code>open_tap</code>: <code>/dev/net/tun</code> açılır ve çekirdekten <code>tap-f7</code> istenir; ardından altı ayar komutu çalışır. Bunun için <code>root</code> yetkisi gerekiyor. Sonra UDP 7100'ü dinleyen bir soket ve 7101'e yollayan bir soket açılır.</p></div></div>
+        <div class="lnk" data-on="8"><span class="k">8</span><div><h3><code>run()</code>: hiç bitmeyen döngü</h3><p>İlk turda seri port açılır, günlüğe <code>seri port acik: /dev/ttyACM0 @ 1000000</code> yazılır ve sıraya bir HELLO konur. Döngü <code>select</code> ile seri portu, TAP'ı ve UDP soketini bekler; hangisinde iş varsa onu yapar (<a href="#f7linkd">sonraki bölüm</a>).</p></div></div>
+        <div class="lnk" data-on="9"><span class="k">9</span><div><h3>Ctrl+C: program biter, arayüz kalkar</h3><p>Pencere sürece "kesme" sinyali (SIGINT) yollar. <code>f7linkd</code> bunu yakalamadığı için Python ekrana <code>KeyboardInterrupt</code> ile biten birkaç satır hata metni basar ve çıkar; <b>bu normal</b>. Süreç bitince çekirdek açık dosyaları kapatır. <code>tap-f7</code> kalıcı oluşturulmadığı için o da kendiliğinden silinir.</p></div></div>
+      </div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card">
+        <h3>Neden <code>./f7linkd.py</code> değil de <code>python3 …</code>?</h3>
+        <p>Dosyanın ilk satırı <code>#!/usr/bin/env python3</code>. Bu satır dosya doğrudan çalıştırıldığında hangi programın kullanılacağını söyler. Ama kartta bu dosya Windows satır sonuyla (CRLF) duruyor ve "çalıştırılabilir" izni de olmayabilir (bakılmadı). <code>python3</code>'ü başa yazınca bunların hiçbiri önemli olmuyor: Python dosyayı kendisi açıp okuyor, satır sonundaki <code>\r</code>'yi de sorun etmiyor.</p>
+      </div>
+      <div class="card">
+        <h3>2.5'ten sonra kim çalıştıracak?</h3>
+        <p>Elle başlatmak yalnız deneme için. 2.5'te kurulacak systemd servisi kart açılınca aynı komutu kendisi çalıştıracak: <code>/usr/bin/python3 /usr/local/f7kopru/f7linkd.py --tty /dev/f746</code>. Program çökerse systemd 2 saniye sonra yeniden başlatacak (<code>Restart=always</code>, <code>RestartSec=2</code>).</p>
+        <p class="src"><span class="b b-yr">KOD</span> <code>linux/systemd/f7linkd.service</code></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 04 F7LINKD'NİN İÇİ (koyu · amber) ================= -->
+<section class="band dark sec" id="f7linkd" data-name="f7linkd'nin içi" style="--acc:var(--amber);--acc-ink:var(--amber-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">04</div>
+      <div><div class="eyebrow">f7linkd.py</div><h2>Köprünün içinde neler oluyor?</h2></div>
+      <div class="goal"><strong>Görevi:</strong> seri portun <b>tek sahibi</b> olmak. F746'dan gelen satırları ağ çerçevesine ya da rapora çevirir; Linux'tan gelen çerçeveleri satıra çevirip F746'ya yollar. Yalnız Python standart kütüphanesi kullanır, kartta <code>pip</code> gerekmez.</div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card stripe">
+        <h3>1. <code>open_tap</code>: ağ arayüzünü aç</h3>
+        <p><code>/dev/net/tun</code> dosyası açılır ve çekirdeğe <code>TUNSETIFF</code> isteği yollanır: "bana <code>tap-f7</code> adında bir TAP arayüzü ver". <b>TAP</b>, bir programın Ethernet kablosu gibi davrandığı sanal ağ kartıdır: program bu dosyaya yazdığı çerçeveleri Linux "kablodan geldi" sayar, Linux'un yolladığı çerçeveleri de program okur. <code>IFF_NO_PI</code> çerçevenin başına ek bilgi eklenmemesini söyler.</p>
+        <p>Sonra altı komut sırayla çalışır (düzeltmeden sonraki sıra):</p>
+        <pre><code><span class="c"># 1) Arayüzün MAC adresi (F746'nın yolladığı çerçevelerin hedefi)</span>
+ip link set tap-f7 address 02:00:00:00:00:01
+<span class="c"># 2) Bu arayüzde IPv6'yı kapat (seri hat gereksiz IPv6 paketleriyle dolmasın)</span>
+sysctl -q -w net.ipv6.conf.tap-f7.disable_ipv6=1
+<span class="c"># 3) En büyük paket boyu: 256 B çerçeve - 14 B Ethernet başlığı = 242</span>
+ip link set tap-f7 mtu 242
+<span class="c"># 4) Arayüzde eski adres varsa sil</span>
+ip addr flush dev tap-f7
+<span class="c"># 5) Linux'un bu ağdaki adresi: 192.168.50.1, ağ 192.168.50.0/24</span>
+ip addr add 192.168.50.1/24 dev tap-f7
+<span class="c"># 6) Arayüzü aç</span>
+ip link set tap-f7 up</code></pre>
+        <p>Komutlardan biri hata verirse (<code>check=True</code>) Python programı durdurur. 2.3'te olan buydu.</p>
+      </div>
+      <div class="card stripe" style="--sc:var(--cyan)">
+        <h3>2. <code>open_serial</code>: seri portu ham modda aç</h3>
+        <ul>
+          <li><code>O_RDWR</code>: hem oku hem yaz. <code>O_NOCTTY</code>: bu port kabuğun terminali olmasın. <code>O_NONBLOCK</code>: veri yoksa bekleme, hemen dön.</li>
+          <li><code>termios</code> ayarları sıfırlanır: satır düzenleme, yankı ve <code>\n</code> → <code>\r\n</code> çevirme kapanır. Baytlar olduğu gibi geçer; 8 bit, eşlik yok (8N1).</li>
+          <li>1000000 baud standart Linux hız listesinde yok. <code>termios2</code> (<code>TCSETS2</code>, <code>BOTHER</code>) ile hız sayı olarak tam verilir.</li>
+          <li>En sonda tamponlar boşaltılır (<code>tcflush</code>).</li>
+        </ul>
+        <h3 style="margin-top:18px">3. İlk iş: HELLO</h3>
+        <p>Port açılınca sıraya <code>HELLO\n</code> konur; F746 <code>hello</code> raporuyla kim olduğunu söylesin diye. Port bir süre kapalı kaldıysa bu ilk satır kayboluyor; etkisi küçük (<a href="#testler">Testler</a>).</p>
+        <p class="src"><span class="b b-yr">KOD</span> <code>f7linkd.py</code>: <code>open_serial</code>, <code>serial_open</code></p>
+      </div>
+    </div>
+
+    <div class="anim" data-anim data-max="4" data-auto="3000" aria-label="IPv6 ve MTU sırası animasyonu">
+      <h3 style="margin-bottom:10px">2.3'teki hata: iki satırın sırası</h3>
+      <div class="ctl">
+        <button type="button" data-act="prev" aria-label="Önceki adım">◀</button>
+        <button type="button" data-act="play" aria-label="Oynat ya da durdur">▶ Oynat</button>
+        <button type="button" data-act="next" aria-label="Sonraki adım">▶▶</button>
+        <span class="cnt"></span><span class="bar"><i></i></span>
+      </div>
+      <div class="cmp">
+        <div class="col">
+          <h3>Bugünkü kod <span class="b b-hata">HATA</span></h3>
+          <div class="row" data-on="1"><span class="k">1</span><div>TAP açıldı. MTU 1500.<div class="dir">/proc/sys/net/ipv6/conf/tap-f7 ✔ var</div></div></div>
+          <div class="row bad" data-on="2"><span class="k">2</span><div><code>ip link set tap-f7 mtu 242</code><div class="dir">MTU 1280'in altında → Linux bu arayüzde IPv6'yı kapatır, klasörü siler ✖</div></div></div>
+          <div class="row bad" data-on="3"><span class="k">3</span><div><code>sysctl … disable_ipv6=1</code><div class="dir">"cannot stat …/tap-f7/disable_ipv6" → hata → f7linkd çıkar</div></div></div>
+          <div class="row" data-on="4"><span class="k">4</span><div>Adres ve "up" adımlarına hiç gelinmez.</div></div>
+        </div>
+        <div class="col">
+          <h3>Düzeltilmiş sıra <span class="b b-ok">ÇÖZÜM</span></h3>
+          <div class="row" data-on="1"><span class="k">1</span><div>TAP açıldı. MTU 1500.<div class="dir">/proc/sys/net/ipv6/conf/tap-f7 ✔ var</div></div></div>
+          <div class="row good" data-on="2"><span class="k">2</span><div><code>sysctl … disable_ipv6=1</code><div class="dir">Klasör var → IPv6 kapandı ✔</div></div></div>
+          <div class="row good" data-on="3"><span class="k">3</span><div><code>ip link set tap-f7 mtu 242</code><div class="dir">Klasör silinir; sorun değil, IPv6 zaten kapalı ✔</div></div></div>
+          <div class="row good" data-on="4"><span class="k">4</span><div>Adres eklenir, arayüz açılır ✔</div></div>
+        </div>
+      </div>
+      <div>
+        <p class="cap" data-s="1"><b>Başlangıç:</b> yeni açılan her arayüzün MTU'su 1500'dür ve Linux onun için bir IPv6 ayar klasörü açar.</p>
+        <p class="cap" data-s="2"><b>Fark burada:</b> IPv6 en az 1280 baytlık MTU ister. Bugünkü kod MTU'yu önce 242 yapıyor ve Linux IPv6'yı bu arayüzde kendiliğinden kapatıp klasörü siliyor. Düzeltilmiş sırada önce IPv6 kapatılıyor.</p>
+        <p class="cap" data-s="3"><b>Sonuç:</b> bugünkü kodda <code>sysctl</code> silinmiş klasöre yazmaya çalışıyor ve hata veriyor. Düzeltilmiş sırada MTU küçülünce klasör yine siliniyor, ama artık kimse ona yazmaya çalışmıyor.</p>
+        <p class="cap" data-s="4"><b>Kartta doğrulandı:</b> geçici bir <code>tap-dene</code> arayüzünde MTU 1500'de klasör vardı, 242'de silindi, 1500'e geri alınca yeniden oluştu. Kartın çekirdeğinde IPv6 var; sorun yalnız sıra.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:34px">4. <code>run()</code>: dört yön, tek döngü</h3>
+    <p class="mu"><code>select</code> çağrısı en çok 0,2 saniye bekler ve hangi kaynağın okunmaya, hangisinin yazılmaya hazır olduğunu söyler. Program tek iş parçacığıyla çalışır; satırlar bu yüzden asla birbirine karışmaz.</p>
+    <div class="lanes">
+      <div class="lane" style="--lc:var(--lime)"><h3>F746 → Linux (ağ çerçevesi)</h3><div class="track"><span>/dev/ttyACM0<br>FRAME 1 …</span><span>hex çöz, boy ve FCS denetle</span><span>tap-f7'ye yaz</span></div><p>Tutmayan satır <code>rx_bad</code> sayacına yazılır ve atılır.</p></div>
+      <div class="lane" style="--lc:var(--cyan);--d:.8s"><h3>F746 → f7hub (JSON rapor)</h3><div class="track"><span>/dev/ttyACM0<br>{"type":…}</span><span>dokunmadan aktar</span><span>UDP 127.0.0.1:7101</span></div><p><code>st</code>, <code>env</code>, <code>hello</code>, <code>rx_err</code> … f7hub çalışmıyorsa paket kaybolur, zararı yok.</p></div>
+      <div class="lane" style="--lc:var(--magenta);--d:1.6s"><h3>Linux → F746 (ağ çerçevesi)</h3><div class="track"><span>tap-f7'den çerçeve</span><span>60 B'ye doldur + FCS, hex'e çevir</span><span>FRAME 1 … → seri TX sırası</span></div><p>Sıra 16 384 baytı (1 Mbaud'da ~0,16 s) aşarsa çerçeve atılır, <code>tx_drop</code> artar; F746'da akış kontrolü yok.</p></div>
+      <div class="lane" style="--lc:var(--violet);--d:2.4s"><h3>Kart içi → F746 (konsol komutu)</h3><div class="track"><span>UDP 127.0.0.1:7100</span><span>izinli mi? HELLO, STATE, HOLD n, TXDELAY n</span><span>satır → seri TX sırası</span></div><p>Başka bir şey gelirse <code>err</code> döner, <code>cmd_bad</code> artar. Her saniye de kendi sayaçlarını <code>{"type":"linkd",…}</code> olarak 7101'e yollar.</p></div>
+    </div>
+    <p class="src"><span class="b b-yr">KOD</span> <code>f7linkd.py</code>: <code>run</code>, <code>on_line</code>, <code>on_tap_frame</code>, <code>on_ctl</code>, <code>TX_LIMIT = 16384</code>, <code>COMMAND_RE</code> · <code>f7common/proto.py</code>: <code>frame_to_line</code>, <code>line_to_frame</code></p>
+  </div>
+</section>
+
+<!-- ================= 05 KONTROL KOMUTLARI (lila · mor) ================= -->
+<section class="band tint sec" id="kontrol" data-name="Kontrol komutları" style="--acc:var(--violet);--acc-ink:var(--violet-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">05</div>
+      <div><div class="eyebrow">Adım 2.3'ün kontrolleri</div><h2>Bu komutlar ne iş yapıyor?</h2></div>
+      <div class="goal"><strong>Hepsi yalnız okur:</strong> hiçbiri karta kalıcı bir şey yazmaz. <code>f7linkd</code> birinci SSH penceresinde çalışırken ikinci pencerede çalıştırılırlar.</div>
+    </div>
+
+    <div class="grid c2">
+      <div class="card stripe">
+        <h3><code>ip addr show tap-f7</code></h3>
+        <div class="why"><b>Ne oluyor?</b> <code>ip</code> Linux'un ağ ayar aracıdır. <code>addr show</code> "adresleri göster" demek. Çekirdeğe <code>tap-f7</code> arayüzünün durumunu ve adreslerini sorar.</div>
+        <div class="lbl">Beklenen sonuç</div>
+        <pre><code>tap-f7: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 242 …
+    link/ether 02:00:00:00:00:01 …
+    inet 192.168.50.1/24 … scope global tap-f7</code></pre>
+        <p><code>UP</code>: arayüz açık. <code>LOWER_UP</code>: "kablo takılı"; TAP için bu, <code>f7linkd</code>'nin arayüzü açık tuttuğu anlamına gelir. <code>mtu 242</code> ve <code>inet 192.168.50.1/24</code> <code>open_tap</code>'teki ayarlar.</p>
+        <p><b>Olmazsa:</b> "does not exist" çıkıyorsa <code>f7linkd</code> çalışmıyor; birinci pencereye bak.</p>
+      </div>
+      <div class="card stripe" style="--sc:var(--magenta)">
+        <h3><code>ip -6 addr show dev tap-f7</code></h3>
+        <div class="why"><b>Ne oluyor?</b> Aynı soru, yalnız IPv6 adresleri için (<code>-6</code>). <code>dev tap-f7</code> "yalnız bu arayüz" demek.</div>
+        <div class="lbl">Beklenen sonuç</div>
+        <p><b>Hiç çıktı yok.</b> IPv6 bu arayüzde kapalı olduğu için IPv6 adresi de olmamalı. Bir <code>inet6 fe80::…</code> satırı görürsen IPv6 açık kalmış demektir; o zaman Linux seri hatta gereksiz IPv6 paketleri yollar.</p>
+      </div>
+      <div class="card stripe" style="--sc:var(--cyan)">
+        <h3><code>ping -c 5 192.168.50.2</code></h3>
+        <div class="why"><b>Ne oluyor?</b> <code>ping</code> F746'ya "orada mısın?" diye ICMP yankı isteği yollar ve cevabı bekler. <code>-c 5</code> "5 tane yolla ve dur" demek; verilmezse sen durdurana kadar devam eder. Cevabı Linux değil, F746'daki FreeRTOS-Plus-TCP veriyor. Yani bu komut bütün zinciri uçtan uca dener.</div>
+        <div class="lbl">Beklenen sonuç</div>
+        <pre><code>64 bytes from 192.168.50.2: icmp_seq=1 ttl=… time=… ms
+…
+5 packets transmitted, 5 received, 0% packet loss</code></pre>
+        <p>Süre birkaç ms ile birkaç on ms arası. 98 baytlık bir ping çerçevesi hex olarak ~213 karakterlik bir satır eder; 1 Mbaud'da her yön ~2 ms sürer, üstüne F746'nın işleme süresi eklenir.</p>
+      </div>
+      <div class="card stripe" style="--sc:var(--mint)">
+        <h3><code>ip neigh show dev tap-f7</code></h3>
+        <div class="why"><b>Ne oluyor?</b> Linux'un "komşu tablosunu" gösterir: bu arayüzde hangi IP adresinin hangi MAC adresinde olduğunu (ARP ile öğrenilir). Ping'den önce Linux "192.168.50.2 kimde?" diye sorar, F746 "bende, MAC'im şu" der.</div>
+        <div class="lbl">Beklenen sonuç</div>
+        <pre><code>192.168.50.2 lladdr 02:80:e1:12:60:49 REACHABLE</code></pre>
+        <p><code>lladdr</code> F746'nın MAC'i; bugün F746'nın <code>hello</code> raporunda da aynısı geldi. <code>FAILED</code> ya da boş çıktı, ARP cevabının gelmediği anlamına gelir: F746'dan çerçeve ulaşmıyor.</p>
+      </div>
+    </div>
+
+    <div class="anim" data-anim data-max="12" data-auto="2300" aria-label="Ping'in yolculuğu animasyonu">
+      <h3 style="margin-bottom:10px">Bir ping'in yolculuğu: önce ARP, sonra yankı</h3>
+      <div class="ctl">
+        <button type="button" data-act="prev" aria-label="Önceki adım">◀</button>
+        <button type="button" data-act="play" aria-label="Oynat ya da durdur">▶ Oynat</button>
+        <button type="button" data-act="next" aria-label="Sonraki adım">▶▶</button>
+        <span class="cnt"></span><span class="bar"><i></i></span>
+      </div>
+      <div class="seqwrap">
+        <div class="seq">
+          <div class="who">ping</div><div class="who">Linux çekirdeği</div><div class="who">f7linkd</div><div class="who">USB · ST-LINK</div><div class="who">F746</div>
+          <div class="msg" data-from="1" style="grid-column:1/3"><div class="t">yankı isteği</div><div class="ln"></div></div>
+          <div class="msg arp" data-from="2" style="grid-column:2/4"><div class="t">ARP: kimde .50.2?</div><div class="ln"></div></div>
+          <div class="msg arp" data-from="3" style="grid-column:3/5"><div class="t">FRAME 1 FFFF…0806</div><div class="ln"></div></div>
+          <div class="msg arp" data-from="4" style="grid-column:4/6"><div class="t">UART 1 Mbaud</div><div class="ln"></div></div>
+          <div class="msg arp r" data-from="5" style="grid-column:4/6"><div class="t">ARP: bende</div><div class="ln"></div></div>
+          <div class="msg arp r" data-from="6" style="grid-column:3/5"><div class="t">FRAME 1 … FCS ✔</div><div class="ln"></div></div>
+          <div class="msg arp r" data-from="7" style="grid-column:2/4"><div class="t">tap-f7'ye yaz</div><div class="ln"></div></div>
+          <div class="msg" data-from="8" style="grid-column:2/4"><div class="t">ICMP 98 B</div><div class="ln"></div></div>
+          <div class="msg" data-from="9" style="grid-column:3/6"><div class="t">FRAME 1 … (~213 kar.)</div><div class="ln"></div></div>
+          <div class="msg r" data-from="10" style="grid-column:3/6"><div class="t">yankı cevabı</div><div class="ln"></div></div>
+          <div class="msg r" data-from="11" style="grid-column:2/4"><div class="t">tap-f7'ye yaz</div><div class="ln"></div></div>
+          <div class="msg r" data-from="12" style="grid-column:1/3"><div class="t">64 bytes from …</div><div class="ln"></div></div>
+        </div>
+      </div>
+      <div>
+        <p class="cap" data-s="1"><b>1.</b> <code>ping</code> programı yankı isteğini çekirdeğe verir: "bunu 192.168.50.2'ye yolla".</p>
+        <p class="cap" data-s="2"><b>2.</b> Çekirdek 192.168.50.2'nin MAC adresini bilmiyor. <code>tap-f7</code>'den herkese bir ARP sorusu yollar: "192.168.50.2 kimde?" (42 B).</p>
+        <p class="cap" data-s="3"><b>3.</b> f7linkd çerçeveyi 60 B'ye doldurur, FCS ekler ve satıra çevirir: <code>FRAME 1 FFFFFFFFFFFF0200000000010806…</code>. Hedef <code>FFFFFFFFFFFF</code> "herkese" demek, <code>0806</code> ARP demek.</p>
+        <p class="cap" data-s="4"><b>4.</b> Satır <code>/dev/ttyACM0</code>'a yazılır; ST-LINK onu F746'nın USART1'ine 1 Mbaud'da verir.</p>
+        <p class="cap" data-s="5"><b>5.</b> F746 satırı çözer, FCS'yi denetler. FreeRTOS-Plus-TCP soruyu tanır ve cevap verir: "192.168.50.2 bende, MAC'im <code>02:80:E1:12:60:49</code>".</p>
+        <p class="cap" data-s="6"><b>6.</b> Cevap da bir <code>FRAME 1 …</code> satırı olarak geri gelir. f7linkd hex'i çözer, FCS'yi denetler.</p>
+        <p class="cap" data-s="7"><b>7.</b> f7linkd çerçeveyi <code>tap-f7</code>'ye yazar. Çekirdek MAC'i komşu tablosuna koyar: <code>ip neigh</code>'in gösterdiği satır budur.</p>
+        <p class="cap" data-s="8"><b>8.</b> Artık MAC belli. Çekirdek asıl yankı isteğini yollar: 98 baytlık bir ICMP çerçevesi.</p>
+        <p class="cap" data-s="9"><b>9.</b> Bu çerçeve ~213 karakterlik bir satır eder. 1 Mbaud'da bir karakter 10 bit (başlangıç + 8 veri + bitiş), yani ~2,1 ms.</p>
+        <p class="cap" data-s="10"><b>10.</b> F746'nın IP yığını yankı cevabını kurar ve aynı yoldan geri yollar.</p>
+        <p class="cap" data-s="11"><b>11.</b> f7linkd cevabı denetler ve <code>tap-f7</code>'ye yazar.</p>
+        <p class="cap" data-s="12"><b>12.</b> Çekirdek cevabı <code>ping</code>'e teslim eder; ekranda <code>64 bytes from 192.168.50.2 … time=… ms</code> satırı çıkar. Sonraki 4 ping için ARP gerekmez, MAC tabloda.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:22px">
+      <h3>Sayaçları okuyan küçük Python programı</h3>
+      <div class="why"><b>Ne oluyor?</b> <code>f7linkd</code> her saniye kendi sayaçlarını kart içinde UDP 7101'e yolluyor; normalde bunu f7hub dinliyor. f7hub henüz çalışmadığı için o portu bu küçük program dinliyor, ilk <code>linkd</code> raporunu ekrana yazıp kendiliğinden kapanıyor. Karta hiçbir şey yazmaz. f7hub çalışırken denersen port dolu olduğu için "Address already in use" hatası alırsın.</div>
+      <span class="where">Kartta (ikinci SSH penceresi)</span>
+      <pre><code><span class="c"># "python3 -": programı dosyadan değil, klavyeden (standart girdiden) oku.
+# "&lt;&lt;'EOF'": bundan sonraki satırları, tek başına EOF yazan satıra kadar programa ver.
+#  EOF'u tırnak içine almak kabuğun satırlardaki işaretlere dokunmamasını sağlar.</span>
+python3 - &lt;&lt;'EOF'
+<span class="c"># Ağ işleri için Python'un socket modülü</span>
+import socket
+<span class="c"># IPv4 (AF_INET) üzerinde UDP (SOCK_DGRAM) soketi oluştur</span>
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+<span class="c"># Yalnız kart içinden (127.0.0.1) gelen, 7101 portuna yollanan paketleri dinle</span>
+s.bind(("127.0.0.1", 7101))
+<span class="c"># d: son gelen paket; başta boş bayt dizisi</span>
+d = b""
+<span class="c"># İçinde "linkd" geçen paket gelene kadar paket al (F746 raporları da bu porta geliyor)</span>
+while b'"linkd"' not in d:
+    d = s.recv(2048)
+<span class="c"># Baytları metne çevirip ekrana yaz; program burada biter</span>
+print(d.decode())
+EOF</code></pre>
+      <div class="lbl">Beklenen sonuç</div>
+      <pre><code>{"type":"linkd","serial":true,"tty":"/dev/ttyACM0","tx_queue":0,"rx_lines":…,"rx_frames":…,"rx_json":…,"rx_bad":0,"tx_frames":…,"tx_drop":0,"tx_long":0,"cmds":0,"cmd_bad":0,"serial_reopen":0}</code></pre>
+      <div class="tbl"><table>
+        <thead><tr><th>Alan</th><th>Anlamı</th><th>Ping'den sonra beklenen</th></tr></thead>
+        <tbody>
+          <tr><td><code>serial</code></td><td>Seri port açık mı</td><td><code>true</code></td></tr>
+          <tr><td><code>rx_lines</code> / <code>rx_json</code></td><td>F746'dan gelen bütün satırlar / JSON raporlar</td><td>Saniyede ~2 artar (<code>st</code> + <code>env</code>)</td></tr>
+          <tr><td><code>rx_frames</code> / <code>tx_frames</code></td><td>F746'dan gelen / F746'ya giden ağ çerçeveleri</td><td>0'dan büyük (ARP + 5 ping)</td></tr>
+          <tr><td><code>rx_bad</code></td><td>Bozuk satır (hex, boy ya da FCS tutmadı)</td><td><b>0</b></td></tr>
+          <tr><td><code>tx_drop</code> / <code>tx_long</code></td><td>Sıra dolduğu için atılan / 256 B'den uzun çerçeve</td><td><b>0</b></td></tr>
+          <tr><td><code>serial_reopen</code></td><td>Seri port kaç kez koptu</td><td><b>0</b></td></tr>
+        </tbody></table></div>
+      <p class="src"><span class="b b-yr">KOD</span> <code>f7linkd.py</code> <code>status_json</code> ve <code>self.c</code> sözlüğü</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 06 TESTLER (koyu · nane) ================= -->
+<section class="band dark sec" id="testler" data-name="Testler" style="--acc:var(--mint);--acc-ink:var(--mint-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">06</div>
+      <div><div class="eyebrow">22.11.2026 · kartta ölçüldü</div><h2>Bugünkü testler ve bulgular</h2></div>
+      <div class="goal"><strong>Yöntem:</strong> her adımdan önce test koşulları yazıldı, sonra PC'den SSH ile kartta çalıştırıldı. Hepsi okuma ya da geçici deneme; karta kalıcı bir şey yazılmadı.</div>
+    </div>
+
+    <div class="tbl"><table>
+      <thead><tr><th>No</th><th>Neyi test ediyor</th><th>Nasıl</th><th>Sonuç</th></tr></thead>
+      <tbody>
+        <tr><td>K0</td><td>Karttaki dosyalar depoyla aynı mı</td><td>11 dosyanın sha256 özeti; satır sonu farkı ayrıca</td><td><span class="b b-ok">GEÇTİ</span> İçerik aynı; 7 dosya CRLF</td></tr>
+        <tr><td>K1</td><td>F746 doğru görünüyor mu</td><td><code>lsusb</code>, <code>/sys</code>, <code>ls /dev/ttyACM0</code></td><td><span class="b b-ok">GEÇTİ</span> <code>0483:3752</code>, 12 Mb/s</td></tr>
+        <tr><td>K4</td><td>Sürücü hatası var mı</td><td><code>dmesg</code></td><td><span class="b b-ok">GEÇTİ</span> Hata, aşırı akım, kopma yok</td></tr>
+        <tr><td>K2</td><td>F746 → MP257 yönü</td><td><code>f7_dinle.py</code> 5 s</td><td><span class="b b-ok">GEÇTİ</span> 5 <code>st</code> + 6 <code>env</code>, bozuk 0; HELLO kayıp</td></tr>
+        <tr><td>K3</td><td>İlk satır ne zaman kayboluyor</td><td>Kartta tek seferlik betik, <code>f7linkd</code>'nin <code>open_serial</code>'ı</td><td><span class="b b-test">ÖLÇÜM</span> Aşağıdaki tablo</td></tr>
+        <tr><td>2.3</td><td>f7linkd açılıyor mu</td><td>Elle başlatma</td><td><span class="b b-hata">KALDI</span> IPv6/MTU sırası; sebep doğrulandı</td></tr>
+      </tbody></table></div>
+
+    <div class="grid c2">
+      <div class="card stripe">
+        <h3>İlk satır kaybı (K3)</h3>
+        <div class="tbl" style="margin-top:8px"><table style="min-width:0">
+          <thead><tr><th>Durum</th><th>Port ≥10 s kapalıydı</th><th>0,5 s arayla</th></tr></thead>
+          <tbody>
+            <tr><td>(a) Açılır açılmaz HELLO</td><td><b>3/3 kayıp</b></td><td>0/4 kayıp</td></tr>
+            <tr><td>(b) 0,5 s bekle, tamponu boşalt</td><td><b>0/3 kayıp</b></td><td>0/5 kayıp</td></tr>
+            <tr><td>(c) Önce <code>\n</code>, sonra HELLO</td><td><b>3/3 kayıp</b></td><td>0/5 kayıp</td></tr>
+          </tbody></table></div>
+        <p><b>Anlamı:</b> kayıp yalnız port birkaç saniye kapalı kaldıktan sonraki ilk açılışta oluyor ve ilk satır bozulmadan, bütünüyle kayboluyor. USB uyku modu sebep değil (cihaz hiç uyumamış). Kesin sebep bilinmiyor; işe yarayan çözüm açtıktan sonra 0,5 s beklemek.</p>
+        <p><b>Karar:</b> önemli değil. EPOCH ve durum her saniye gelen <code>st</code> satırından okunuyor; paneldeki HELLO düğmesiyle sonradan sorulabiliyor. <code>f7linkd</code> bu yüzden değişmiyor.</p>
+      </div>
+      <div class="card stripe" style="--sc:var(--amber)">
+        <h3>Diğer bulgular</h3>
+        <ul>
+          <li><b>EPOCH gerçek soğuk açılışta doğrulandı:</b> F746 PC'den çıkarılıp MP257'ye takılınca sıfırdan açıldı ve <code>ep=63842</code> geldi.</li>
+          <li><b>F746'nın kendi sayaçları temiz:</b> <code>st</code> satırlarında <code>"why":0</code>, durum <code>"s":1</code> (yalnız NET_READY; START verilmediği için ölçüm kapalı).</li>
+          <li><b>Ağ çerçevesi gelmedi:</b> 5 saniyelik dinlemede <code>FRAME</code> satırı 0. Rapora göre ARP isteği görülebilirdi ama şart değil; ilk çerçeveler 2.3'te ping ile gelecek.</li>
+          <li><b>PC'de aynı test (Windows, COM6):</b> kısa arayla açılışta kayıp 0/5, hız değişiminde de 0/5. Uzun bekleme orada denenmedi; bu yüzden F746'nın suçsuz olduğu kanıtlanmış değil.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="src"><span class="b b-test">TEST</span> Betikler oturumun geçici klasöründe: <code>k3_ilk_satir.py</code>, <code>k3b_bekle.py</code>, <code>k3c_bekle_bc.py</code></p>
+  </div>
+</section>
+
+<!-- ================= 07 SIRADA NE VAR (açık · camgöbeği) ================= -->
+<section class="band sec" id="sirada" data-name="Sırada ne var" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">07</div>
+      <div><div class="eyebrow">Plan</div><h2>Sırada ne var?</h2></div>
+      <div class="goal"><strong>Bundan sonra:</strong> adımları sen uyguluyorsun; her adımın komutları, ne yaptıkları ve beklenen sonuçları adım adım veriliyor.</div>
+    </div>
+    <div class="grid c3">
+      <div class="card stripe"><h3>2.3 · f7linkd + ping <span class="b b-bek">SIRADA</span></h3><p><code>f7linkd.py</code>'de <code>sysctl</code> satırını <code>mtu</code> satırının üstüne al, dosyayı <code>scp</code> ile karta kopyala, <code>f7linkd</code>'yi başlat ve <a href="#kontrol">05</a>'teki kontrolleri yap.</p></div>
+      <div class="card stripe"><h3>2.4 · f7hub ve panel <span class="b b-bek">SIRADA</span></h3><p><code>f7hub</code> F746'ya komut yollar, telemetriyi alır, CSV'ye yazar ve <code>http://192.168.7.1:8080/</code>'de paneli sunar. PC tarayıcısında START'a basınca açılar akmalı.</p></div>
+      <div class="card stripe"><h3>2.5 · Kalıcı kurulum <span class="b b-bek">SIRADA</span></h3><p><code>kur.sh</code> dosyaları <code>/usr/local/f7kopru</code>'ya kopyalar, udev kuralını ve iki systemd servisini kurar. Önce udev kuralının satır sonu kontrol edilmeli (<a href="#dikkat">Dikkat</a>).</p></div>
+      <div class="card stripe"><h3>2.6 · PC'den F746'ya ping <span class="b b-gn">İSTEĞE BAĞLI</span></h3><p>Kart yönlendirici olur; PC'den <code>ping 192.168.50.2</code> çalışır. Yalnız tanı için.</p></div>
+      <div class="card stripe"><h3>Faz 3 · M33 FreeRTOS</h3><p>Gözetim çekirdeği (<code>m33/common</code>) FreeRTOS ile M33'te çalışır; <code>/dev/ttyRPMSG0</code>'dan <code>RDY freertos 1</code> ve 500 ms'de bir <code>SUP</code> gelir.</p></div>
+      <div class="card stripe"><h3>Faz 4 · Zephyr · Faz 5 · Kabul</h3><p>Aynı çekirdek Zephyr ile; sonra altı kabul testi ve kayıtların PC'ye alınması.</p></div>
+    </div>
+    <p class="src">Ayrıntılı plan: <a href="01_Proje_Raporu.html">01_Proje_Raporu.html</a> · Oturum devri: <a href="03_Devir_Notu.md">03_Devir_Notu.md</a></p>
+  </div>
+</section>
+
+<!-- ================= 08 DİKKAT (amber) ================= -->
+<section class="band amber sec" id="dikkat" data-name="Dikkat" style="--acc:var(--amber);--acc-ink:var(--amber-ink)">
+  <div class="wrap reveal">
+    <div class="phase-head">
+      <div class="num">08</div>
+      <div><div class="eyebrow">Riskler</div><h2>Dikkat edilecekler</h2></div>
+    </div>
+    <div class="grid c2">
+      <div class="card"><h3>udev kuralında Windows satır sonu</h3><p><code>99-f746-stlink.rules</code> kartta CRLF ile duruyor (2.1'de <code>scp</code> dosyaları olduğu gibi kopyaladı). udev satır sonundaki <code>\r</code>'yi değerin parçası sayarsa <code>/dev/f746</code> bağlantısı oluşmayabilir ya da kural hiç eşleşmeyebilir. 2.5'ten önce bakılacak.</p></div>
+      <div class="card"><h3>Kartın saati kalıcı değil</h3><p>Kart yeniden açılınca saat kayıyor (bugün dosya zamanları 05:18 gösterdi). <code>f7linkd</code> günlüğündeki saatler ve 2.4'teki CSV kayıtlarının zaman damgaları yanlış olur.</p></div>
+      <div class="card"><h3>Seri portun tek sahibi</h3><p>Aynı anda yalnız bir program <code>/dev/ttyACM0</code>'ı açmalı. <code>f7linkd</code> çalışırken <code>f7_dinle.py</code>'yi çalıştırma; 2.5'ten sonra elle denemeden önce <code>systemctl stop f7linkd</code>.</p></div>
+      <div class="card"><h3>Port 7101'i f7hub kullanır</h3><p>Sayaç okuyan küçük program yalnız f7hub çalışmıyorken çalışır. f7hub açıkken sayaçları panelden ya da <code>http://192.168.7.1:8080/api/status</code>'tan oku.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer class="band dark" style="--acc:var(--cyan)">
+  <div class="wrap">
+    <p class="mu">Bu sayfa 22.11.2026'da depodaki kod (<code>MP257_Kopru/linux</code>) ve aynı gün kartta yapılan ölçümlerle yazıldı. Bağlantılı belgeler: <a href="01_Proje_Raporu.html">01_Proje_Raporu.html</a> (plan) · <a href="02_Iletisim_Animasyonu.html">02_Iletisim_Animasyonu.html</a> (bayt bayt mesaj akışı) · <a href="03_Devir_Notu.md">03_Devir_Notu.md</a> (oturum devri).</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  document.documentElement.classList.add('js');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Gezinme: bölüm başına renkli nokta, okunan bölüm sayacı, kaydırma çubuğu */
+  var secs = [].slice.call(document.querySelectorAll('section.sec'));
+  var navWrap = document.getElementById('navWrap');
+  var overall = navWrap.querySelector('.overall');
+  var pills = secs.map(function(s, i){
+    var a = document.createElement('a');
+    a.className = 'pill';
+    a.href = '#' + s.id;
+    a.style.setProperty('--c', getComputedStyle(s).getPropertyValue('--acc').trim());
+    a.innerHTML = '<i></i>' + String(i + 1).padStart(2, '0') + ' ' + s.getAttribute('data-name');
+    navWrap.insertBefore(a, overall);
+    return a;
+  });
+  var secCount = document.getElementById('secCount');
+  var fill = document.getElementById('scrollFill');
+  var last = -1;
+  function onScroll(){
+    var y = window.scrollY + 90;
+    var cur = 0;
+    secs.forEach(function(s, i){ if (s.offsetTop <= y) { cur = i; } });
+    pills.forEach(function(p, i){ p.classList.toggle('cur', i === cur); });
+    if (cur !== last) {
+      /* Dar ekranda çubuk yatay kayar: okunan bölümün düğmesini ortaya getir */
+      last = cur;
+      var p = pills[cur];
+      navWrap.scrollLeft = p.offsetLeft - (navWrap.clientWidth - p.offsetWidth) / 2;
+    }
+    secCount.textContent = (cur + 1) + '/' + secs.length;
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    fill.style.width = (h > 0 ? Math.min(100, window.scrollY * 100 / h) : 0) + '%';
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  /* Adım adım animasyonlar: data-on="n" o adımda, data-from="n" o adımdan sonra görünür */
+  [].slice.call(document.querySelectorAll('[data-anim]')).forEach(function(box){
+    var max = parseInt(box.getAttribute('data-max'), 10);
+    var delay = parseInt(box.getAttribute('data-auto'), 10) || 2500;
+    var step = 1;
+    var timer = null;
+    var playBtn = box.querySelector('[data-act="play"]');
+    var cnt = box.querySelector('.cnt');
+    var bar = box.querySelector('.bar i');
+    var ons = [].slice.call(box.querySelectorAll('[data-on]'));
+    var froms = [].slice.call(box.querySelectorAll('[data-from]'));
+    var caps = [].slice.call(box.querySelectorAll('.cap[data-s]'));
+
+    function show(n){
+      step = n;
+      ons.forEach(function(el){
+        var k = parseInt(el.getAttribute('data-on'), 10);
+        el.classList.toggle('on', k === n);
+        el.classList.toggle('seen', k < n);
+      });
+      froms.forEach(function(el){
+        var k = parseInt(el.getAttribute('data-from'), 10);
+        el.classList.toggle('on', k === n);
+        el.classList.toggle('seen', k < n);
+      });
+      caps.forEach(function(c){ c.classList.toggle('on', parseInt(c.getAttribute('data-s'), 10) === n); });
+      cnt.textContent = n + '/' + max;
+      bar.style.width = (n * 100 / max) + '%';
+    }
+    function stop(){
+      if (timer !== null) { clearInterval(timer); timer = null; }
+      playBtn.textContent = '▶ Oynat';
+    }
+    function play(){
+      stop();
+      if (step >= max) { show(1); }
+      timer = setInterval(function(){
+        if (step >= max) { stop(); return; }
+        show(step + 1);
+      }, delay);
+      playBtn.textContent = '❚❚ Durdur';
+    }
+    box.querySelector('[data-act="prev"]').addEventListener('click', function(){ stop(); show(step > 1 ? step - 1 : max); });
+    box.querySelector('[data-act="next"]').addEventListener('click', function(){ stop(); show(step < max ? step + 1 : 1); });
+    playBtn.addEventListener('click', function(){ if (timer === null) { play(); } else { stop(); } });
+    show(1);
+
+    /* Görünür olunca bir kez kendiliğinden oynar; hareket azaltma açıksa oynamaz */
+    if (!reduce && 'IntersectionObserver' in window) {
+      var started = false;
+      var io = new IntersectionObserver(function(es){
+        es.forEach(function(e){
+          if (e.isIntersecting && !started) { started = true; play(); }
+          if (!e.isIntersecting && timer !== null) { stop(); }
+        });
+      }, { threshold: 0.35 });
+      io.observe(box);
+    }
+  });
+
+  /* Bölümlerin belirmesi */
+  var rv = [].slice.call(document.querySelectorAll('.reveal'));
+  if ('IntersectionObserver' in window && !reduce) {
+    var ro = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add('in'); ro.unobserve(e.target); } });
+    }, { rootMargin: '0px 0px -8% 0px' });
+    rv.forEach(function(el){ ro.observe(el); });
+  } else {
+    rv.forEach(function(el){ el.classList.add('in'); });
+  }
+  window.addEventListener('beforeprint', function(){ rv.forEach(function(el){ el.classList.add('in'); }); });
+})();
+</script>
+</body>
+</html>
