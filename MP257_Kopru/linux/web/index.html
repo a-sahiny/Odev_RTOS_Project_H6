@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F746 Köprü Paneli</title>
+<style>
+:root{
+  --ink:#0B0F1A; --ink-2:#131B2C; --ink-line:#26324A;
+  --paper:#FAFAF7; --paper-2:#F0F1EA; --paper-line:#DFE2D8;
+  --text:#14171F; --muted:#565E6E; --text-d:#EEF2F8; --muted-d:#A6B1C4;
+  --lime:#A8D84A; --cyan:#22E4FF; --magenta:#FF3DCB; --amber:#FFC21A; --violet:#9B88FF; --mint:#4FD1A0; --red:#FF4D5E;
+  --cyan-ink:#006B7A; --violet-ink:#4B2FD1; --magenta-ink:#A3007F;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Cascadia Mono",monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.65 var(--sans);background:var(--paper);color:var(--text)}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+.band{--bg:var(--paper);--fg:var(--text);--mu:var(--muted);--card:#fff;--card-line:var(--paper-line);background:var(--bg);color:var(--fg);padding:32px 0;position:relative}
+.band.dark{--bg:var(--ink);--fg:var(--text-d);--mu:var(--muted-d);--card:var(--ink-2);--card-line:var(--ink-line)}
+.band.dark::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--acc,var(--cyan))}
+.band.tint{--bg:#F6F2FF;--card:#fff;--card-line:#E3DBFA}
+h1,h2{margin:0;line-height:1.2}
+h1{font-size:clamp(26px,5vw,40px)}
+h2{font-size:20px;margin-bottom:12px}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--acc,var(--cyan));margin-bottom:10px}
+.band:not(.dark) .eyebrow{color:var(--acc-ink,var(--cyan-ink))}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.chip{font:700 12.5px/1 var(--mono);padding:8px 12px;border-radius:999px;background:#D5D9E0;color:#0B0F1A}
+.chip.ok{background:var(--lime)} .chip.warn{background:var(--amber)} .chip.bad{background:var(--red)} .chip.info{background:var(--cyan)}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;align-items:center}
+button,select{font:600 14px/1 var(--mono);min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--ink-line);background:var(--ink-2);color:var(--text-d);cursor:pointer}
+button.go{background:var(--lime);color:#0B0F1A;border-color:var(--lime)}
+button.stop{background:var(--magenta);color:#0B0F1A;border-color:var(--magenta)}
+button:focus-visible,select:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.grid{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.grid.c3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px 18px;min-width:0}
+.card h3{margin:0 0 8px;font-size:14px;font:700 12px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.big{font:800 24px/1.3 var(--mono);overflow-wrap:anywhere}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font:13.5px/1.5 var(--mono)}
+.kv span:nth-child(odd){color:var(--mu)}
+canvas{width:100%;height:220px;display:block;background:#fff;border:1px solid var(--paper-line);border-radius:10px}
+.legend{display:flex;gap:16px;font:600 12.5px/1 var(--mono);margin-top:8px;flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#log{font:12.5px/1.6 var(--mono);max-height:260px;overflow:auto;background:#070A12;color:#E6EDF3;border-left:3px solid var(--cyan);border-radius:8px;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{.band,.band.dark,.band.tint{background:#fff!important;color:#000!important}.band.dark::before{display:none}#log{background:#fff;color:#000}}
+</style>
+</head>
+<body>
+
+<header class="band dark" style="--acc:var(--cyan)">
+  <div class="wrap">
+    <div class="eyebrow">STM32MP257F-DK · F746 telemetri köprüsü</div>
+    <h1>F746 → MP257 → PC</h1>
+    <div class="chips" aria-live="polite">
+      <span class="chip" id="cSerial">seri: ?</span>
+      <span class="chip" id="cF7">F746: ?</span>
+      <span class="chip" id="cM33">M33: ?</span>
+      <span class="chip" id="cSse">panel: bağlanıyor</span>
+    </div>
+    <div class="btns">
+      <button class="go" data-cmd="start">START</button>
+      <button class="stop" data-cmd="stop">STOP</button>
+      <label for="rate" class="mu" style="font:600 13px var(--mono);color:var(--muted-d)">hız</label>
+      <select id="rate" aria-label="Telemetri hızı"><option>1</option><option>5</option><option selected>10</option><option>20</option><option>50</option></select>
+      <button data-cmd="rate">SET_RATE</button>
+      <button data-cmd="stats">GET_STATS 0</button>
+      <button data-cmd="hello">HELLO</button>
+    </div>
+  </div>
+</header>
+
+<section class="band" style="--acc-ink:var(--magenta-ink)">
+  <div class="wrap">
+    <div class="eyebrow">Canlı veri</div>
+    <div class="grid c3">
+      <div class="card"><h3>İvme (ham LSB, 8192 = 1 g)</h3><div class="big" id="acc">-</div><div class="mu" id="tmInfo">-</div></div>
+      <div class="card"><h3>Jiroskop (ham LSB)</h3><div class="big" id="gyro">-</div></div>
+      <div class="card"><h3>Açı (GET_IMU)</h3><div class="big" id="att">-</div><div class="mu" id="imuInfo">-</div></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h3>Roll / pitch, son 10 s</h3>
+      <canvas id="plot" width="1000" height="220" aria-label="Roll ve pitch grafiği"></canvas>
+      <div class="legend"><span><i style="background:#A3007F"></i>roll</span><span><i style="background:#006B7A"></i>pitch</span><span><i style="background:#7E5200"></i>alarm sınırı</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="band tint" style="--acc-ink:var(--violet-ink)">
+  <div class="wrap">
+    <div class="eyebrow">Gözetim</div>
+    <div class="grid c2">
+      <div class="card"><h3>M33 (<span id="rtos">?</span>)</h3><div class="kv" id="m33kv"><span>mod</span><span>-</span></div></div>
+      <div class="card"><h3>f7linkd hattı</h3><div class="kv" id="linkkv"><span>durum</span><span>-</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="band dark" style="--acc:var(--mint)">
+  <div class="wrap">
+    <div class="eyebrow">Olaylar</div>
+    <div id="log" role="log" aria-live="off"></div>
+  </div>
+</section>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var hist=[], limit=3000;
+  function log(t){var el=$('log'); el.textContent=(new Date().toLocaleTimeString()+'  '+t+'\n'+el.textContent).slice(0,20000);}
+  function chip(id,text,cls){var c=$(id); c.textContent=text; c.className='chip '+(cls||'');}
+  function kv(id,obj){var h=''; Object.keys(obj).forEach(function(k){h+='<span>'+k+'</span><span>'+String(obj[k])+'</span>';}); $(id).innerHTML=h;}
+  function post(body){
+    return fetch('/api/cmd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.json();}).then(function(j){log(body.cmd+' -> '+JSON.stringify(j)); return j;})
+      .catch(function(e){log(body.cmd+' hata: '+e);});
+  }
+  document.querySelectorAll('button[data-cmd]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var c=b.getAttribute('data-cmd');
+      if(c==='rate'){post({cmd:'rate',hz:parseInt($('rate').value,10)});}
+      else if(c==='stats'){post({cmd:'stats',page:0});}
+      else if(c==='hello'){post({cmd:'console',line:'HELLO'});}
+      else{post({cmd:c});}
+    });
+  });
+  var MODE_CLS={RUN:'ok',NO_DATA:'warn',WAIT_A35:'warn',ALARM:'bad',F7_FAULT:'bad',A35_LOST:'bad'};
+  function stateText(s){var p=[]; if(s&1)p.push('NET_READY'); if(s&2)p.push('MEAS_EN'); if(s&4)p.push('FAULT'); return p.join('|')||'-';}
+  function draw(){
+    var cv=$('plot'), g=cv.getContext('2d'), w=cv.width, h=cv.height, now=performance.now();
+    g.clearRect(0,0,w,h);
+    var scale=h/2/Math.max(4500,limit*1.3);
+    g.strokeStyle='#DFE2D8'; g.lineWidth=1; g.beginPath(); g.moveTo(0,h/2); g.lineTo(w,h/2); g.stroke();
+    g.strokeStyle='#7E5200'; g.setLineDash([6,6]); [limit,-limit].forEach(function(l){g.beginPath(); g.moveTo(0,h/2-l*scale); g.lineTo(w,h/2-l*scale); g.stroke();}); g.setLineDash([]);
+    hist=hist.filter(function(p){return now-p.t<10000;});
+    [['r','#A3007F'],['p','#006B7A']].forEach(function(s){
+      g.strokeStyle=s[1]; g.lineWidth=2; g.beginPath();
+      hist.forEach(function(p,i){var x=w-(now-p.t)/10000*w, y=h/2-p[s[0]]*scale; if(i)g.lineTo(x,y); else g.moveTo(x,y);});
+      g.stroke();
+    });
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+  fetch('/api/status').then(function(r){return r.json();}).then(function(s){
+    limit=s.limit_cdeg||3000; if(s.m33_rtos)$('rtos').textContent=s.m33_rtos;
+    if(s.f7_state!==null)chip('cF7','F746: '+stateText(s.f7_state),(s.f7_state&4)?'bad':((s.f7_state&2)?'ok':'info'));
+  }).catch(function(){});
+  var es=new EventSource('/events');
+  es.onopen=function(){chip('cSse','panel: canlı','ok');};
+  es.onerror=function(){chip('cSse','panel: bağlantı yok','bad');};
+  es.addEventListener('telem',function(e){var d=JSON.parse(e.data); $('acc').textContent=d.acc.join('  '); $('gyro').textContent=d.gyro.join('  '); $('tmInfo').textContent='seq '+d.seq+' · idx '+d.idx;});
+  es.addEventListener('imu',function(e){var d=JSON.parse(e.data); $('att').textContent=(d.roll_cdeg/100).toFixed(1)+'°  '+(d.pitch_cdeg/100).toFixed(1)+'°  '+(d.yaw_cdeg/100).toFixed(1)+'°'; $('imuInfo').textContent='roll pitch yaw · RTT '+d.rtt_ms+' ms'; hist.push({t:performance.now(),r:d.roll_cdeg,p:d.pitch_cdeg});});
+  es.addEventListener('f7state',function(e){var d=JSON.parse(e.data); chip('cF7','F746: '+d.text,(d.state&4)?'bad':((d.state&2)?'ok':'info')); log('F746 durum '+d.text+' why='+d.why);});
+  es.addEventListener('m33',function(e){var d=JSON.parse(e.data); chip('cM33','M33: '+d.mode_text,MODE_CLS[d.mode_text]); kv('m33kv',{mod:d.mode_text,'TM yaşı ms':d.tm_age_ms,'TM sayısı':d.tm_count,'TM kayıp':d.tm_gaps,'TM aralık us':d.dt_min_us+' .. '+d.dt_max_us,'HB yaşı ms':d.hb_age_ms,'bozuk satır':d.bad});});
+  es.addEventListener('m33_rdy',function(e){var d=JSON.parse(e.data); $('rtos').textContent=d.rtos; log('M33 hazır: '+d.rtos);});
+  es.addEventListener('linkd',function(e){var d=JSON.parse(e.data); chip('cSerial',d.serial?'seri: bağlı':'seri: F746 yok',d.serial?'ok':'bad'); kv('linkkv',{port:d.tty,'F746→ çerçeve':d.rx_frames,'→F746 çerçeve':d.tx_frames,'JSON':d.rx_json,'bozuk satır':d.rx_bad,'atılan TX':d.tx_drop,'TX kuyruğu B':d.tx_queue});});
+  es.addEventListener('report',function(e){log('rapor '+e.data);});
+  es.addEventListener('btn',function(e){log('USER2 butonu: '+e.data);});
+})();
+</script>
+</body>
+</html>

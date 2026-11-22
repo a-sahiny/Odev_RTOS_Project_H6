@@ -1,0 +1,12 @@
+[Unit]
+Description=F746 istemcisi, M33 koprusu ve PC paneli
+After=f7linkd.service
+Wants=f7linkd.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/f7kopru/f7hub.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
