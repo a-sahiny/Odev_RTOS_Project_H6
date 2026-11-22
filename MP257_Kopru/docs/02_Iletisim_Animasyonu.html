@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Köprü Mesaj Akışı</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;800&display=swap">
+<style>
+/* Bant ritmi: koyu sahne -> açık katmanlar -> yumuşak yeşil ritim -> lila M33 -> koyu altbilgi. Bilerek tek görünüm: renkler bantlara sabit. */
+:root{
+  --ink:#0B0F1A; --ink-2:#131B2C; --ink-line:#26324A;
+  --paper:#FAFAF7; --paper-2:#F0F1EA; --paper-line:#DFE2D8;
+  --text:#14171F; --muted:#565E6E; --text-d:#EEF2F8; --muted-d:#A6B1C4;
+  --lime:#A8D84A; --cyan:#22E4FF; --magenta:#FF3DCB; --amber:#FFC21A; --violet:#9B88FF; --mint:#4FD1A0; --red:#FF4D5E; --led:#FF9A1F;
+  --lime-band:#D3E8A2;
+  --lime-ink:#3D6900; --cyan-ink:#006B7A; --magenta-ink:#A3007F; --amber-ink:#7E5200; --violet-ink:#4B2FD1; --mint-ink:#00704A;
+  --code-bg:#070A12; --code-text:#E6EDF3;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Cascadia Mono",monospace;
+  --r:14px;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.65 var(--sans);background:var(--paper);color:var(--text)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+@media (min-width:760px){.wrap{padding-left:max(32px,env(safe-area-inset-left,0px));padding-right:max(32px,env(safe-area-inset-right,0px))}}
+.band{--bg:var(--paper);--fg:var(--text);--mu:var(--muted);--card:#fff;--card-line:var(--paper-line);--chip:var(--paper-2);
+  background:var(--bg);color:var(--fg);padding-block:48px;position:relative}
+.band.dark{--bg:var(--ink);--fg:var(--text-d);--mu:var(--muted-d);--card:var(--ink-2);--card-line:var(--ink-line);--chip:rgba(255,255,255,.08)}
+.band.dark::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--acc,var(--cyan))}
+.band.neon{--bg:var(--lime-band);--fg:#0B0F1A;--mu:#36421C;--card:rgba(255,255,255,.55);--card-line:rgba(11,15,26,.18);--chip:rgba(11,15,26,.08)}
+.band.tint{--bg:#F6F2FF;--card:#fff;--card-line:#E3DBFA;--chip:#ECE6FD}
+.hero{margin-top:calc(-1 * env(safe-area-inset-top,0px));padding-top:calc(env(safe-area-inset-top,0px) + 40px)}
+h1,h2,h3{line-height:1.2;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(28px,5vw,46px);font-weight:700}
+h2{font-size:clamp(22px,3.4vw,32px);font-weight:700}
+h3{font-size:18px;font-weight:600}
+h1 span{background:linear-gradient(90deg,var(--lime),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+.eyebrow{font:600 12px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--acc-ink,var(--cyan-ink));margin-bottom:10px;overflow-wrap:anywhere}
+.dark .eyebrow{color:var(--acc,var(--cyan))}
+.neon .eyebrow{color:#0B0F1A}
+.lead{max-width:760px;color:var(--mu);font-size:17px;margin:12px 0 0}
+p{margin:10px 0}
+code{font-family:var(--mono);font-size:.88em;background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}
+.mu{color:var(--mu)}
+
+/* ---------- Senaryo seçici ve kontroller ---------- */
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.tab{font:600 13.5px/1.2 var(--mono);min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--ink-line);background:transparent;color:var(--text-d);cursor:pointer;display:flex;align-items:center;gap:8px;transition:border-color .2s,background-color .2s}
+.tab i{width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 8px var(--c);flex:0 0 auto}
+.tab:hover{border-color:var(--c)}
+.tab[aria-selected="true"]{background:var(--c);color:#0B0F1A;border-color:var(--c)}
+.tab[aria-selected="true"] i{background:#0B0F1A;box-shadow:none}
+button:focus-visible,.tab:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+
+.stage-grid{display:grid;gap:18px;margin-top:18px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1100px){.stage-grid{grid-template-columns:minmax(0,1fr) 340px}}
+.stagebox{background:#0E1424;border:1px solid var(--ink-line);border-radius:var(--r);overflow-x:auto;min-width:0}
+.stagebox svg{display:block;width:100%;min-width:720px;height:auto}
+.hint{display:none;font:12.5px/1.4 var(--mono);color:var(--muted-d);margin:8px 0 0}
+@media (max-width:800px){.hint{display:block}}
+
+.ctrl{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.btn{font:700 14px/1 var(--mono);min-height:44px;min-width:44px;padding:0 16px;border-radius:10px;border:1px solid var(--ink-line);background:var(--ink-2);color:var(--text-d);cursor:pointer}
+.btn.primary{background:var(--lime);color:#0B0F1A;border-color:var(--lime)}
+.btn:disabled{opacity:.4;cursor:default}
+.prog{flex:1 1 160px;display:flex;gap:4px;min-width:120px}
+.prog span{flex:1;height:8px;border-radius:99px;background:var(--ink-line);overflow:hidden}
+.prog span i{display:block;height:100%;width:0;background:var(--c,var(--cyan));transition:width .25s ease-out}
+
+.panel{background:var(--ink-2);border:1px solid var(--ink-line);border-radius:var(--r);padding:18px 20px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.panel .step-n{font:700 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--c,var(--cyan))}
+.panel h3{color:#fff;overflow-wrap:anywhere}
+.panel .why{border-left:4px solid var(--c,var(--cyan));background:rgba(255,255,255,.05);border-radius:0 10px 10px 0;padding:10px 14px;margin:0;font-size:15px;color:var(--text-d)}
+.panel .why b{color:var(--c,var(--cyan))}
+.lbl{font:700 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted-d)}
+.wire{background:var(--code-bg);color:var(--code-text);border-left:3px solid var(--c,var(--cyan));border-radius:8px;padding:10px 12px;margin:0;font:12.5px/1.6 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;min-height:3.2em}
+.who{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:700 11.5px/1.5 var(--mono);padding:2px 9px;border-radius:999px;background:var(--c,var(--cyan));color:#0B0F1A}
+
+/* SVG sahnesi */
+.node rect.box{fill:#131B2C;stroke:#2E3A55;stroke-width:1.5;transition:stroke .25s,filter .25s}
+.node.on rect.box{stroke:var(--hl,#22E4FF);stroke-width:2.5;filter:url(#glow)}
+.node.down rect.box{stroke:#FF4D5E;stroke-dasharray:6 5}
+.node.down text{opacity:.45}
+.lane{fill:rgba(255,255,255,.025);stroke:#26324A;stroke-dasharray:4 6}
+.outer{fill:none;stroke:#3A4866;stroke-width:1.5}
+.nt{font:700 15px var(--mono);fill:#EEF2F8;text-anchor:middle}
+.ns{font:12px var(--sans);fill:#A6B1C4;text-anchor:middle}
+.lt{font:700 12px var(--mono);fill:#A6B1C4;letter-spacing:.08em}
+.wl{font:11.5px var(--mono);fill:#8B97AB;text-anchor:middle}
+.wire-p{fill:none;stroke:#3A4866;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.wire-p.usb{stroke:#4B5878}
+.tok rect{rx:7}
+.tok text{font:700 12px var(--mono);fill:#0B0F1A;text-anchor:middle;dominant-baseline:central}
+.chipbox{fill:#1B2438;stroke:#34405C}
+#modeText{font:800 18px var(--mono);text-anchor:middle}
+#m33sub,#pcSub{font:12px var(--mono);fill:#A6B1C4;text-anchor:middle}
+#pcText{font:700 12.5px var(--mono);fill:#22E4FF;text-anchor:middle}
+.xmark{stroke:#FF4D5E;stroke-width:4;stroke-linecap:round;opacity:0;transition:opacity .3s}
+.node.down .xmark{opacity:1}
+
+/* ---------- Katmanlar ---------- */
+.layers{margin-top:22px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.layers{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)}}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:18px 20px;min-width:0}
+.bytes{display:flex;flex-wrap:wrap;gap:3px;margin-top:12px}
+.by{font:600 12px/1 var(--mono);width:30px;height:30px;display:grid;place-items:center;border-radius:5px;background:var(--paper-2);color:#9AA1AE;transition:background-color .35s,color .35s,transform .35s}
+.by.v{color:#0B0F1A}
+.by.app.v{background:var(--magenta)} .by.udp.v{background:var(--amber)} .by.ip.v{background:var(--cyan)}
+.by.eth.v{background:var(--violet)} .by.pad.v{background:#C9CED8} .by.fcs.v{background:var(--lime)}
+.by.pop{transform:translateY(-4px)}
+.lkey{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font:600 12.5px/1.4 var(--mono)}
+.lkey span{display:flex;align-items:center;gap:6px}
+.lkey i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.hexline{margin-top:14px;font:12px/1.7 var(--mono);background:var(--code-bg);color:#5C6779;border-radius:8px;padding:10px 12px;overflow-wrap:anywhere;word-break:break-all;border-left:3px solid var(--magenta-ink)}
+.hexline b{font-weight:600}
+.lsteps{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.lstep{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border-radius:10px;border:1px solid var(--card-line);background:#fff;cursor:pointer;text-align:left;font:inherit;color:inherit;min-height:44px}
+.lstep b.n{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--paper-2);font:800 12px/1 var(--mono)}
+.lstep.on{border-color:var(--magenta-ink);box-shadow:inset 4px 0 0 var(--magenta)}
+.lstep.on b.n{background:var(--magenta);color:#0B0F1A}
+.lstep small{display:block;color:var(--muted);font-size:13.5px}
+.lstep:focus-visible{outline:3px solid var(--magenta-ink);outline-offset:2px}
+
+/* ---------- Ritim ---------- */
+.rhythm{margin-top:20px;display:grid;gap:10px}
+.rrow{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:12px;align-items:center}
+@media (max-width:600px){.rrow{grid-template-columns:minmax(0,1fr)}}
+.rrow .rl{font:700 13px/1.3 var(--mono)}
+.rrow .rl small{display:block;font:400 12.5px/1.4 var(--sans);color:var(--mu)}
+.rrow canvas{width:100%;height:34px;display:block;background:rgba(255,255,255,.55);border:1px solid rgba(11,15,26,.18);border-radius:8px}
+.rctrl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px}
+.rbtn{font:700 13px/1 var(--mono);min-height:44px;padding:0 14px;border-radius:10px;border:1px solid rgba(11,15,26,.3);background:rgba(255,255,255,.6);color:#0B0F1A;cursor:pointer}
+.rbtn[aria-pressed="true"]{background:#0B0F1A;color:var(--lime-band)}
+.rbtn:focus-visible{outline:3px solid #0B0F1A;outline-offset:2px}
+
+/* ---------- M33 modları ---------- */
+.modes{display:grid;gap:12px;margin-top:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:640px){.modes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:1000px){.modes{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.mode{display:grid;grid-template-columns:54px minmax(0,1fr);gap:14px;align-items:start;background:#fff;border:1px solid #E3DBFA;border-radius:var(--r);padding:16px}
+.ledv{width:44px;height:44px;border-radius:50%;background:#3A2A12;border:3px solid #2A2F3A;margin-top:2px;transition:background-color .05s,box-shadow .05s}
+.ledv.on{background:var(--led);box-shadow:0 0 18px 4px rgba(255,154,31,.7)}
+.mode h3{font:800 15px/1.3 var(--mono)}
+.mode .k{font:600 12px/1 var(--mono);color:var(--violet-ink)}
+.mode p{margin:6px 0 0;font-size:14.5px}
+
+footer.band{padding-block:32px;font-size:14px}
+footer a{color:var(--cyan)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  .band,.band.dark,.band.neon,.band.tint{background:#fff!important;color:#000!important;--fg:#000;--mu:#333}
+  .band.dark::before{display:none}
+  .ctrl,.tabs,.rctrl{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= SAHNE (koyu) ================= -->
+<header class="band dark hero" style="--acc:var(--cyan)">
+  <div class="wrap">
+    <div class="eyebrow">MP257_Kopru · Mesajlar nasıl akıyor</div>
+    <h1>Bir START'tan bir LED'e:<br><span>her mesaj, gerçek baytlarıyla.</span></h1>
+    <p class="lead">Aşağıdaki sahnede dört düğüm var: F746, MP257'nin Linux tarafı (A35), aynı kartın gerçek zamanlı çekirdeği (M33) ve PC. Bir senaryo seç; hatlarda gezen her etiket, projedeki kodun o anda gerçekten yolladığı satır ya da paket.</p>
+
+    <div class="tabs" role="tablist" aria-label="Senaryolar" id="tabs"></div>
+
+    <div class="stage-grid">
+      <div style="min-width:0">
+        <div class="stagebox">
+          <svg id="stage" viewBox="0 0 1100 510" role="img" aria-label="F746, MP257 (A35 Linux ve M33) ve PC arasındaki mesaj akışı">
+            <defs>
+              <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+
+            <!-- MP257 dış kutu ve şeritler -->
+            <rect class="outer" x="250" y="14" width="612" height="484" rx="18"/>
+            <text class="lt" x="270" y="40" style="fill:#EEF2F8">STM32MP257F-DK</text>
+            <rect class="lane" x="266" y="54" width="580" height="208" rx="12"/>
+            <text class="lt" x="282" y="78">CORTEX-A35 · LINUX</text>
+            <rect class="lane" x="266" y="276" width="580" height="208" rx="12"/>
+            <text class="lt" x="282" y="300">CORTEX-M33 · FREERTOS YA DA ZEPHYR</text>
+
+            <!-- kablolar ve kart içi hatlar -->
+            <path class="wire-p usb" d="M146 330 H226 V180 H300"/>
+            <text class="wl" x="111" y="404">USB kablosu</text>
+            <text class="wl" x="111" y="420">ST-LINK · 625000 baud</text>
+            <path class="wire-p" d="M440 180 H480"/>
+            <path class="wire-p" d="M620 180 H660"/>
+            <path class="wire-p" d="M370 120 V100 H740 V120" style="stroke-dasharray:5 6"/>
+            <text class="wl" x="555" y="94">JSON: UDP 127.0.0.1:7101</text>
+            <path class="wire-p" d="M740 240 V330"/>
+            <text class="wl" x="800" y="285">RPMsg</text>
+            <text class="wl" x="800" y="300">/dev/ttyRPMSG0</text>
+            <path class="wire-p usb" d="M820 180 H900"/>
+            <text class="wl" x="980" y="104">USB ağı (CN15)</text>
+            <text class="wl" x="980" y="120">HTTP :8080</text>
+            <path class="wire-p" d="M346 368 H560" style="stroke-dasharray:3 5"/>
+            <path class="wire-p" d="M354 438 H560" style="stroke-dasharray:3 5"/>
+
+            <!-- F746 -->
+            <g class="node" id="n-f7" style="--hl:#A8D84A">
+              <rect class="box" x="16" y="140" width="190" height="240" rx="14"/>
+              <text class="nt" x="111" y="170">STM32F746</text>
+              <text class="ns" x="111" y="190">FreeRTOS + TCP</text>
+              <text class="ns" x="111" y="207">192.168.50.2</text>
+              <rect class="chipbox" x="56" y="226" width="110" height="40" rx="6"/>
+              <text class="ns" x="111" y="251">IMU · 100 Hz</text>
+              <rect class="chipbox" x="56" y="310" width="90" height="40" rx="6"/>
+              <text class="ns" x="101" y="335">ST-LINK</text>
+            </g>
+
+            <!-- A35 düğümleri -->
+            <g class="node" id="n-linkd" style="--hl:#FF3DCB">
+              <rect class="box" x="300" y="120" width="140" height="120" rx="12"/>
+              <text class="nt" x="370" y="152">f7linkd</text>
+              <text class="ns" x="370" y="174">seri ↔ tap-f7</text>
+              <text class="ns" x="370" y="192">hex · FCS · dolgu</text>
+              <text class="ns" x="370" y="222" style="font-family:var(--mono);font-size:11px">/dev/f746</text>
+            </g>
+            <g class="node" id="n-kernel" style="--hl:#22E4FF">
+              <rect class="box" x="480" y="120" width="140" height="120" rx="12"/>
+              <text class="nt" x="550" y="152">çekirdek</text>
+              <text class="ns" x="550" y="174">tap-f7</text>
+              <text class="ns" x="550" y="192">192.168.50.1</text>
+              <text class="ns" x="550" y="222" style="font-family:var(--mono);font-size:11px">ARP · IP · UDP</text>
+            </g>
+            <g class="node" id="n-hub" style="--hl:#22E4FF">
+              <rect class="box" x="660" y="120" width="160" height="120" rx="12"/>
+              <text class="nt" x="740" y="152">f7hub</text>
+              <text class="ns" x="740" y="174">UDP :6000</text>
+              <text class="ns" x="740" y="192">GET_IMU · CSV</text>
+              <text class="ns" x="740" y="222" style="font-family:var(--mono);font-size:11px">HTTP :8080</text>
+              <path class="xmark" d="M700 140 L780 220 M780 140 L700 220"/>
+            </g>
+
+            <!-- M33 -->
+            <g class="node" id="n-m33" style="--hl:#9B88FF">
+              <rect class="box" x="560" y="320" width="260" height="150" rx="12"/>
+              <text class="nt" x="690" y="350">F7Sup gözetimcisi</text>
+              <text id="modeText" x="690" y="392" fill="#22E4FF">WAIT_A35</text>
+              <text id="m33sub" x="690" y="420">10 ms döngü</text>
+              <text class="ns" x="690" y="448" style="font-family:var(--mono);font-size:11px">HB · TM · AT · ST → SUP · BTN</text>
+            </g>
+            <circle id="led" cx="330" cy="368" r="17" fill="#3A2A12" stroke="#2A2F3A" stroke-width="3"/>
+            <text class="ns" x="330" y="404">LD9</text>
+            <g id="btn">
+              <rect id="btnCap" x="306" y="424" width="48" height="28" rx="8" fill="#2E3A55" stroke="#4B5878"/>
+              <text class="ns" x="330" y="470">USER2</text>
+            </g>
+
+            <!-- PC -->
+            <g class="node" id="n-pc" style="--hl:#22E4FF">
+              <rect class="box" x="900" y="140" width="184" height="240" rx="14"/>
+              <text class="nt" x="992" y="170">Windows PC</text>
+              <text class="ns" x="992" y="190">tarayıcı · f7_pc.py</text>
+              <rect class="chipbox" x="920" y="210" width="144" height="100" rx="8"/>
+              <text id="pcText" x="992" y="252">panel kapalı</text>
+              <text id="pcSub" x="992" y="276">192.168.7.1:8080</text>
+              <text class="ns" x="992" y="345">START · STOP · hız</text>
+            </g>
+
+            <g id="tokens"></g>
+          </svg>
+        </div>
+        <p class="hint">Dar ekranda sahneyi yana kaydırabilirsin.</p>
+        <div class="ctrl">
+          <button class="btn" id="bPrev" aria-label="Önceki adım">◀</button>
+          <button class="btn primary" id="bPlay" aria-label="Oynat">▶ Oynat</button>
+          <button class="btn" id="bNext" aria-label="Sonraki adım">▶|</button>
+          <button class="btn" id="bSpeed" aria-label="Hız">1×</button>
+          <div class="prog" id="prog" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <aside class="panel" id="panel" aria-live="polite">
+        <div class="step-n" id="stepN">Adım 1 / 6</div>
+        <h3 id="stepT">—</h3>
+        <p class="why" id="stepW"><b>Ne oluyor?</b> —</p>
+        <div class="lbl">Hattaki içerik</div>
+        <pre class="wire" id="stepC">—</pre>
+        <div class="lbl">Yapan</div>
+        <div class="who" id="stepWho"></div>
+      </aside>
+    </div>
+  </div>
+</header>
+
+<!-- ================= KATMANLAR (açık) ================= -->
+<section class="band" id="katman" style="--acc-ink:var(--magenta-ink)">
+  <div class="wrap">
+    <div class="eyebrow">Yakından bakış · START komutu</div>
+    <h2>10 baytlık komut, 137 karakterlik satır olur</h2>
+    <p class="lead">f7hub yalnız ilk 10 baytı yazar. Gerisini Linux çekirdeği ve f7linkd ekler; F746 tarafında FreeRTOS-Plus-TCP aynı katmanları ters sırayla söker. Bir katman seç ya da sırayla ilerle.</p>
+    <div class="layers">
+      <div class="card">
+        <div class="lbl" style="color:var(--muted)">Ethernet çerçevesi · 60 bayt + 4 bayt FCS</div>
+        <div class="bytes" id="bytes" aria-label="Çerçevenin baytları"></div>
+        <div class="lkey">
+          <span><i style="background:var(--violet)"></i>Ethernet 14</span>
+          <span><i style="background:var(--cyan)"></i>IPv4 20</span>
+          <span><i style="background:var(--amber)"></i>UDP 8</span>
+          <span><i style="background:var(--magenta)"></i>F746 paketi 10</span>
+          <span><i style="background:#C9CED8"></i>dolgu 8</span>
+          <span><i style="background:var(--lime)"></i>FCS 4</span>
+        </div>
+        <div class="hexline" id="hexline" aria-label="USB'den giden satır"></div>
+        <p class="mu" style="font-size:13.5px;margin-top:10px">F746'nın MAC adresi (<code>02:80:E1:A1:B2:C3</code>) F746 simülatöründen örnek; gerçeğini Linux ARP ile öğrenir. Diğer bütün baytlar projedeki kodla üretildi.</p>
+      </div>
+      <div class="lsteps" id="lsteps" role="list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RİTİM (yumuşak yeşil) ================= -->
+<section class="band neon" id="ritim">
+  <div class="wrap">
+    <div class="eyebrow">Zamanlama · 1 saniyelik pencere</div>
+    <h2>Kim, ne sıklıkla konuşuyor?</h2>
+    <p class="lead">Her çizgi bir mesaj ya da bir döngü turu. Gerçek hızda M33'ün 10 ms'lik döngüsü göz için fazla hızlı; varsayılan yavaş çekim.</p>
+    <div class="rhythm" id="rhythm"></div>
+    <div class="rctrl">
+      <span style="font:700 13px var(--mono)">Hız:</span>
+      <button class="rbtn" data-rs="0.1" aria-pressed="false">×0,1</button>
+      <button class="rbtn" data-rs="0.25" aria-pressed="true">×0,25</button>
+      <button class="rbtn" data-rs="1" aria-pressed="false">gerçek</button>
+      <button class="rbtn" id="rPause" aria-pressed="false">Durdur</button>
+    </div>
+    <p style="font-size:14.5px;margin-top:14px">Zaman aşımları: M33, son <code>HB</code> 500 ms'yi geçince <b>A35_LOST</b>, son <code>TM</code> 300 ms'yi geçince <b>NO_DATA</b> der. f7hub bir komut cevabını 150 ms bekler, en çok 3 kez dener. f7linkd kopan USB'yi 2 s'de bir yeniden açmayı dener.</p>
+  </div>
+</section>
+
+<!-- ================= M33 MODLARI (lila) ================= -->
+<section class="band tint" id="modlar" style="--acc-ink:var(--violet-ink)">
+  <div class="wrap">
+    <div class="eyebrow">M33 · tek turuncu LED, altı desen</div>
+    <h2>LD9 neye bakarak yanıyor?</h2>
+    <p class="lead">Kartta tek bir turuncu kullanıcı LED'i var (LD9, PH6). Modlar süreyle ayrılıyor. Öncelik yukarıdan aşağıya: önce Linux var mı, sonra F746 arızalı mı, sonra veri geliyor mu, sonra açı sınırda mı.</p>
+    <div class="modes" id="modes"></div>
+  </div>
+</section>
+
+<footer class="band dark" style="--acc:var(--cyan)">
+  <div class="wrap">
+    <p class="mu">Ayrıntılı plan ve adımlar: <code>docs/01_Proje_Raporu.html</code> · protokol: <code>protocol/A35_M33_Protokolu.md</code>. Sahnedeki baytlar <code>linux/f7common/proto.py</code> ile üretildi; LED desenleri ve zaman sınırları <code>m33/common/supervisor.c</code> ile aynı.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  /* ---------- Renkler ---------- */
+  var C = { lime:'#A8D84A', cyan:'#22E4FF', mag:'#FF3DCB', amb:'#FFC21A', vio:'#9B88FF', mint:'#4FD1A0', red:'#FF4D5E' };
+  var MODE = {
+    WAIT_A35:{c:C.cyan, on:100, per:1000, k:0, cond:'Hiç HB gelmedi. M33 yeni açıldı, f7hub henüz bağlanmadı.'},
+    NO_DATA:{c:C.amb, on:500, per:1000, k:1, cond:'HB geliyor ama telemetri yok ya da 300 ms\'den eski (ölçüm kapalı).'},
+    RUN:{c:C.lime, on:1000, per:1000, k:2, cond:'HB ve telemetri taze, açı sınırın içinde. LED sürekli yanık.'},
+    ALARM:{c:C.red, on:50, per:100, k:3, cond:'Son 300 ms içindeki açıda |roll| ya da |pitch| sınırı (LIM) aştı.'},
+    F7_FAULT:{c:C.red, on:200, per:400, k:4, cond:'f7hub F746\'nın FAULT bitini bildirdi (ST satırı, bit2).'},
+    A35_LOST:{c:C.mag, on:100, per:2000, k:5, cond:'HB vardı, 500 ms\'dir gelmiyor: Linux ya da f7hub durdu.'}
+  };
+  var MODE_ORDER = ['WAIT_A35','A35_LOST','F7_FAULT','NO_DATA','ALARM','RUN'];
+
+  /* ---------- Hatlar (SVG koordinatları) ---------- */
+  var P = {
+    'f7>linkd':[[146,330],[226,330],[226,180],[300,180]],
+    'linkd>kernel':[[440,180],[480,180]],
+    'kernel>hub':[[620,180],[660,180]],
+    'hub>pc':[[820,180],[900,180]],
+    'linkd>hubj':[[370,120],[370,100],[740,100],[740,120]],
+    'hub>m33':[[740,240],[740,320]],
+    'btn>m33':[[354,438],[560,438]],
+    'm33>led':[[560,368],[346,368]]
+  };
+  function path(k){
+    if (P[k]) { return P[k]; }
+    var p = k.split('>');
+    return P[p[1] + '>' + p[0]].slice().reverse();
+  }
+  var NODE_OF = {f7:'f7', linkd:'linkd', kernel:'kernel', hub:'hub', hubj:'hub', m33:'m33', pc:'pc', btn:'m33', led:'m33'};
+
+  var LINE = 'FRAME 1 0280E1A1B2C30200000000010800450000260001000040119572C0A83201C0A832021770138800122F39A501010000071A2B001100000000000000009725F4E0';
+
+  /* ---------- Senaryolar ----------
+     her adım: t başlık, w açıklama, c hattaki içerik, who yapanlar, m hareketler [anahtar, etiket, renk, paralel?],
+     fx adım sonunda durum değişikliği, count M33'te sayaç */
+  var S = [
+    { name:'Açılış', c:C.cyan, init:{mode:'WAIT_A35', pc:'panel kapalı', pcSub:'192.168.7.1:8080', hub:true}, steps:[
+      { t:'F746 açılır, ilk raporunu yollar', w:'F746 kendi FreeRTOS\'u ile açılır ve UART1\'den bir JSON satırı yollar. ST-LINK bunu USB üzerinden MP257\'ye taşır; Linux\'ta /dev/f746 olarak görünür.', c:'{"type":"boot","ep":1,"fw":"0.3"}', who:['F746 · report.c','ST-LINK VCP'], m:[['f7>linkd','{"type":"boot"…}',C.amb]] },
+      { t:'f7linkd JSON\'u doğrudan hub\'a verir', w:'JSON bir ağ çerçevesi değil. f7linkd onu tap-f7\'ye yazmaz; kart içinde 127.0.0.1:7101 portundan f7hub\'a iletir. Ağ çerçeveleri ise FRAME satırı olarak gelir.', c:'UDP 127.0.0.1:7101  ←  {"type":"boot","ep":1,"fw":"0.3"}', who:['f7linkd'], m:[['linkd>hubj','{"type":"boot"…}',C.amb]] },
+      { t:'Linux M33\'ü başlatır', w:'remoteproc imzalı firmware\'i OP-TEE\'ye verir; OP-TEE imzayı doğrular ve M33\'ü çalıştırır. RPMsg kanalı kurulur, M33 ilk satırını yollar. LD9 şimdi M33\'ün elinde.', c:'RDY freertos 1', who:['remoteproc','OP-TEE','M33 · sup task'], m:[['m33>hub','RDY freertos 1',C.vio]] },
+      { t:'Hub alarm sınırını bildirir', w:'Eğim alarm sınırı 0,01 derece biriminde: 3000 = 30,00°. PC\'den değiştirilebilir.', c:'LIM 3000', who:['f7hub'], m:[['hub>m33','LIM 3000',C.vio]] },
+      { t:'Kalp atışı başlar', w:'f7hub her 100 ms\'de bir HB yollar. M33 son HB\'nin yaşını kendi saatiyle ölçer. Telemetri henüz yok, bu yüzden mod NO_DATA.', c:'HB 1\nHB 2\nHB 3   …her 100 ms', who:['f7hub · heartbeat'], m:[['hub>m33','HB 1',C.vio],['hub>m33','HB 2',C.vio],['hub>m33','HB 3',C.vio]], fx:{mode:'NO_DATA'} },
+      { t:'PC paneli bağlanır', w:'Tarayıcı http://192.168.7.1:8080/ adresini açar. f7hub sayfayı ve canlı olay akışını USB ağı üzerinden sunar. PC\'ye hiçbir şey kurulmaz.', c:'GET /events   (text/event-stream)\n← event: linkd  {"serial":true,"rx_json":3,…}', who:['PC tarayıcısı','f7hub · HTTP'], m:[['pc>hub','GET /events',C.cyan],['hub>pc','event: linkd',C.cyan]], fx:{pc:'panel: canlı', pcSub:'seri: bağlı'} }
+    ]},
+    { name:'START komutu', c:C.mag, init:{mode:'NO_DATA', pc:'panel: canlı', pcSub:'F746: NET_READY', hub:true}, steps:[
+      { t:'Panelde START\'a basılır', w:'Düğme f7hub\'a küçük bir JSON isteği gönderir. F746\'ya henüz hiçbir şey gitmedi.', c:'POST /api/cmd   {"cmd":"start"}', who:['PC tarayıcısı'], m:[['pc>hub','POST {"cmd":"start"}',C.cyan]] },
+      { t:'f7hub F746 paketini kurar', w:'10 bayt: A5 başlangıç, 01 sürüm, 01 START, 00 bayrak, SEQ 7, REQ_ID 0x1A2B, uzunluk 0, son bayt CRC-8. Paket sıradan bir UDP soketiyle 192.168.50.2:5000\'e gönderilir.', c:'A5 01 01 00 00 07 1A 2B 00 11', who:['f7hub · proto.encode'], m:[['hub>kernel','A5 01 01 00 … 11',C.mag]] },
+      { t:'Linux çekirdeği paketi sarar', w:'Çekirdek UDP (8 B), IPv4 (20 B) ve Ethernet (14 B) başlıklarını ekler ve çerçeveyi tap-f7 arayüzüne verir. F746\'nın MAC adresini daha önce ARP ile öğrenmiştir. Ayrıntısı aşağıdaki bölümde.', c:'Ethernet 14 + IPv4 20 + UDP 8 + paket 10 = 52 bayt', who:['Linux çekirdeği · tap-f7'], m:[['kernel>linkd','Ethernet · 52 B',C.mag]] },
+      { t:'f7linkd tek satıra çevirir', w:'Çerçeve 60 bayta doldurulur, 4 baytlık FCS (CRC-32) eklenir ve büyük harf hex yazılır. 137 karakter; 625000 baud\'da yaklaşık 2,2 ms.', c:LINE, who:['f7linkd · frame_to_line'], m:[['linkd>f7','FRAME 1 0280E1A1…',C.mag]] },
+      { t:'F746 komutu işler', w:'F746 satırı çözer; FCS, IP/UDP sağlamaları ve CRC-8\'i denetler, ölçümü başlatır. Cevapta durum OK ve STATE baytı 03 (NET_READY | MEAS_EN).', c:'A5 01 01 01 00 07 1A 2B 06 │ 00  00 01  03  00 2A │ 5B\n            RESP              OK  ep=1  st  lat=42 µs', who:['F746 · cmd.c'], m:[], hl:['f7'] },
+      { t:'Cevap aynı yoldan döner', w:'f7hub cevabı REQ_ID 0x1A2B ile bekleyen isteğe eşler. 150 ms içinde gelmeseydi aynı REQ_ID ile yeniden yollardı (en çok 3 kez); F746 tekrarı tanır, ölçümü iki kez başlatmaz.', c:'FRAME 1 0200000000010280…  →  tap-f7  →  UDP :6000\nA5 01 01 01 00 07 1A 2B 06 00 00 01 03 00 2A 5B', who:['F746','f7linkd','çekirdek','f7hub'], m:[['f7>linkd','FRAME 1 02000000…',C.mag],['linkd>kernel','Ethernet',C.mag],['kernel>hub','A5 01 01 01 … 5B',C.mag]] },
+      { t:'PC sonucu görür, M33 haberdar olur', w:'f7hub sonucu PC\'ye döner ve F746\'nın durum değişikliğini M33\'e de bildirir (ST 3 0: NET_READY | MEAS_EN, arıza yok).', c:'{"ok":true,"status_name":"OK","state_text":"NET_READY|MEAS_EN","rtt_ms":6.8}\nST 3 0', who:['f7hub'], m:[['hub>pc','{"ok":true,…}',C.cyan],['hub>m33','ST 3 0',C.vio,1]], fx:{pc:'START: OK', pcSub:'F746: MEAS_EN'} }
+    ]},
+    { name:'Telemetri', c:C.lime, init:{mode:'NO_DATA', pc:'START: OK', pcSub:'F746: MEAS_EN', hub:true}, steps:[
+      { t:'F746 bir TELEM paketi yollar', w:'Ölçüm açıkken F746 IMU\'yu 100 Hz okur ve seçilen hızda (varsayılan 10 Hz) 30 baytlık TELEM paketini START\'ı gönderen adrese yollar: 192.168.50.1:6000.', c:'A5 01 30 00 03 2C 00 00 14 │ 00 00 32 B8 00 01 F4 A0 00 78 FF D8 1F FE 00 03 FF FF 00 00 │ 0D', who:['F746 · meas_task'], m:[['f7>linkd','FRAME 1 … TELEM',C.lime]] },
+      { t:'Linux paketi f7hub\'a teslim eder', w:'f7linkd FCS\'yi denetleyip çerçeveyi tap-f7\'ye yazar; çekirdek IP ve UDP\'yi açar ve 30 baytlık paketi f7hub\'un soketine verir.', c:'seq 812 · idx 12984 · ivme 120 -40 8190 · jiro 3 -1 0', who:['f7linkd','çekirdek'], m:[['linkd>kernel','Ethernet',C.lime],['kernel>hub','TELEM seq 812',C.lime]] },
+      { t:'f7hub veriyi üç yere dağıtır', w:'M33\'e TM satırı, PC\'ye canlı olay, karttaki CSV dosyasına bir satır. Aynı veri, üç farklı ihtiyaç.', c:'TM 812 120 -40 8190 3 -1 0\nevent: telem {"seq":812,"acc":[120,-40,8190],…}\nf7_20261122_….csv  ←  1763800000.12,TM,812,12984,…', who:['f7hub'], m:[['hub>m33','TM 812 120 -40 8190…',C.vio],['hub>pc','event: telem',C.cyan,1]], fx:{mode:'RUN', pc:'ivme 120 -40 8190'} },
+      { t:'M33 kendi saatiyle ölçer', w:'M33 satır geldiği an zaman damgası vurur (FreeRTOS\'ta DWT, 1 µs). İki TM arasındaki süreyi ve SEQ boşluklarını sayar. Bu, Linux\'un veriyi ne kadar düzgün akıttığının dışarıdan ölçümüdür.', c:'dt_min 99 870 µs   dt_max 100 410 µs   tm_gaps 0', who:['M33 · supervisor.c'], m:[], hl:['m33'] },
+      { t:'500 ms\'de bir SUP raporu', w:'Alanlar sırasıyla: mod 2 (RUN), son TM 12 ms önce, toplam 2481 TM, kayıp 0, en kısa ve en uzun aralık (µs), son HB 40 ms önce, bozuk satır 0.', c:'SUP 2 12 2481 0 99870 100410 40 0', who:['M33 · sup task'], m:[['m33>hub','SUP 2 12 2481 0 …',C.vio],['hub>pc','event: m33',C.cyan]], fx:{pc:'M33: RUN'} },
+      { t:'Akış sürer', w:'Bu tur saniyede 10 kez (en çok 50) tekrarlanır. Arada f7hub her 100 ms\'de HB yollamaya devam eder.', c:'TELEM 813 → TM 813 …\nTELEM 814 → TM 814 …', who:['F746','f7hub','M33'], m:[['f7>linkd','TELEM 813',C.lime],['f7>linkd','TELEM 814',C.lime,1],['kernel>hub','TELEM 813',C.lime],['hub>m33','TM 813 …',C.vio]] }
+    ]},
+    { name:'Açı ve alarm', c:C.red, init:{mode:'RUN', pc:'M33: RUN', pcSub:'F746: MEAS_EN', hub:true}, steps:[
+      { t:'f7hub her 20 ms\'de açı sorar', w:'Ölçüm açıkken f7hub F746\'ya GET_IMU komutu yollar. Bu sorgu karta yakın yapılıyor; PC\'nin ağ gecikmesi araya girmiyor.', c:'A5 01 05 00 00 08 1A 2C 00 ..   (GET_IMU)', who:['f7hub · imu_poller'], m:[['hub>kernel','GET_IMU',C.mag],['kernel>linkd','Ethernet',C.mag],['linkd>f7','FRAME 1 …',C.mag]] },
+      { t:'F746 açılarla cevap verir', w:'Cevapta F746\'nın tamamlayıcı filtreyle hesapladığı roll, pitch, yaw var (0,01 derece). F746 kendi içinde 12 ms\'lik süre sınırını da ölçüp bildirir.', c:'roll -3510   pitch 240   yaw 1520   flags 03', who:['F746 · meas_task'], m:[['f7>linkd','FRAME 1 …',C.mag],['linkd>kernel','Ethernet',C.mag],['kernel>hub','roll -35,10°',C.mag]] },
+      { t:'Açı M33\'e gider', w:'f7hub her açı cevabını tek satırla M33\'e verir.', c:'AT -3510 240 1520 3', who:['f7hub'], m:[['hub>m33','AT -3510 240 1520 3',C.vio]] },
+      { t:'M33 alarm verir', w:'|roll| 35,10° > sınır 30,00°. Karar M33\'ün 10 ms\'lik döngüsünde, Linux\'tan bağımsız verilir; LD9 10 Hz yanıp söner.', c:'|-3510| = 3510  >  LIM 3000   →   ALARM', who:['M33 · supervisor.c'], m:[['m33>led','LD9 10 Hz',C.red]], fx:{mode:'ALARM'} },
+      { t:'PC alarmı görür', w:'Sonraki SUP raporunda mod 3. f7hub bunu panele iletir; etiket kırmızıya döner.', c:'SUP 3 8 2733 0 99910 100380 22 0', who:['M33','f7hub'], m:[['m33>hub','SUP 3 …',C.vio],['hub>pc','event: m33 ALARM',C.red]], fx:{pc:'M33: ALARM'} }
+    ]},
+    { name:'USER2 butonu', c:C.amb, init:{mode:'RUN', pc:'M33: RUN', pcSub:'F746: MEAS_EN', hub:true}, steps:[
+      { t:'Butona basılır', w:'M33 USER2\'yi 10 ms\'de bir okur. 3 örnek (30 ms) kararlı basılı kalınca tek basış sayar; basılı tutmak ikinci basış sayılmaz.', c:'pin PC11 = 0  (aktif düşük)  ×3 örnek', who:['M33 · sup task'], m:[['btn>m33','basıldı',C.amb]], fx:{btn:1} },
+      { t:'M33 BTN yollar', w:'M33 kararı kendisi vermez; yalnız basışı bildirir. Komutu F746\'ya yollamak Linux\'un işi.', c:'BTN', who:['M33'], m:[['m33>hub','BTN',C.vio]], fx:{btn:0} },
+      { t:'f7hub STOP yollar', w:'Ölçüm açık olduğu için STOP (kapalı olsaydı START). Komut, START senaryosundaki yolun aynısından geçer.', c:'A5 01 02 00 00 09 1A 2D 00 ..   (STOP)', who:['f7hub'], m:[['hub>kernel','STOP',C.mag],['kernel>linkd','Ethernet',C.mag],['linkd>f7','FRAME 1 …',C.mag]] },
+      { t:'Telemetri durur', w:'F746 cevap verir; f7hub M33\'e yeni durumu yollar (ST 1 0: yalnız NET_READY). TM gelmeyince 300 ms sonra M33 NO_DATA\'ya geçer.', c:'ST 1 0\nevent: btn {"cmd":"stop","result":{"ok":true}}', who:['F746','f7hub','M33'], m:[['f7>linkd','FRAME 1 … OK',C.mag],['kernel>hub','STOP: OK',C.mag],['hub>m33','ST 1 0',C.vio],['hub>pc','event: btn',C.cyan,1]], fx:{mode:'NO_DATA', pc:'STOP: OK', pcSub:'F746: NET_READY'} }
+    ]},
+    { name:'Linux takılırsa', c:C.vio, init:{mode:'RUN', pc:'M33: RUN', pcSub:'F746: MEAS_EN', hub:true}, steps:[
+      { t:'Her şey normal', w:'HB ve TM düzenli geliyor, mod RUN, LD9 sürekli yanık.', c:'HB 412\nTM 1530 …\nHB 413', who:['f7hub'], m:[['hub>m33','HB 412',C.vio],['hub>m33','TM 1530 …',C.vio],['hub>m33','HB 413',C.vio]] },
+      { t:'f7hub durur', w:'Servis çöktü ya da Linux takıldı: HB ve TM kesildi. M33\'ün saati ve 10 ms döngüsü çalışmaya devam ediyor; son HB\'nin yaşını sayıyor.', c:'son HB: 0 ms … 250 ms … 500 ms', who:['M33 · supervisor.c'], m:[], fx:{hub:false}, count:true, hl:['m33'] },
+      { t:'M33: A35_LOST', w:'500 ms doldu. LD9 2 saniyede bir kısa yanar. Linux olmadan da gösterge doğru: M33\'ün bu projedeki asıl gerekçesi bu.', c:'hb_age 500 ms > 500 ms   →   A35_LOST', who:['M33'], m:[['m33>led','2 s\'de bir',C.mag]], fx:{mode:'A35_LOST', pc:'bağlantı yok'} },
+      { t:'systemd hub\'ı yeniden başlatır', w:'f7hub.service Restart=always: 2 s sonra servis yeniden açılır, HB geri gelir. TM de gelince mod RUN\'a döner.', c:'HB 0\nHB 1\nTM 1544 …', who:['systemd','f7hub'], m:[['hub>m33','HB 0',C.vio],['hub>m33','HB 1',C.vio],['hub>m33','TM 1544 …',C.vio]], pre:{hub:true}, fx:{mode:'RUN', pc:'M33: RUN'} }
+    ]}
+  ];
+
+  /* ---------- SVG yardımcıları ---------- */
+  var NS = 'http://www.w3.org/2000/svg';
+  var tokLayer = document.getElementById('tokens');
+  var led = document.getElementById('led');
+  var modeText = document.getElementById('modeText');
+  var m33sub = document.getElementById('m33sub');
+  var pcText = document.getElementById('pcText');
+  var pcSub = document.getElementById('pcSub');
+  var btnCap = document.getElementById('btnCap');
+  var nodes = {};
+  ['f7','linkd','kernel','hub','m33','pc'].forEach(function(n){ nodes[n] = document.getElementById('n-' + n); });
+
+  function lengths(pts){
+    var segs = [], total = 0;
+    for (var i = 1; i < pts.length; ++i)
+    {
+      var d = Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]);
+      segs.push(d);
+      total += d;
+    }
+    return {segs:segs, total:total};
+  }
+  function at(pts, L, f){
+    var dist = f * L.total;
+    for (var i = 0; i < L.segs.length; ++i)
+    {
+      if (dist <= L.segs[i] || i === L.segs.length - 1)
+      {
+        var r = L.segs[i] ? Math.min(dist / L.segs[i], 1) : 0;
+        return [pts[i][0] + (pts[i+1][0] - pts[i][0]) * r, pts[i][1] + (pts[i+1][1] - pts[i][1]) * r];
+      }
+      dist -= L.segs[i];
+    }
+    return pts[pts.length - 1];
+  }
+  function makeToken(label, color){
+    var txt = label.length > 26 ? label.slice(0, 25) + '…' : label;
+    var w = txt.length * 7.3 + 18;
+    var g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'tok');
+    var r = document.createElementNS(NS, 'rect');
+    r.setAttribute('x', -w / 2); r.setAttribute('y', -12); r.setAttribute('width', w); r.setAttribute('height', 24);
+    r.setAttribute('fill', color); r.setAttribute('filter', 'url(#glow)');
+    var t = document.createElementNS(NS, 'text');
+    t.textContent = txt;
+    g.appendChild(r); g.appendChild(t);
+    tokLayer.appendChild(g);
+    return g;
+  }
+
+  /* ---------- Oynatıcı durumu ---------- */
+  var speed = 1, playing = false, si = 0, st = 0, runId = 0, state = {};
+  var ease = function(x){ return x < .5 ? 2*x*x : 1 - Math.pow(-2*x + 2, 2) / 2; };
+
+  function animMove(mv, id){
+    return new Promise(function(res){
+      var pts = path(mv[0]), L = lengths(pts);
+      var g = makeToken(mv[1], mv[2]);
+      var dur = reduce ? 0 : Math.max(650, Math.min(1500, L.total * 4.2)) / speed;
+      var t0 = performance.now();
+      function frame(now){
+        if (id !== runId) { g.remove(); res(false); return; }
+        var f = dur ? Math.min((now - t0) / dur, 1) : 1;
+        var p = at(pts, L, ease(f));
+        g.setAttribute('transform', 'translate(' + p[0].toFixed(1) + ',' + (p[1] - 16).toFixed(1) + ')');
+        if (f < 1) { requestAnimationFrame(frame); }
+        else { setTimeout(function(){ g.remove(); res(true); }, reduce ? 0 : 250 / speed); }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+  function wait(ms, id){
+    return new Promise(function(res){ setTimeout(function(){ res(id === runId); }, reduce ? 0 : ms / speed); });
+  }
+
+  function applyFx(fx){
+    if (!fx) { return; }
+    if (fx.mode) { state.mode = fx.mode; }
+    if (fx.pc !== undefined) { state.pc = fx.pc; }
+    if (fx.pcSub !== undefined) { state.pcSub = fx.pcSub; }
+    if (fx.hub !== undefined) { state.hub = fx.hub; }
+    if (fx.btn !== undefined) { state.btn = fx.btn; }
+    render();
+  }
+  function render(){
+    var m = MODE[state.mode];
+    modeText.textContent = state.mode;
+    modeText.setAttribute('fill', m.c);
+    pcText.textContent = state.pc;
+    pcSub.textContent = state.pcSub;
+    nodes.hub.classList.toggle('down', !state.hub);
+    btnCap.setAttribute('fill', state.btn ? '#FFC21A' : '#2E3A55');
+    if (!state.counting) { m33sub.textContent = '10 ms döngü'; }
+  }
+  function highlight(step){
+    Object.keys(nodes).forEach(function(n){ nodes[n].classList.remove('on'); });
+    var on = {};
+    (step.m || []).forEach(function(mv){ mv[0].split('>').forEach(function(e){ on[NODE_OF[e]] = 1; }); });
+    (step.hl || []).forEach(function(n){ on[n] = 1; });
+    Object.keys(on).forEach(function(n){ if (nodes[n]) { nodes[n].classList.add('on'); } });
+  }
+
+  /* LED: supervisor.c'deki desenle aynı hesap */
+  function ledLoop(){
+    var m = MODE[state.mode] || MODE.WAIT_A35;
+    var on = (performance.now() % m.per) < m.on;
+    led.setAttribute('fill', on ? '#FF9A1F' : '#3A2A12');
+    led.setAttribute('filter', on ? 'url(#glow)' : '');
+    document.querySelectorAll('.ledv').forEach(function(el){
+      var mm = MODE[el.getAttribute('data-m')];
+      el.classList.toggle('on', (performance.now() % mm.per) < mm.on);
+    });
+    requestAnimationFrame(ledLoop);
+  }
+
+  /* ---------- Panel ve gezinme ---------- */
+  var tabsEl = document.getElementById('tabs'), progEl = document.getElementById('prog');
+  var panel = document.getElementById('panel');
+  S.forEach(function(sc, i){
+    var b = document.createElement('button');
+    b.className = 'tab'; b.setAttribute('role', 'tab'); b.style.setProperty('--c', sc.c);
+    b.innerHTML = '<i></i>' + (i + 1) + ' · ' + sc.name;
+    b.addEventListener('click', function(){ go(i, 0, playing); });
+    tabsEl.appendChild(b);
+  });
+
+  function show(){
+    var sc = S[si], step = sc.steps[st];
+    panel.style.setProperty('--c', sc.c);
+    progEl.style.setProperty('--c', sc.c);
+    document.getElementById('stepN').textContent = sc.name + ' · adım ' + (st + 1) + ' / ' + sc.steps.length;
+    document.getElementById('stepT').textContent = step.t;
+    document.getElementById('stepW').innerHTML = '<b>Ne oluyor?</b> ' + step.w;
+    document.getElementById('stepC').textContent = step.c;
+    document.getElementById('stepWho').innerHTML = step.who.map(function(w){ return '<span class="chip">' + w + '</span>'; }).join('');
+    [].forEach.call(tabsEl.children, function(b, i){ b.setAttribute('aria-selected', i === si ? 'true' : 'false'); });
+    progEl.innerHTML = sc.steps.map(function(_, i){ return '<span><i style="width:' + (i < st ? 100 : 0) + '%"></i></span>'; }).join('');
+    document.getElementById('bPrev').disabled = (si === 0 && st === 0);
+    highlight(step);
+  }
+  function fillCurrent(){
+    var bar = progEl.children[st];
+    if (bar) { bar.firstChild.style.width = '100%'; }
+  }
+
+  function rebuildState(){
+    var sc = S[si];
+    state = {mode:sc.init.mode, pc:sc.init.pc, pcSub:sc.init.pcSub, hub:sc.init.hub, btn:0, counting:false};
+    for (var i = 0; i < st; ++i)
+    {
+      applyFx(sc.steps[i].pre);
+      applyFx(sc.steps[i].fx);
+    }
+    render();
+  }
+
+  async function runStep(id){
+    var step = S[si].steps[st];
+    applyFx(step.pre);
+    var group = [];
+    for (var i = 0; i < step.m.length; ++i)
+    {
+      var mv = step.m[i];
+      if (mv[3] && group.length) { group.push(animMove(mv, id)); continue; }
+      if (group.length) { if (!(await Promise.all(group)).every(Boolean)) { return false; } }
+      group = [animMove(mv, id)];
+    }
+    if (group.length) { if (!(await Promise.all(group)).every(Boolean)) { return false; } }
+    if (step.count)
+    {
+      state.counting = true;
+      var t0 = performance.now(), dur = reduce ? 0 : 2200 / speed;
+      if (step.fx) { applyFx({hub:step.fx.hub}); }
+      while (true)
+      {
+        if (id !== runId) { state.counting = false; return false; }
+        var f = dur ? Math.min((performance.now() - t0) / dur, 1) : 1;
+        m33sub.textContent = 'son HB: ' + Math.round(f * 500) + ' ms önce';
+        if (f >= 1) { break; }
+        await new Promise(function(r){ requestAnimationFrame(r); });
+      }
+      state.counting = false;
+    }
+    applyFx(step.fx);
+    fillCurrent();
+    return true;
+  }
+
+  async function loop(id){
+    while (id === runId)
+    {
+      var ok = await runStep(id);
+      if (!ok || id !== runId) { return; }
+      if (!playing) { return; }
+      if (!(await wait(2600, id))) { return; }
+      if (!playing) { return; }
+      if (st < S[si].steps.length - 1) { st += 1; }
+      else if (si < S.length - 1) { si += 1; st = 0; rebuildState(); }
+      else { setPlaying(false); return; }
+      show();
+    }
+  }
+
+  function go(newSi, newSt, autoplay){
+    runId += 1;
+    tokLayer.innerHTML = '';
+    si = newSi; st = newSt;
+    rebuildState();
+    show();
+    setPlaying(!!autoplay);
+    var id = runId;
+    if (autoplay) { loop(id); } else { runStep(id); }
+  }
+  function setPlaying(p){
+    playing = p;
+    var b = document.getElementById('bPlay');
+    b.textContent = p ? '❚❚ Duraklat' : '▶ Oynat';
+    b.setAttribute('aria-label', p ? 'Duraklat' : 'Oynat');
+  }
+
+  document.getElementById('bPlay').addEventListener('click', function(){
+    if (playing) { setPlaying(false); return; }
+    go(si, st, true);
+  });
+  document.getElementById('bNext').addEventListener('click', function(){
+    if (st < S[si].steps.length - 1) { go(si, st + 1, playing); }
+    else if (si < S.length - 1) { go(si + 1, 0, playing); }
+  });
+  document.getElementById('bPrev').addEventListener('click', function(){
+    if (st > 0) { go(si, st - 1, false); }
+    else if (si > 0) { go(si - 1, S[si - 1].steps.length - 1, false); }
+  });
+  var speeds = [1, 1.5, 0.6];
+  document.getElementById('bSpeed').addEventListener('click', function(){
+    speed = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
+    this.textContent = String(speed).replace('.', ',') + '×';
+  });
+
+  /* ---------- Katmanlar ---------- */
+  var BYTES = [
+    ['eth','02 80 E1 A1 B2 C3 02 00 00 00 00 01 08 00'],
+    ['ip','45 00 00 26 00 01 00 00 40 11 95 72 C0 A8 32 01 C0 A8 32 02'],
+    ['udp','17 70 13 88 00 12 2F 39'],
+    ['app','A5 01 01 00 00 07 1A 2B 00 11'],
+    ['pad','00 00 00 00 00 00 00 00'],
+    ['fcs','97 25 F4 E0']
+  ];
+  var LSTEPS = [
+    {show:['app'], t:'F746 paketi · 10 B', s:'f7hub yazar: A5 01 01 00 · SEQ 0007 · REQ_ID 1A2B · LEN 00 · CRC-8 11. F746\'da cmd.c okur.'},
+    {show:['app','udp'], t:'+ UDP başlığı · 8 B', s:'Linux çekirdeği ekler: kaynak port 6000 (17 70), hedef 5000 (13 88), uzunluk 18, sağlama. F746\'da FreeRTOS-Plus-TCP söker.'},
+    {show:['app','udp','ip'], t:'+ IPv4 başlığı · 20 B', s:'Çekirdek ekler: 192.168.50.1 (C0 A8 32 01) → 192.168.50.2 (C0 A8 32 02), protokol 11 = UDP, TTL 40.'},
+    {show:['app','udp','ip','eth'], t:'+ Ethernet başlığı · 14 B', s:'Çekirdek ekler: hedef MAC (F746), kaynak MAC (tap-f7: 02:00:00:00:00:01), tür 08 00 = IPv4. Çerçeve 52 B olarak tap-f7\'den çıkar.'},
+    {show:['app','udp','ip','eth','pad','fcs'], t:'+ dolgu 8 B + FCS 4 B', s:'f7linkd ekler: F746 en az 60 B ister, eksik sıfırla dolar; sonuna CRC-32 (en düşük bayt önce). F746\'nın vnet sürücüsü denetler.'},
+    {show:['app','udp','ip','eth','pad','fcs'], line:true, t:'= 137 karakterlik satır', s:'f7linkd her baytı iki hex harfine çevirir, başına "FRAME 1 ", sonuna \\n koyar. USB\'den bu satır gider; F746\'nın line_rx.c\'si okur.'}
+  ];
+  var bytesEl = document.getElementById('bytes'), hexEl = document.getElementById('hexline'), lstepsEl = document.getElementById('lsteps');
+  var COLORS = {eth:'#9B88FF', ip:'#22E4FF', udp:'#FFC21A', app:'#FF3DCB', pad:'#C9CED8', fcs:'#A8D84A'};
+  BYTES.forEach(function(b){
+    b[1].split(' ').forEach(function(h){
+      var s = document.createElement('span');
+      s.className = 'by ' + b[0];
+      s.textContent = h;
+      bytesEl.appendChild(s);
+    });
+  });
+  LSTEPS.forEach(function(L, i){
+    var b = document.createElement('button');
+    b.className = 'lstep'; b.setAttribute('role', 'listitem');
+    b.innerHTML = '<b class="n">' + (i + 1) + '</b><span><b>' + L.t + '</b><small>' + L.s + '</small></span>';
+    b.addEventListener('click', function(){ layer(i, true); });
+    lstepsEl.appendChild(b);
+  });
+  function layer(i, user){
+    var L = LSTEPS[i];
+    [].forEach.call(lstepsEl.children, function(b, j){ b.classList.toggle('on', j === i); });
+    [].forEach.call(bytesEl.children, function(s){
+      var k = s.className.split(' ')[1];
+      var vis = L.show.indexOf(k) >= 0;
+      var was = s.classList.contains('v');
+      s.classList.toggle('v', vis);
+      if (vis && !was && !reduce) { s.classList.add('pop'); setTimeout(function(){ s.classList.remove('pop'); }, 350); }
+    });
+    var html = '<b style="color:#EEF2F8">FRAME 1 </b>';
+    BYTES.forEach(function(b){
+      var hex = b[1].replace(/ /g, '');
+      html += L.line || L.show.indexOf(b[0]) >= 0 ? '<b style="color:' + COLORS[b[0]] + '">' + hex + '</b>' : hex;
+    });
+    hexEl.innerHTML = html + '<b style="color:#EEF2F8">\\n</b>';
+    if (user) { layerAuto = false; }
+  }
+  var layerAuto = true, layerI = 0;
+  layer(LSTEPS.length - 1, false);
+  if (!reduce)
+  {
+    layerI = 0; layer(0, false);
+    setInterval(function(){
+      if (!layerAuto) { return; }
+      layerI = (layerI + 1) % LSTEPS.length;
+      layer(layerI, false);
+    }, 2600);
+  }
+
+  /* ---------- Ritim ---------- */
+  var LANES = [
+    {n:'M33 döngüsü', d:'10 ms · sup task / sup_thread', per:10, c:'#4B2FD1', w:2},
+    {n:'GET_IMU', d:'20 ms · f7hub → F746 → AT', per:20, c:'#A3007F', w:3},
+    {n:'TELEM → TM', d:'100 ms · 10 Hz (en çok 50 Hz)', per:100, c:'#2B4A00', w:5},
+    {n:'HB', d:'100 ms · f7hub → M33', per:100, off:50, c:'#006B7A', w:5},
+    {n:'SUP', d:'500 ms · M33 → f7hub', per:500, c:'#7E5200', w:9}
+  ];
+  var rEl = document.getElementById('rhythm'), canv = [];
+  LANES.forEach(function(L){
+    var row = document.createElement('div');
+    row.className = 'rrow';
+    row.innerHTML = '<div class="rl">' + L.n + '<small>' + L.d + '</small></div>';
+    var c = document.createElement('canvas');
+    c.setAttribute('aria-label', L.n + ' her ' + L.per + ' ms');
+    row.appendChild(c);
+    rEl.appendChild(row);
+    canv.push([c, L]);
+  });
+  var rSpeed = 0.25, rPaused = reduce, simT = 0, lastT = performance.now();
+  function drawRhythm(now){
+    var dt = now - lastT; lastT = now;
+    if (!rPaused) { simT += dt * rSpeed; }
+    canv.forEach(function(p){
+      var c = p[0], L = p[1];
+      var w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+      if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+      var g = c.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, w, h);
+      var win = 1000, start = simT - win;
+      g.fillStyle = 'rgba(11,15,26,.12)';
+      for (var s = Math.ceil(start / 100) * 100; s <= simT; s += 100)
+      {
+        g.fillRect((s - start) / win * w, 0, 1, h);
+      }
+      g.fillStyle = L.c;
+      var off = L.off || 0;
+      for (var t = Math.ceil((start - off) / L.per) * L.per + off; t <= simT; t += L.per)
+      {
+        var x = (t - start) / win * w;
+        g.fillRect(x - L.w / 2, 6, L.w, h - 12);
+      }
+    });
+    requestAnimationFrame(drawRhythm);
+  }
+  requestAnimationFrame(drawRhythm);
+  document.querySelectorAll('.rbtn[data-rs]').forEach(function(b){
+    b.addEventListener('click', function(){
+      rSpeed = parseFloat(b.getAttribute('data-rs'));
+      document.querySelectorAll('.rbtn[data-rs]').forEach(function(x){ x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    });
+  });
+  var rp = document.getElementById('rPause');
+  rp.setAttribute('aria-pressed', rPaused ? 'true' : 'false');
+  rp.textContent = rPaused ? 'Başlat' : 'Durdur';
+  rp.addEventListener('click', function(){
+    rPaused = !rPaused;
+    rp.setAttribute('aria-pressed', rPaused ? 'true' : 'false');
+    rp.textContent = rPaused ? 'Başlat' : 'Durdur';
+  });
+
+  /* ---------- M33 modları ---------- */
+  var modesEl = document.getElementById('modes');
+  MODE_ORDER.forEach(function(k){
+    var m = MODE[k];
+    var d = document.createElement('div');
+    d.className = 'mode';
+    d.innerHTML = '<div class="ledv" data-m="' + k + '" aria-hidden="true"></div><div><div class="k">mod ' + m.k + ' · ' +
+      (m.on === m.per ? 'sürekli yanık' : m.on + ' ms yanık / ' + m.per + ' ms') + '</div><h3>' + k + '</h3><p>' + m.cond + '</p></div>';
+    modesEl.appendChild(d);
+  });
+
+  /* ---------- Başlat ---------- */
+  requestAnimationFrame(ledLoop);
+  go(0, 0, !reduce);
+})();
+</script>
+</body>
+</html>

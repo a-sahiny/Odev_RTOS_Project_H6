@@ -1,0 +1,12 @@
+[Unit]
+Description=F746 UART <-> tap-f7 koprusu
+After=network.target
+
+[Service]
+ExecStartPre=/sbin/modprobe tun
+ExecStart=/usr/bin/python3 /usr/local/f7kopru/f7linkd.py --tty /dev/f746
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
