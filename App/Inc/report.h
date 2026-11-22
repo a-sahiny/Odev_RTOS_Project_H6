@@ -59,13 +59,11 @@ void Report_Ack( const char * pcResult );
  * cleared (docs 19). */
 void Report_Fault( BaseType_t xSet, uint32_t ulWhy );
 
-/* {"type":"imu_rate","hz":<rate>,"w":[div,dlpf,dlpf],"r":[...],"ms":<waited>,
- * "ok":0|1}: every IMU rate write (imu_spi.c): what was written to
- * SMPLRT_DIV / CONFIG / ACCEL_CONFIG2, what reads back, and how long
- * SMPLRT_DIV took to read back the new value. ok 0: it did not (IMU_WHO_AM_I
- * counted as well). meas only. */
-void Report_ImuRate( uint16_t usHz, const uint8_t * pucWritten, const uint8_t * pucRead, uint32_t ulWaitMs,
-                     BaseType_t xOk );
+/* {"type":"imu_rate","hz":<rate>,"w":[div,dlpf,dlpf],"r":[...],"ok":0|1}:
+ * every IMU rate write (imu_spi.c): what was written to SMPLRT_DIV / CONFIG /
+ * ACCEL_CONFIG2 and what reads back. ok 0: they differ (IMU_WHO_AM_I counted
+ * as well). meas only. */
+void Report_ImuRate( uint16_t usHz, const uint8_t * pucWritten, const uint8_t * pucRead, BaseType_t xOk );
 
 /* {"type":"boot","ep":<EPOCH>,"fw":"<version>"}: once at start-up, from
  * ctrlTask (docs 16.6). */

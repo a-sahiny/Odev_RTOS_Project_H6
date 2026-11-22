@@ -192,13 +192,9 @@ BaseType_t Imu_SetRate( uint16_t usRateHz )
 /*---------------------------------------------------------------------------*/
 /* prvWriteRate: SMPLRT_DIV, CONFIG (gyro DLPF), ACCEL_CONFIG2 (accel DLPF)  */
 /* for usRateHz, then read back. cmd.c lets only APP_RATE_LIST_HZ through.   */
-/* Seen on the board (22.11.2026, imu_rate reports): on a running IMU,       */
-/* CONFIG and ACCEL_CONFIG2 read back at once, but SMPLRT_DIV still reads    */
-/* the OLD divider right after the write (w 4 r 9, w 19 r 4, w 9 r 19); the  */
-/* new one is in force a little later (the next attempt read it, and DRDY    */
-/* came at the new rate). So SMPLRT_DIV is read again every tick until it    */
-/* matches, at most one period of the slowest rate + margin. Every rate      */
-/* write sends an imu_rate report with the time that took.                   */
+/* Every rate write sends an imu_rate report: written, read back, ok. On the */
+/* board (22.11.2026) a lost first write showed there as SMPLRT_DIV keeping  */
+/* its old value (w 4 r 9, also after 110 ms); cause: prvSetPrescaler.       */
 /*---------------------------------------------------------------------------*/
 static BaseType_t prvWriteRate( uint16_t usRateHz )
 {
@@ -226,28 +222,14 @@ static BaseType_t prvWriteRate( uint16_t usRateHz )
     {
         const uint8_t ucWritten[ 3 ] = { ucDiv, pxRate->ucDlpf, pxRate->ucDlpf };
         uint8_t ucRead[ 3 ];
-        const TickType_t xStart = xTaskGetTickCount();
-        TickType_t xWaited;
         BaseType_t xOk;
 
+        ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
         ucRead[ 1 ] = prvReadReg( IMU_REG_CONFIG );
         ucRead[ 2 ] = prvReadReg( IMU_REG_ACCEL_CONFIG2 );
 
-        for( ; ; )
-        {
-            ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
-            xWaited = xTaskGetTickCount() - xStart;
-
-            if( ( ucRead[ 0 ] == ucDiv ) || ( xWaited >= APP_MS( APP_IMU_DRDY_TIMEOUT_MAX_MS ) ) )
-            {
-                break;
-            }
-
-            vTaskDelay( 1U );
-        }
-
         xOk = ( memcmp( ucWritten, ucRead, sizeof( ucRead ) ) == 0 ) ? pdPASS : pdFAIL;
-        Report_ImuRate( usRateHz, ucWritten, ucRead, ( uint32_t ) xWaited, xOk );
+        Report_ImuRate( usRateHz, ucWritten, ucRead, xOk );
 
         return xOk;
     }
@@ -342,6 +324,7 @@ static BaseType_t prvTransfer( size_t uxLen, TickType_t xTimeout )
         {
             ulBits = 0U;
             ( void ) HAL_SPI_Abort( &hspi2 );       /* app_imu.c:388 */
+            __HAL_SPI_ENABLE( &hspi2 );             /* the abort clears SPE: SCK idle high again (prvSetPrescaler) */
             break;
         }
     }
@@ -462,14 +445,21 @@ static void prvCsHigh( void )
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvSetPrescaler: app_imu.c:151-158. BR can change only with SPE off; the  */
-/* HAL turns SPE on again at the next transfer.                              */
+/* prvSetPrescaler: app_imu.c:151-158. BR can change only with SPE off, and  */
+/* SPE goes on again right away (22.11.2026, board). With SPE off the SPI     */
+/* does not drive SCK (PI1, no pull-up); in mode 3 SCK must idle high. Left  */
+/* off (as before: the HAL turned SPE on only inside the next transfer, after */
+/* CS went low), SCK drifted low, and turning SPE on raised it while CS was   */
+/* low: one extra clock edge, the first write after a long pause was lost    */
+/* (the first SET_RATE after boot or after a FAULT: SMPLRT_DIV kept its old   */
+/* value). An enabled master drives SCK at its idle level without clocking.  */
 /*---------------------------------------------------------------------------*/
 static void prvSetPrescaler( uint32_t ulPrescaler )
 {
     __HAL_SPI_DISABLE( &hspi2 );
     MODIFY_REG( hspi2.Instance->CR1, SPI_CR1_BR, ulPrescaler );
     hspi2.Init.BaudRatePrescaler = ulPrescaler;
+    __HAL_SPI_ENABLE( &hspi2 );
 }
 
 /*---------------------------------------------------------------------------*/

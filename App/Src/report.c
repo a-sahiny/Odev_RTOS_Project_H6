@@ -121,8 +121,7 @@ void Report_Fault( BaseType_t xSet, uint32_t ulWhy )
 }
 
 /*---------------------------------------------------------------------------*/
-void Report_ImuRate( uint16_t usHz, const uint8_t * pucWritten, const uint8_t * pucRead, uint32_t ulWaitMs,
-                     BaseType_t xOk )
+void Report_ImuRate( uint16_t usHz, const uint8_t * pucWritten, const uint8_t * pucRead, BaseType_t xOk )
 {
     ReportWriter_t xW;
     uint32_t ulW[ 3 ];
@@ -140,7 +139,6 @@ void Report_ImuRate( uint16_t usHz, const uint8_t * pucWritten, const uint8_t * 
         prvPutU32( &xW, "hz", usHz );
         prvPutU32Array( &xW, "w", ulW, 3U );
         prvPutU32Array( &xW, "r", ulR, 3U );
-        prvPutU32( &xW, "ms", ulWaitMs );
         prvPutU32( &xW, "ok", ( xOk != pdFALSE ) ? 1U : 0U );
         prvFinish( &xW );
     }
