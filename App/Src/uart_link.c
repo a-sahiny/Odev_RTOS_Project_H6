@@ -277,7 +277,7 @@ static void prvRxEventISR( uint32_t ulEvent, uint16_t usSize, BaseType_t * pxWok
     const uint32_t ulNow = DWT->CYCCNT;
     uint32_t ulSinceRef;
 
-    /* Unsigned differences: right across a CYCCNT wrap (171 s at 25 MHz). */
+    /* Unsigned differences: right across a CYCCNT wrap (19.9 s at 216 MHz). */
     if( ( ulNow - ulLastEvtCycles ) >= ( UART_LINK_CHAIN_US * ulCyclesPerUs ) )
     {
         ulRefCycles = ulLastEvtCycles;      /* a new chain starts */

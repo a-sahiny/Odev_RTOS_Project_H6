@@ -387,7 +387,7 @@ static void prvUartTxTask( void * pvParameters )
         if( xQueueReceive( xUartTxQueue, &xItem, pdMS_TO_TICKS( APP_TXQ_RECV_WAIT_MS ) ) == pdPASS )
         {
             /* M5 (docs 8.1): TXQ_WAIT = M5 - M4 per class. Unsigned
-             * difference: right across a CYCCNT wrap (171 s at 25 MHz). */
+             * difference: right across a CYCCNT wrap (19.9 s at 216 MHz). */
             ulTakenCycles = DWT->CYCCNT;
             prvOnTaken( &xItem );
             configASSERT( xItem.eClass < eUartTxClassCount );

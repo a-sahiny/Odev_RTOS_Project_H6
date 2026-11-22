@@ -3,7 +3,7 @@
   * @file    imu_spi.c
   * @brief   The only owner of SPI2 and the IMU (WHO_AM_I 0x74, 6 axes): reset
   *          and configuration (SPI2 DMA, <= 1 MHz), DRDY on EXTI9_5, one sample
-  *          with SPI2 DMA (3.125 MHz). docs 3.3, D18. Künye: report 076.
+  *          with SPI2 DMA (3.375 MHz). docs 3.3, D18. Künye: report 076.
   *          Every transfer is DMA + task notification, none polled (report 092).
   ******************************************************************************
   * Start-up order and register values follow RTOS_IMU/App/Src/app_imu.c

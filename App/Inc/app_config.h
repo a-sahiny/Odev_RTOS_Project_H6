@@ -19,7 +19,7 @@
 /*----------------------------------------------------------------------------
  * Firmware identity (HELLO reply)
  *--------------------------------------------------------------------------*/
-#define APP_FW_VERSION_STR              "0.4"   /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud */
+#define APP_FW_VERSION_STR              "0.5"   /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud; 0.5: 216 MHz */
 #define APP_BOARD_STR                   "STM32F746G-DISCO"
 
 /*----------------------------------------------------------------------------
@@ -76,8 +76,8 @@
  *--------------------------------------------------------------------------*/
 /* 1 Mbaud: the TELEM line (167 characters) leaves in 1.67 ms, under the 2 ms
  * limit; at 625000 even an empty UDP frame line (137 characters) took
- * 2.19 ms. USART1 runs on PCLK2 = 12.5 MHz: 1 Mbaud is exact only with
- * 8x oversampling (USARTDIV = 2 x 12.5 MHz / 1 Mbaud = 25; main.c). */
+ * 2.19 ms. USART1 runs on PCLK2 = 108 MHz (SYSCLK 216 MHz, main.c):
+ * 1 Mbaud is exact with 16x oversampling (USARTDIV = 108). */
 #define APP_UART_BAUD                   1000000U
 #define APP_UART_CHAR_US                10U     /* 10 / 1000000 s = 10 us    */
 #define APP_UART_RX_DMA_BYTES           256U    /* circular, ~2.6 ms of data */
@@ -254,8 +254,9 @@
 #define APP_IMU_DRDY_TIMEOUT_MAX_MS     ( ( 1000U / APP_RATE_MIN_HZ ) + APP_IMU_DRDY_MARGIN_MS )
 #define APP_IMU_SPI_TIMEOUT_MS          5U
 #define APP_IMU_FAIL_LIMIT              3U      /* consecutive -> FAULT IMU  */
-#define APP_IMU_SPI_PRESC_CONFIG        SPI_BAUDRATEPRESCALER_8   /* 781 kHz <= 1 MHz */
-#define APP_IMU_SPI_PRESC_DATA          SPI_BAUDRATEPRESCALER_2   /* 3.125 MHz <= 20 MHz */
+/* SPI2 is on APB1 = 54 MHz (SYSCLK 216 MHz / 4). */
+#define APP_IMU_SPI_PRESC_CONFIG        SPI_BAUDRATEPRESCALER_64  /* 844 kHz <= 1 MHz */
+#define APP_IMU_SPI_PRESC_DATA          SPI_BAUDRATEPRESCALER_16  /* 3.375 MHz <= 20 MHz */
 
 /* Scales of the imu_spi.c set-up: +-4 g, +-1000 dps (report 087). */
 #define APP_IMU_ACCEL_LSB_PER_G         8192U

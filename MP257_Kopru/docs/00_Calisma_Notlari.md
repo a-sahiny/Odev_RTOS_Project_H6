@@ -10,7 +10,7 @@ Kart tarafı genel notları: `C:\Users\Asus\Documents\GitHub\STM32MP257F_DK\docs
 - Denenmedi: CubeIDE derlemesi, Zephyr derlemesi, TAP ve termios2 (Windows'ta yok), f7hub'un HTTP kısmı (termios import'u Windows'ta çalışmaz).
 
 ## F746 tarafından okunan gerçekler (Odev_RTOS_Project_H6)
-- USART1 1000000 8N1 (8x oversampling; PCLK2 12,5 MHz'de tam), önceden 625000 → ST-LINK VCP (PA9/PB7). USART6 230400 CubeMX'te açık ama `App/` kullanmıyor.
+- F746 SYSCLK 216 MHz (PLL, firmware 0.5; önceden 25 MHz HSE, şart değildi). USART1 1000000 8N1, 16x oversampling (PCLK2 108 MHz'de tam), önceden 625000 → ST-LINK VCP (PA9/PB7). 25 MHz + 8x oversampling ile 1 Mbaud'da PC → kart yönünde UART_ORE / line_uart_loss görüldü (22.11.2026). USART6 230400 CubeMX'te açık ama `App/` kullanmıyor.
 - IP 192.168.50.2, ağ geçidi 192.168.50.1; UDP 5000 komut, 5001 ENV/BULK/CAL, 5002 telemetri kaynağı. Host portu 6000 (eski host).
 - Telemetri ve komut cevapları **gönderenin IP/port'una** gider (`cmd.c:465`, `cmd.c:617`); IP filtresi yok.
 - UART satırı: `FRAME 1 <hex+FCS>` (FCS CRC-32 LE), çerçeve 60–256 B (FCS hariç); JSON satırları `{"type":…}`. `st`/`state` raporlarında `ep`, `s` (durum, bit0 NET_READY bit1 MEAS_EN bit2 FAULT), `why`. `fault` raporunda `set`, `why`.
