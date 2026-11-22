@@ -4,6 +4,7 @@ Bir sonraki oturumda kaynakları yeniden aramadan devam etmek için. Son güncel
 Kart tarafı genel notları: `C:\Users\Asus\Documents\GitHub\STM32MP257F_DK\docs\00_Calisma_Notlari.md`.
 
 ## Durum
+- 22.11.2026 F746 firmware 0.9 PC'de doğrulandı (COM6, 1 Mbaud): 10/20/50/100/200 Hz ve aralarındaki geçişler, DRDY → TX bitti ort. 1,94 ms (satır 1,67 ms), 12 ms aşımı yok, IMU/UART hata sayaçları 0. Yol boyunca bulunanlar: (1) 25 MHz'de USART1 12,5 MHz → 1 Mbaud 8x oversampling, PC→kart UART_ORE / line_uart_loss → 216 MHz, 16x; (2) SPI2 SPE kapalıyken SCK (PI1, pull-up yok) boşta kalıyor, mod 3'te SPE açılırken CS düşükken fazladan saat kenarı → ilk yazım kayıyordu → hız değişiminden sonra SPE hemen açılır; (3) IMU yeni SMPLRT_DIV'i eski hızdaki bir sonraki örnekte uygular → değişimden sonraki ilk DRDY 110 ms beklenir.
 - 22.11.2026 kartta: adım 1.1 tamam (Python 3.14.7, bütün modüller, TUN/USB_ACM/RPMSG_TTY modül), adım 1.2 tamam (ttyACM0, `0483:3752`, full-speed). Kartın saati ayarlı değil (13 Mart).
 - Kod ve plan yazıldı; **kartta hiçbir adım uygulanmadı.** Kullanıcı derleme/flash/kart adımlarını kendisi yapıyor.
 - PC'de doğrulanan: `m33/common` gcc testleri (0 hata, `-Wconversion` uyarısız); `linux/tests/test_uyumluluk.py` 5/5 (F746 simülatörüyle uçtan uca); `tools/freertos_projesi_olustur.py --kontrol` 35 bağlantı çözüldü; rapor ve panel 375 px / masaüstü taşmasız.
