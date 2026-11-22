@@ -293,9 +293,15 @@ static void prvMeasTask( void * pvParameters )
 
         if( xNow.ulStarts != xMeas.ulStartsSeen )
         {
-            /* A new START: the attitude begins again (K2). */
+            /* A new START: the attitude begins again (K2). A DRDY that came
+             * before the START is dropped: the first TELEM is the next fresh
+             * sample, so its DRDY -> TX done is not stretched by the time the
+             * measurement was off (seen on the board: 34 ms at 10 Hz). */
             xMeas.ulStartsSeen = xNow.ulStarts;
             prvAttitudeReset();
+#if ( APP_MEAS_SOURCE == APP_MEAS_SOURCE_IMU )
+            Imu_DiscardStaleDrdy();
+#endif
         }
 
         if( prvAcquire( &xSample ) != pdPASS )

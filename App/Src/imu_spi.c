@@ -16,6 +16,7 @@
 #include "imu_spi.h"
 
 #include <stdint.h>
+#include <string.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -23,6 +24,7 @@
 #include "main.h"           /* MPU_CS / MPU_DRDY pins, HAL */
 #include "app_config.h"
 #include "app_stats.h"
+#include "report.h"         /* Report_ImuRate */
 
 extern SPI_HandleTypeDef hspi2;
 
@@ -214,9 +216,25 @@ static BaseType_t prvWriteRate( uint16_t usRateHz )
     prvWriteReg( IMU_REG_CONFIG, pxRate->ucDlpf );
     prvWriteReg( IMU_REG_ACCEL_CONFIG2, pxRate->ucDlpf );
 
-    return ( ( prvReadReg( IMU_REG_SMPLRT_DIV ) == ucDiv ) &&
-             ( prvReadReg( IMU_REG_CONFIG ) == pxRate->ucDlpf ) &&
-             ( prvReadReg( IMU_REG_ACCEL_CONFIG2 ) == pxRate->ucDlpf ) ) ? pdPASS : pdFAIL;
+    /* All three are read back, and a mismatch is reported with the values
+     * (imu_rate report): which register the part did not take, and what it
+     * holds instead. */
+    {
+        const uint8_t ucWritten[ 3 ] = { ucDiv, pxRate->ucDlpf, pxRate->ucDlpf };
+        uint8_t ucRead[ 3 ];
+
+        ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
+        ucRead[ 1 ] = prvReadReg( IMU_REG_CONFIG );
+        ucRead[ 2 ] = prvReadReg( IMU_REG_ACCEL_CONFIG2 );
+
+        if( memcmp( ucWritten, ucRead, sizeof( ucRead ) ) != 0 )
+        {
+            Report_ImuRate( usRateHz, ucWritten, ucRead );
+            return pdFAIL;
+        }
+    }
+
+    return pdPASS;
 }
 
 /*---------------------------------------------------------------------------*/

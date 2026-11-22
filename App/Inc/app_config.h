@@ -19,7 +19,7 @@
 /*----------------------------------------------------------------------------
  * Firmware identity (HELLO reply)
  *--------------------------------------------------------------------------*/
-#define APP_FW_VERSION_STR              "0.5"   /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud; 0.5: 216 MHz */
+#define APP_FW_VERSION_STR              "0.6"   /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud; 0.5: 216 MHz; 0.6: imu_rate report */
 #define APP_BOARD_STR                   "STM32F746G-DISCO"
 
 /*----------------------------------------------------------------------------
