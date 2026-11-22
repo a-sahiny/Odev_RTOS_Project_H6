@@ -89,7 +89,7 @@ def cmd_stats(args, h):
 
 
 def cmd_imu(args, h):
-    """SET_RATE + START; TELEM'leri dinler, her 10. örneği ve sonunda kart zamanıyla gecikme özetini yazar."""
+    """SET_RATE + START; TELEM'leri dinler, her 10. örneği yazar; sonda STOP ve kart zamanıyla gecikme özeti."""
     from .hoststack import TelemLatencyStats
     if args.rate:
         r = h.set_rate(args.rate)
@@ -118,6 +118,8 @@ def cmd_imu(args, h):
         time.sleep(args.seconds)
     except KeyboardInterrupt:
         pass
+    # Ölçüm açık kalırsa port kapalıyken ST-LINK'in tamponu taşar, bir sonraki açılışta yarım satırlar gelir.
+    print("STOP: %s" % h.stop().status_name)
     h.listeners.remove(show)
     print("alınan %d TELEM, %.1f Hz" % (count[0], h.telem.rate_hz()))
     print(json.dumps(lat.summary(), ensure_ascii=False))
