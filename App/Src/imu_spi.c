@@ -192,6 +192,13 @@ BaseType_t Imu_SetRate( uint16_t usRateHz )
 /*---------------------------------------------------------------------------*/
 /* prvWriteRate: SMPLRT_DIV, CONFIG (gyro DLPF), ACCEL_CONFIG2 (accel DLPF)  */
 /* for usRateHz, then read back. cmd.c lets only APP_RATE_LIST_HZ through.   */
+/* Seen on the board (22.11.2026, imu_rate reports): on a running IMU,       */
+/* CONFIG and ACCEL_CONFIG2 read back at once, but SMPLRT_DIV still reads    */
+/* the OLD divider right after the write (w 4 r 9, w 19 r 4, w 9 r 19); the  */
+/* new one is in force a little later (the next attempt read it, and DRDY    */
+/* came at the new rate). So SMPLRT_DIV is read again every tick until it    */
+/* matches, at most one period of the slowest rate + margin. Every rate      */
+/* write sends an imu_rate report with the time that took.                   */
 /*---------------------------------------------------------------------------*/
 static BaseType_t prvWriteRate( uint16_t usRateHz )
 {
@@ -216,25 +223,34 @@ static BaseType_t prvWriteRate( uint16_t usRateHz )
     prvWriteReg( IMU_REG_CONFIG, pxRate->ucDlpf );
     prvWriteReg( IMU_REG_ACCEL_CONFIG2, pxRate->ucDlpf );
 
-    /* All three are read back, and a mismatch is reported with the values
-     * (imu_rate report): which register the part did not take, and what it
-     * holds instead. */
     {
         const uint8_t ucWritten[ 3 ] = { ucDiv, pxRate->ucDlpf, pxRate->ucDlpf };
         uint8_t ucRead[ 3 ];
+        const TickType_t xStart = xTaskGetTickCount();
+        TickType_t xWaited;
+        BaseType_t xOk;
 
-        ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
         ucRead[ 1 ] = prvReadReg( IMU_REG_CONFIG );
         ucRead[ 2 ] = prvReadReg( IMU_REG_ACCEL_CONFIG2 );
 
-        if( memcmp( ucWritten, ucRead, sizeof( ucRead ) ) != 0 )
+        for( ; ; )
         {
-            Report_ImuRate( usRateHz, ucWritten, ucRead );
-            return pdFAIL;
-        }
-    }
+            ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
+            xWaited = xTaskGetTickCount() - xStart;
 
-    return pdPASS;
+            if( ( ucRead[ 0 ] == ucDiv ) || ( xWaited >= APP_MS( APP_IMU_DRDY_TIMEOUT_MAX_MS ) ) )
+            {
+                break;
+            }
+
+            vTaskDelay( 1U );
+        }
+
+        xOk = ( memcmp( ucWritten, ucRead, sizeof( ucRead ) ) == 0 ) ? pdPASS : pdFAIL;
+        Report_ImuRate( usRateHz, ucWritten, ucRead, ( uint32_t ) xWaited, xOk );
+
+        return xOk;
+    }
 }
 
 /*---------------------------------------------------------------------------*/
