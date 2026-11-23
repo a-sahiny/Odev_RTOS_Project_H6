@@ -196,7 +196,7 @@ void Stats_LatencyAdd( eLatId_t eId, uint32_t ulCycles )
 
     configASSERT( ( uint32_t ) eId < ( uint32_t ) eLatCount );         /* B9 */
 
-    /* configCPU_CLOCK_HZ = SystemCoreClock (25 MHz): 25 cycles per us. */
+    /* configCPU_CLOCK_HZ = SystemCoreClock (216 MHz): 216 cycles per us. */
     ulCyclesPerUs = ( uint32_t ) ( configCPU_CLOCK_HZ / 1000000UL );
 
     if( ulCyclesPerUs == 0U )

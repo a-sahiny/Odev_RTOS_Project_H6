@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from vnet_host import accounting as acc, proto  # noqa: E402
-from vnet_host.hoststack import Host, ImuPoller, StatusError  # noqa: E402
+from vnet_host.hoststack import Host, TelemLatencyStats  # noqa: E402
 from vnet_host.link import SimLink  # noqa: E402
 from vnet_host.sim_board import SimBoard  # noqa: E402
 
@@ -32,7 +32,7 @@ class SimEndToEnd(unittest.TestCase):
 
     def test_commands_telemetry_and_accounting(self):
         c0 = self.h.get_counters()
-        self.assertTrue(self.h.set_rate(25).ok)
+        self.assertTrue(self.h.set_rate(20).ok)
         self.assertTrue(self.h.start().ok)
         time.sleep(0.8)
         self.assertTrue(self.h.stop().ok)
@@ -53,38 +53,43 @@ class SimEndToEnd(unittest.TestCase):
     def test_replay_and_conflict(self):
         r1 = self.h.set_rate(20, req_id=500)
         r2 = self.h.set_rate(20, req_id=500)
-        r3 = self.h.set_rate(30, req_id=500)
+        r3 = self.h.set_rate(50, req_id=500)
         self.assertEqual((r1.status, r2.status, r3.status), (proto.ST_OK, proto.ST_OK, proto.ST_E_CONFLICT))
         self.assertEqual(r3.applied_rate, 20)
 
-    def test_get_imu(self):
-        """Rapor 086: GET_IMU yalnız START ile STOP arasında; açılar aralıkta; tekrar penceresine girmez."""
-        with self.assertRaises(StatusError) as cm:
-            self.h.get_imu(timeout=0.5)
-        self.assertEqual(cm.exception.status, proto.ST_E_STATE)
-        r = self.h.command(proto.CMD_GET_IMU, payload=b"", timeout=0.5)
-        self.assertEqual(r.status, proto.ST_E_LEN)
-        self.assertTrue(self.h.start(req_id=900).ok)
-        time.sleep(0.05)
-        poller = ImuPoller(self.h, period_ms=20.0)
-        poller.start()
-        time.sleep(1.5)
-        poller.stop()
-        s = poller.stats
-        self.assertGreater(s.ok, 30)
-        self.assertEqual(s.timeouts, 0)
-        self.assertGreater(s.board_n, 20)              # kartın (simülatörün) M1 -> M6'sı cevaplarla geldi
-        self.assertEqual(s.board_n, len(s.board))
-        last = s.last
-        self.assertTrue(-180 <= last.roll <= 180 and -90 <= last.pitch <= 90 and -180 <= last.yaw <= 180)
-        self.assertTrue(last.bias_ready)
-        r2 = self.h.start(req_id=900)           # 100+ GET_IMU sonra hâlâ tekrar
-        self.assertTrue(r2.ok)
+    def test_set_rate_only_listed(self):
+        for hz in proto.RATES_HZ:
+            r = self.h.set_rate(hz)
+            self.assertEqual((r.status, r.applied_rate), (proto.ST_OK, hz))
+        for hz in (0, 1, 25, 30, 150, 201, 1000):
+            r = self.h.set_rate(hz)
+            self.assertEqual((r.status, r.applied_rate), (proto.ST_E_RANGE, 200))
+        self.assertEqual(self.h.command(0x05, b"", timeout=0.5).status, proto.ST_E_TYPE)   # eski GET_IMU
+
+    def test_telem_every_sample_with_latency(self):
+        """Her IMU örneği bir TELEM (SET_RATE hızında); her TELEM bir öncekinin kart içi gecikmesini taşır."""
+        for hz in (20, 100):
+            self.assertTrue(self.h.set_rate(hz).ok)
+            self.h.telem.reset()
+            lat = TelemLatencyStats()
+            got = []
+            fn = lambda k, d: k == "telem" and (lat.add(d), got.append(d))
+            self.h.listeners.append(fn)
+            self.assertTrue(self.h.start().ok)
+            time.sleep(1.5)
+            self.assertTrue(self.h.stop().ok)
+            time.sleep(0.1)
+            self.h.listeners.remove(fn)
+            self.assertAlmostEqual(self.h.telem.rate_hz(), hz, delta=hz * 0.15)
+            self.assertEqual(self.h.telem.gaps, 0)
+            self.assertGreater(lat.n, len(got) // 2)
+            self.assertEqual(lat.over_deadline, 0)
+            self.assertTrue(all(t.prev_valid for t in got[1:]))
+            last = got[-1]
+            self.assertTrue(-180 <= last.roll <= 180 and -90 <= last.pitch <= 90 and -180 <= last.yaw <= 180)
+            self.assertTrue(last.bias_ready)
         c = self.h.get_counters()
-        self.assertGreaterEqual(c["cmd_replay"], 1)
-        self.assertTrue(self.h.stop().ok)
-        with self.assertRaises(StatusError):
-            self.h.get_imu(timeout=0.5)
+        self.assertEqual(c["telem_miss"], 0)
 
     def test_console_and_injection_labels(self):
         self.assertEqual(self.h.hold(300)["result"], "hold_requested")

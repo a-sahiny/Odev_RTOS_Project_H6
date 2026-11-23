@@ -1,127 +1,96 @@
-"""T08 IMU açıları ve GET_IMU deadline'ı (rapor 086).
+"""T08 IMU hızları, açılar ve TELEM gecikmesi.
 
-GET_IMU önemli lane'de (port 5000) START / STOP gibi bir komuttur: kart en son IMU örneğini
-roll / pitch / yaw ile cevaplar. Hedef 10 ms, deadline 12 ms; kart bunu kendi içinde ölçer:
-istek UDP callback'ine geldi (M1) -> cevap satırının son baytı UART'tan çıktı (M6).
-Kartta test edilen: cmd.c GET_IMU (yalnız START sonrası, tekrar penceresine girmez),
-meas_task.c açı hesabı, uart_tx.c kontrol cevabını queue'nun önüne alma ve M1 -> M6 ölçümü
-(imu_reply_over10 / imu_reply_miss sayaçları).
-
-Deadline yalnız KART ZAMANIYLA değerlendirilir (rapor 091): her GET_IMU cevabı bir öncekinin kartta
-ölçülen M1 -> M6 süresini taşır; Windows / USB ve host'un gecikmesi hiçbir satıra girmez.
-İstek periyodu 20 ms (rapor 091). İzleme sırasında GET_STATS gönderilmez (uzun satır, IMU'yu bekletir).
+Kart her IMU örneğinde (DRDY kesmesi) bir TELEM yollar; host hiçbir şey sormaz. SET_RATE IMU'nun
+örnekleme hızını değiştirir: 10 / 20 / 50 / 100 / 200 Hz (başka değer E_RANGE). Her TELEM ham ivme /
+jiroskop, roll / pitch / yaw ve bir önceki TELEM'in kartta ölçülen gecikmesini taşır:
+DRDY (IMU verisi hazır) -> o TELEM satırının son biti UART'tan çıktı (TX bitti kesmesi).
+Hedef 10 ms, deadline 12 ms (kart sayaçları telem_over10 / telem_miss). PC / USB gecikmesi
+hiçbir ölçüme girmez. TELEM satırı 1 Mbaud'da 167 karakter = 1,67 ms (≤ 2 ms şartı).
+Kartta test edilen: imu_spi.c Imu_SetRate (SMPLRT_DIV + DLPF), meas_task.c hıza bağlı dt / filtre,
+uart_tx.c TELEM'i queue'nun önüne alma ve DRDY -> M6 ölçümü.
 """
 
 import time
 
 from vnet_host import proto
 from vnet_host import accounting as acc
-from vnet_host.hoststack import ImuPoller, StatusError
+from vnet_host.hoststack import TelemLatencyStats
 from tests.common import TestResult, prepare, counters
+
+LINE_CHARS = 8 + 2 * (14 + 20 + 8 + proto.OVERHEAD_BYTES + proto.TELEM_LEN + 4) + 1
 
 
 def run(h, seconds=10, **_):
     seconds = float(seconds)
-    res = TestResult("T08", "IMU açıları ve GET_IMU deadline'ı")
-    res.meta["seconds_polled"] = seconds
-    prepare(h, res, rate=10)
+    per_rate = max(2.0, seconds / len(proto.RATES_HZ))
+    res = TestResult("T08", "IMU hızları, açılar ve TELEM gecikmesi")
+    res.meta["seconds_per_rate"] = per_rate
+    prepare(h, res)
     c0 = counters(h)
 
-    # 1) START'tan önce: E_STATE
-    try:
-        h.get_imu(timeout=0.5)
-        st = "OK"
-    except StatusError as e:
-        st = proto.STATUS_NAMES.get(e.status, str(e.status))
-    res.check("GET_IMU STOP durumunda", "E_STATE (ölçüm yok)", st, st == "E_STATE")
+    # 1) STOP durumunda TELEM gelmez
+    rx0 = h.telem.received
+    time.sleep(0.3)
+    res.check("STOP durumunda 0,3 s", "TELEM gelmez", "%d TELEM" % (h.telem.received - rx0), h.telem.received == rx0)
 
-    # 2) yanlış LEN: E_LEN
-    r = h.command(proto.CMD_GET_IMU, payload=b"\x00", timeout=0.5)
-    res.check("GET_IMU LEN=1", "E_LEN, yalnız ortak kısım", "%s, ek %d B" % (r.status_name, len(r.extra)),
-              r.status == proto.ST_E_LEN and len(r.extra) == 0)
+    # 2) eski GET_IMU (0x05) artık komut değil; listede olmayan hız reddedilir
+    r = h.command(0x05, b"", timeout=0.5)
+    res.check("eski GET_IMU (TYPE 0x05)", "E_TYPE", r.status_name, r.status == proto.ST_E_TYPE)
+    r = h.set_rate(30)
+    res.check("SET_RATE 30 (listede yok)", "E_RANGE, hız değişmez", "%s, hız %s" % (r.status_name, r.applied_rate),
+              r.status == proto.ST_E_RANGE)
 
-    # 3) START, ilk örnek
-    rs = h.start()
-    first = None
-    t_start = time.perf_counter()
-    while time.perf_counter() - t_start < 1.0 and first is None:
-        try:
-            first = h.get_imu(timeout=0.2)
-        except StatusError:
-            time.sleep(0.005)
-    res.check("START sonrası ilk GET_IMU", "OK, örnek no küçük, bias henüz ölçülüyor",
-              "%s; idx %s, flags %s" % (rs.status_name, first.index if first else "-",
-                                        first.flags if first else "-"),
-              rs.ok and first is not None and first.index < 20 and not first.bias_ready)
+    # 3) TELEM satır süresi (hesap): 'FRAME 1 ' + hex(Ethernet + IPv4 + UDP + paket + FCS) + '\n'
+    baud = getattr(h.link, "baud", 1000000)
+    line_ms = LINE_CHARS * 10 * 1000.0 / baud
+    res.check("TELEM satırı (%d karakter, %d baud)" % (LINE_CHARS, baud), "≤ 2 ms", "%.2f ms" % line_ms, line_ms <= 2.0)
 
-    # 4) 100 Hz istek
-    poller = ImuPoller(h, period_ms=proto.IMU_PERIOD_MS, timeout_ms=50.0)
-    samples = []
-    poller.on_sample = samples.append
-    # Başka bir GET_IMU istemcisi (GUI izlemesi) bu sürede bekler (rapor 092): deadline tek
-    # istemci için tanımlı. İki istemci aynı anda isterse cevaplardan biri diğerinin satırını da
-    # bekler; önde 321 karakterlik bir rapor varsa ≈ 5,1 + 3,25 + 3,25 + 1,5 ≈ 13 ms (sağlanamaz).
-    # Önce diğeri bekletilir, sonra bu poller başlar: hiçbir an iki istemci birlikte sormaz.
-    with h.quiesce(exempt=poller):
-        poller.start()
-        time.sleep(seconds)
-        poller.stop()
-    s = poller.stats.summary()
-    res.info("%.0f s, %.0f ms periyotla GET_IMU" % (seconds, proto.IMU_PERIOD_MS),
-             "istek %d, OK %d, zaman aşımı %d, hata %s" % (s["requests"], s["ok"], s["timeouts"], s["errors"]))
-    mono = all(((b.index - a.index) & 0xFFFFFFFF) < 0x80000000 for a, b in zip(samples, samples[1:]))
-    res.check("örnek numaraları", "geri gitmez", "aynı örnek %d kez, atlanan %d" % (s["same_index"], s["index_gaps"]),
-              mono)
-    in_range = all(-180.0 <= x.roll <= 180.0 and -90.0 <= x.pitch <= 90.0 and -180.0 <= x.yaw <= 180.0 for x in samples)
-    biased = [x for x in samples if x.bias_ready]
-    res.check("açılar", "roll / yaw ±180°, pitch ±90° içinde; 1 s sonra BIAS_READY",
-              "%d örnek, BIAS_READY %d; son: roll %.2f pitch %.2f yaw %.2f" % (
-                  len(samples), len(biased), samples[-1].roll if samples else 0, samples[-1].pitch if samples else 0,
-                  samples[-1].yaw if samples else 0),
-              in_range and bool(biased))
-    res.check("kart zamanıyla M1 -> M6 (her cevap bir öncekinin süresini taşır)",
-              "en az bir ölçüm, hepsi ≤ 12 ms",
-              "%d ölçüm; ort %.2f, p99 %.2f, en çok %.2f ms; ≤10 ms %d, ≤12 ms %d, >12 ms %d" % (
-                  s["board_n"], s["board_mean_ms"], s["board_p99_ms"], s["board_max_ms"], s["le_10ms"], s["le_12ms"],
-                  s["over_12ms"]),
-              s["board_n"] > 0 and s["over_12ms"] == 0)
-    res.info("M1 -> M6'nın parçaları (kart)", "işleme M1 -> M3 en çok %.2f ms, gönderim M3 -> M6 en çok %.2f ms" % (
-        s["proc_max_ms"], s["send_max_ms"]))
+    # 4) her hız: hız, kayıp, açılar, kart içi gecikme
+    for hz in proto.RATES_HZ:
+        r = h.set_rate(hz)
+        lat = TelemLatencyStats()
+        got = []
 
-    # 5) STOP, sonra E_STATE
-    h.stop()
-    try:
-        h.get_imu(timeout=0.5)
-        st = "OK"
-    except StatusError as e:
-        st = proto.STATUS_NAMES.get(e.status, str(e.status))
-    res.check("STOP sonrası GET_IMU", "E_STATE", st, st == "E_STATE")
+        def on(kind, t):
+            if kind == "telem":
+                lat.add(t)
+                got.append(t)
+        h.listeners.append(on)
+        rs = h.start()
+        time.sleep(per_rate)
+        h.stop()
+        time.sleep(0.2)
+        h.listeners.remove(on)
+        span = (got[-1].rx_time - got[0].rx_time) if len(got) > 1 else 0.0
+        meas_hz = (len(got) - 1) / span if span > 0 else 0.0
+        gaps = sum((((b.seq - a.seq) & 0xFFFF) - 1) for a, b in zip(got, got[1:]) if ((b.seq - a.seq) & 0xFFFF) < 0x8000)
+        res.check("%d Hz: SET_RATE + START, %.0f s" % (hz, per_rate),
+                  "OK; TELEM hızı %d Hz ±10%%, SEQ boşluğu yok" % hz,
+                  "%s / %s; %d TELEM, %.1f Hz, boşluk %d" % (r.status_name, rs.status_name, len(got), meas_hz, gaps),
+                  r.ok and rs.ok and abs(meas_hz - hz) <= hz * 0.1 and gaps == 0)
+        in_range = all(-180.0 <= t.roll <= 180.0 and -90.0 <= t.pitch <= 90.0 and -180.0 <= t.yaw <= 180.0 for t in got)
+        first_ready = next((i for i, t in enumerate(got) if t.bias_ready), None)
+        res.check("%d Hz: açılar" % hz, "aralıkta; BIAS_READY ~1 s sonra (≈ %d örnek)" % hz,
+                  "BIAS_READY ilk %s. örnekte; son: roll %.2f pitch %.2f yaw %.2f" % (
+                      first_ready, got[-1].roll if got else 0, got[-1].pitch if got else 0, got[-1].yaw if got else 0),
+                  in_range and first_ready is not None and abs(first_ready - hz) <= max(2, hz // 10))
+        s = lat.summary()
+        res.check("%d Hz: kart DRDY → TX bitti (her TELEM bir öncekininkini taşır)" % hz, "ölçüm var, hepsi ≤ 12 ms",
+                  "%d ölçüm; ort %.2f, p99 %.2f, en çok %.2f ms; ≤10 ms %d, >12 ms %d, bir öncekinden eski %d" % (
+                      s["n"], s["mean_ms"], s["p99_ms"], s["max_ms"], s["le_10ms"], s["over_12ms"], s["behind"]),
+                  s["n"] > 0 and s["over_12ms"] == 0)
 
-    # 6) kartın kendi deadline ölçümü
+    # 5) kartın kendi sayaçları
     c1 = counters(h)
     d = acc.delta(c0, c1)
-    res.check("kart içi deadline (M1 -> M6 ≤ 12 ms)", "imu_reply_miss artmaz",
-              "Δimu_reply_miss=%d, Δimu_reply_over10=%d (hedef 10 ms aşımı, bilgi)" % (
-                  d["imu_reply_miss"], d["imu_reply_over10"]),
-              d["imu_reply_miss"] == 0)
-    # Her istek kartta cevaplandı mı (rapor 092): host'taki zaman aşımı, cevap karttan çıktıysa USB /
-    # ST-LINK VCP'de kaybolan satırdır (kartın dışında; deadline tanımına girmez). Kartın OK cevap sayısı
-    # = ilk GET_IMU (adım 3) + poller'ın istekleri; TX_UART_STALL artmadıysa her satır UART'tan tam çıktı.
-    board_ok = d["cmd_imu_ok"] - (1 if first is not None else 0)
-    lost_after_board = s["timeouts"] if board_ok == s["requests"] and d["tx_uart_stall"] == 0 else None
-    res.check("her istek cevaplandı (kart)", "kart her isteğe OK cevap verdi, hata yok; host zaman aşımı yalnız kartın dışında",
-              "kart OK %d / istek %d, host zaman aşımı %d%s, Δtx_uart_stall %d, hata %s" % (
-                  board_ok, s["requests"], s["timeouts"],
-                  " (cevap karttan çıktı, USB / VCP'de kayboldu)" if lost_after_board else "",
-                  d["tx_uart_stall"], s["errors"]),
-              s["ok"] > 0 and not s["errors"] and (s["timeouts"] == 0 or lost_after_board is not None))
-    rx_err = {k: v for k, v in d.items() if v and (
-        k.startswith(("uart_rx", "line_", "frame_", "ip_", "udp_", "rx_", "pkt_", "cb_crit_sb", "dgram_"))
-        or k in ("cmd_imu_refused", "cmd_invalid", "ctrlq_full", "pool_crit_empty"))
-        and not k.startswith(("rx_fcs", "pkt_ok_")) and k not in ("rx_bytes", "rx_lines_total", "rx_frames")}
-    res.info("kart: giriş yolu ret / kayıp sayaçları (sıfır olmayanlar)", rx_err or "yok")
-    res.info("kart: GET_IMU dışındaki komutlar", "Δcmd_conflict=%d, Δcmd_replay=%d (GET_IMU tekrar penceresine girmez)" % (
-        d["cmd_conflict"], d["cmd_replay"]))
-    res.note("Deadline yalnız kart zamanıyla: M1 (istek UDP callback'ine geldi) -> M6 (cevabın son biti "
-             "UART'tan çıktı, TX bitti kesmesi). Windows / USB hiçbir ölçüme girmez.")
+    res.check("kart içi deadline (DRDY → TX bitti ≤ 12 ms)", "telem_miss artmaz",
+              "Δtelem_miss=%d, Δtelem_over10=%d (hedef 10 ms aşımı, bilgi), Δtelem_gen=%d, Δimu_fail_run=%d" % (
+                  d["telem_miss"], d["telem_over10"], d["telem_gen"], d["imu_fail_run"]),
+              d["telem_miss"] == 0)
+    res.check("L6: telem_gen = telem_sendto_ok + telem_sendto_fail", "eşit, sendto_fail 0",
+              "%d = %d + %d" % (d["telem_gen"], d["telem_sendto_ok"], d["telem_sendto_fail"]),
+              d["telem_gen"] == d["telem_sendto_ok"] + d["telem_sendto_fail"] and d["telem_sendto_fail"] == 0)
+    h.set_rate(proto.RATE_DEFAULT_HZ)
+    res.note("Gecikme yalnız kart zamanıyla: DRDY kesmesi (IMU verisi hazır) -> TELEM satırının son biti UART'tan "
+             "çıktı (TX bitti kesmesi). Bir TELEM'in süresi o gittikten sonra bilinir, bir sonraki TELEM'de gelir.")
     return res

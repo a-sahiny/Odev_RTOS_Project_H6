@@ -33,17 +33,17 @@ CMD_START = 0x01
 CMD_STOP = 0x02
 CMD_SET_RATE = 0x03
 CMD_GET_STATS = 0x04
-CMD_GET_IMU = 0x05            # rapor 086: roll / pitch / yaw, deadline 12 ms
+# 0x05 GET_IMU'ydu: açılar artık her IMU örneğinde TELEM ile gelir (kart cevabı E_TYPE).
 ENV = 0x20
 BULK = 0x21
 CAL = 0x22
 TELEM = 0x30
 
 TYPE_NAMES = {
-    CMD_START: "START", CMD_STOP: "STOP", CMD_SET_RATE: "SET_RATE", CMD_GET_STATS: "GET_STATS", CMD_GET_IMU: "GET_IMU",
+    CMD_START: "START", CMD_STOP: "STOP", CMD_SET_RATE: "SET_RATE", CMD_GET_STATS: "GET_STATS",
     ENV: "ENV", BULK: "BULK", CAL: "CAL", TELEM: "TELEM",
 }
-COMMAND_TYPES = (CMD_START, CMD_STOP, CMD_SET_RATE, CMD_GET_STATS, CMD_GET_IMU)
+COMMAND_TYPES = (CMD_START, CMD_STOP, CMD_SET_RATE, CMD_GET_STATS)
 LOW_TYPES = (ENV, BULK, CAL)
 
 # UDP portları (kart tarafı)
@@ -72,21 +72,22 @@ STATE_FAULT = 0x04
 # FAULT nedeni bitleri (JSON "why")
 FAULT_NAMES = {0x01: "IMU", 0x02: "POOL", 0x04: "UART_ORE", 0x08: "UART_TX_STALL", 0x10: "HEAP"}
 
-RATE_MIN_HZ = 1
-RATE_MAX_HZ = 50
-RATE_DEFAULT_HZ = 10
+# SET_RATE = IMU örnekleme hızı = TELEM hızı; kart yalnız bunları kabul eder (değilse E_RANGE).
+RATES_HZ = (10, 20, 50, 100, 200)
+RATE_MIN_HZ = 10
+RATE_MAX_HZ = 200
+RATE_DEFAULT_HZ = 100
 STATS_PAGES = 4               # 0..2 sayaçlar, 3 ENV
-COUNTERS_PER_PAGE = 43       # 128 sayaç: 43 / 43 / 42 (rapor 092)
+COUNTERS_PER_PAGE = 43       # 127 sayaç: 43 / 43 / 41
 ENV_MAX_CHANNELS = 8
 BULK_MAX_PATTERN = 196
 CAL_LIMIT = 4096              # worker: |offset| <= 4096
-TELEM_LEN = 20
-IMU_REPLY_LEN = 35            # GET_IMU cevabı, ortak 6 B'den sonra (rapor 091)
-IMU_TARGET_MS = 10.0          # rapor 086: hedef
-IMU_DEADLINE_MS = 12.0        # rapor 086: deadline (kart içi M1 -> M6)
-IMU_PERIOD_MS = 20.0          # rapor 091: host GET_IMU'yu 20 ms'de bir sorar
+TELEM_LEN = 23
+TELEM_TARGET_MS = 10.0        # kart içi DRDY -> TX bitti hedefi
+TELEM_DEADLINE_MS = 12.0      # kart içi DRDY -> TX bitti deadline'ı
 ATT_FLAG_BIAS_READY = 0x01
 ATT_FLAG_ACC_USED = 0x02
+TELEM_FLAG_PREV = 0x04        # prev_seq / prev_us geçerli
 DEDUP_SLOTS = 8
 DEDUP_WINDOW_S = 10.0
 
@@ -277,60 +278,37 @@ def env_channels(page: StatsPage):
 
 
 # ---------------------------------------------------------------- telemetri
-@dataclass
-class Telem:
-    seq: int
-    index: int
-    tick: int
-    accel: tuple
-    gyro: tuple
-    rx_time: float = 0.0
-
-
-def parse_telem(pkt: Packet) -> Telem:
-    if pkt.type != TELEM or len(pkt.payload) != TELEM_LEN:
-        raise PacketError("telem_len")
-    idx, tick, ax, ay, az, gx, gy, gz = struct.unpack(">IIhhhhhh", pkt.payload)
-    return Telem(seq=pkt.seq, index=idx, tick=tick, accel=(ax, ay, az), gyro=(gx, gy, gz))
-
-
-def payload_telem(index: int, tick: int, accel, gyro) -> bytes:
-    return struct.pack(">IIhhhhhh", index & 0xFFFFFFFF, tick & 0xFFFFFFFF, *accel, *gyro)
-
-
-def payload_response(status: int, epoch: int, state: int, lat_us: int, extra: bytes = b"") -> bytes:
-    return bytes([status]) + struct.pack(">H", epoch & 0xFFFF) + bytes([state & 0xFF]) + \
-        struct.pack(">H", min(lat_us, 0xFFFF)) + extra
-
-
 ACCEL_LSB_PER_G = 8192.0      # ±4 g
 GYRO_LSB_PER_DPS = 32.8       # ±1000 dps
 
 
-# ---------------------------------------------------------------- GET_IMU (rapor 086)
 @dataclass
-class ImuReply:
-    """GET_IMU cevabının ortak kısımdan sonraki 35 baytı (raporlar 086, 091).
+class Telem:
+    """TELEM (0x30, port 5002): her IMU örneğinde bir tane, 23 B, big-endian.
 
-    idx u32, tick u32, ax ay az i16, gx gy gz i16, roll pitch yaw i16 (0,01°), flags u8,
-    prev_req_id u16 + prev_us u16 (ÖNCEKİ GET_IMU cevabının kartta ölçülen M1 -> M6 süresi:
-    istek karta geldi -> cevabın son biti UART'tan çıktı; Windows / USB yok),
-    t_rx u32 (bu isteğin kart içi M1 zamanı; host kullanmaz)."""
-    index: int
-    tick: int
+    ax ay az i16, gx gy gz i16 (ham LSB, CAL uygulanmış), roll pitch yaw i16 (0,01°), flags u8,
+    prev_seq u16 + prev_us u16: bu mesajdan önce UART'tan çıkmış son TELEM'in SEQ'i ve onun kartta
+    ölçülen DRDY -> TX bitti süresi (IMU verisi hazır -> satırın son biti UART'tan çıktı; PC / USB
+    yok). Bir mesajın kendi süresi ancak o mesaj gittikten sonra bilinir, bu yüzden bir sonrakinde
+    gelir. Örnek sırası başlıktaki SEQ'tir."""
+    seq: int
     accel: tuple
     gyro: tuple
     roll: float          # derece
     pitch: float
     yaw: float
     flags: int
-    t_rx: int
-    prev_req_id: int = 0  # kart: önceki GET_IMU cevabının REQ_ID'si (0 = henüz yok)
-    prev_us: int = 0      # kart: onun M1 -> M6 süresi, µs (65535 = en az bu kadar)
-    req_id: int = 0       # bu cevabın REQ_ID'si
-    lat_us: int = 0      # cevaptaki LAT_US (M1 -> M3)
-    rtt_ms: float = 0.0  # host: isteği yazdı -> cevabı aldı
+    prev_seq: int = 0
+    prev_us: int = 0
     rx_time: float = 0.0
+
+    @property
+    def prev_valid(self) -> bool:
+        return bool(self.flags & TELEM_FLAG_PREV)
+
+    @property
+    def prev_ms(self):
+        return self.prev_us / 1000.0 if self.prev_valid else None
 
     @property
     def bias_ready(self) -> bool:
@@ -349,15 +327,19 @@ class ImuReply:
         return tuple(v / GYRO_LSB_PER_DPS for v in self.gyro)
 
 
-def parse_imu_reply(extra: bytes) -> ImuReply:
-    if len(extra) != IMU_REPLY_LEN:
-        raise PacketError("imu_len")
-    idx, tick, ax, ay, az, gx, gy, gz, r, p, y, flags, prq, pus, t_rx = struct.unpack(">IIhhhhhhhhhBHHI", extra)
-    return ImuReply(index=idx, tick=tick, accel=(ax, ay, az), gyro=(gx, gy, gz),
-                    roll=r / 100.0, pitch=p / 100.0, yaw=y / 100.0, flags=flags, t_rx=t_rx,
-                    prev_req_id=prq, prev_us=pus)
+def parse_telem(pkt: Packet) -> Telem:
+    if pkt.type != TELEM or len(pkt.payload) != TELEM_LEN:
+        raise PacketError("telem_len")
+    ax, ay, az, gx, gy, gz, r, p, y, flags, prev_seq, prev_us = struct.unpack(">hhhhhhhhhBHH", pkt.payload)
+    return Telem(seq=pkt.seq, accel=(ax, ay, az), gyro=(gx, gy, gz), roll=r / 100.0, pitch=p / 100.0,
+                 yaw=y / 100.0, flags=flags, prev_seq=prev_seq, prev_us=prev_us)
 
 
-def payload_imu_reply(index, tick, accel, gyro, angles_cdeg, flags, t_rx=0, prev_req_id=0, prev_us=0) -> bytes:
-    return struct.pack(">IIhhhhhhhhhBHHI", index & 0xFFFFFFFF, tick & 0xFFFFFFFF, *accel, *gyro,
-                       *angles_cdeg, flags & 0xFF, prev_req_id & 0xFFFF, min(prev_us, 0xFFFF), t_rx & 0xFFFFFFFF)
+def payload_telem(accel, gyro, angles_cdeg, flags, prev_seq=0, prev_us=0) -> bytes:
+    return struct.pack(">hhhhhhhhhBHH", *accel, *gyro, *angles_cdeg, flags & 0xFF, prev_seq & 0xFFFF,
+                       min(prev_us, 0xFFFF))
+
+
+def payload_response(status: int, epoch: int, state: int, lat_us: int, extra: bytes = b"") -> bytes:
+    return bytes([status]) + struct.pack(">H", epoch & 0xFFFF) + bytes([state & 0xFF]) + \
+        struct.pack(">H", min(lat_us, 0xFFFF)) + extra

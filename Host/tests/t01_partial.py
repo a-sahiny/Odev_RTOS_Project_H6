@@ -19,13 +19,13 @@ def run(h, seed=1234, **_):
     prepare(h, res)
 
     # 1) Üç parçalama biçimi, her biri farklı hız değeri ve yeni REQ_ID ile
-    for mode, hz in (("whole", 11), ("bytes", 12), ("random", 13)):
+    for mode, hz in (("whole", 10), ("bytes", 20), ("random", 50)):
         req_id, pkt = h.command_packet(proto.CMD_SET_RATE, proto.payload_set_rate(hz))
         line = lines.frame_line(h.udp_frame(proto.PORT_CTRL, pkt), 1)
         with h._cv:
             h._pending[req_id] = [None]
         # Satır '\n'e kadar yarım bekliyor: bu sürede hattı ayır (rapor 092). Yoksa arka plandaki
-        # GET_IMU satırı (GUI izlemesi) araya girer ve kart ikisini tek, bozuk bir satır görür.
+        # başka bir satır (ör. ARP cevabı) araya girer ve kart ikisini tek, bozuk bir satır görür.
         with h.link.hold():
             h.link.write_fragmented(line[:-1], mode=mode, seed=seed, gap_s=0.003)
             t_before_nl = time.perf_counter()
@@ -45,7 +45,7 @@ def run(h, seed=1234, **_):
 
     # 2) 5 komut tek yazımda: sıra korunur
     reqs, blob = [], b""
-    for hz in (21, 22, 23, 24, 25):
+    for hz in (10, 20, 50, 100, 200):
         req_id, pkt = h.command_packet(proto.CMD_SET_RATE, proto.payload_set_rate(hz))
         reqs.append((req_id, hz))
         with h._cv:
@@ -65,9 +65,9 @@ def run(h, seed=1234, **_):
     # 3) FRAME / FRAME 0 / FRAME 1: aynı sonuç, ayrı sayaçlar
     c0 = counters(h)
     results = []
-    for flag, hz in ((None, 31), (0, 32), (1, 33)):
-        # Biçim yalnız bu satıra (rapor 092): ortak h.fcs_flag değişseydi arka plandaki GET_IMU
-        # satırları da o biçimle gider, Δrx_fcs_none / Δrx_fcs0 bozulurdu.
+    for flag, hz in ((None, 20), (0, 50), (1, 10)):
+        # Biçim yalnız bu satıra (rapor 092): ortak h.fcs_flag değişseydi arka plandaki satırlar
+        # (ARP cevabı) da o biçimle gider, Δrx_fcs_none / Δrx_fcs0 bozulurdu.
         results.append((flag, h.set_rate(hz, fcs_flag=flag)))
     c1 = counters(h)
     d = {k: (c1[k] - c0[k]) & 0xFFFFFFFF for k in ("rx_fcs_none", "rx_fcs0", "rx_fcs1", "cmd_new")}

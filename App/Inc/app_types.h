@@ -151,8 +151,8 @@ _Static_assert( sizeof( UdpRecHdr_t ) == APP_REC_HEADER_BYTES, "record header mu
  *--------------------------------------------------------------------------*/
 typedef struct xSAMPLE
 {
-    uint32_t ulIndex;       /* running sample number since START           */
     uint32_t ulTick;        /* xTaskGetTickCount() at DRDY                 */
+    uint32_t ulDrdyCycles;  /* DWT cycle count at DRDY: TELEM latency start */
     int16_t sAccel[ 3 ];    /* x, y, z                                     */
     int16_t sGyro[ 3 ];     /* x, y, z                                     */
     int16_t sTemp;
@@ -167,21 +167,6 @@ typedef struct xIMU_CAL
 } ImuCal_t;
 
 _Static_assert( sizeof( ImuCal_t ) == APP_LEN_CAL, "a CAL payload is one ImuCal_t" );
-
-/*----------------------------------------------------------------------------
- * The latest IMU sample with its attitude (report 086/087): meas writes it at
- * every sample, ctrlTask copies it for a GET_IMU reply (both inside a
- * critical section, Meas_GetAttitude).
- *--------------------------------------------------------------------------*/
-typedef struct xIMU_ATTITUDE
-{
-    uint32_t ulIndex;       /* sample number since START                   */
-    uint32_t ulTick;        /* the sample's DRDY tick                      */
-    int16_t sAccel[ 3 ];    /* raw LSB after CAL                           */
-    int16_t sGyro[ 3 ];     /* raw LSB after CAL, gyro bias not removed    */
-    int16_t sAngle[ 3 ];    /* roll, pitch, yaw in 0.01 degree             */
-    uint8_t ucFlags;        /* APP_ATT_FLAG_*                              */
-} ImuAttitude_t;
 
 /*----------------------------------------------------------------------------
  * UART TX work item: the same {type, void *} pattern as AppEvent_t

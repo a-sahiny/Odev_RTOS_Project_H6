@@ -2,9 +2,10 @@
 
 UYARI: Bu bir modeldir, kartın yerine geçmez. FreeRTOS zamanlaması, DMA, kesmeler,
 gerçek IMU yoktur. Satır kuralları, frame kontrolleri, ret nedenleri, paket biçimi,
-komutlar / dedup / SEQ, TX queue'su (8, son 2 yer kontrol cevaplarına, kontrol cevapları
-öne), HOLD / TXDELAY enjeksiyonu, 625000 baud hat süresi ve GET_IMU (roll / pitch / yaw,
-rapor 086; açılar burada üretilen bir salınımdır, filtre yok) firmware'e göre modellenmiştir. Sayaç adları
+komutlar / dedup / SEQ, TX queue'su (8, son 2 yer kontrol cevaplarına, TELEM öne), HOLD /
+TXDELAY enjeksiyonu, 1 Mbaud hat süresi ve her IMU örneğinde bir TELEM (SET_RATE hızında; roll /
+pitch / yaw burada üretilen bir salınımdır, filtre yok; bir önceki TELEM'in DRDY -> TX bitti süresi)
+firmware'e göre modellenmiştir. Sayaç adları
 app_stats.h ile aynıdır; muhasebe eşitlikleri (tasarım 18.2) bu modelde de tutar.
 """
 
@@ -35,7 +36,7 @@ ARP_WAIT_S = 2.0
 
 
 class SimBoard:
-    def __init__(self, seed=1, baud=625000, mac=bytes.fromhex("0280E1A1B2C3"), st_period=1.0,
+    def __init__(self, seed=1, baud=1000000, mac=bytes.fromhex("0280E1A1B2C3"), st_period=1.0,
                  boot_delay=0.15, realtime=True):
         self.rng = random.Random(seed)
         self.baud = baud
@@ -66,12 +67,9 @@ class SimBoard:
         self.txdelay_ms = 0
         self.txq = collections.deque()
         self.env = {}                       # kanal -> [count, min, max, sum]
-        self.sample_idx = 0
-        self.acc = 0
-        self.att = None                     # GET_IMU: (idx, tick, accel, gyro, (r, p, y) cdeg, flags)
-        self.last_imu = (0, 0)              # GET_IMU: önceki cevabın (REQ_ID, M1 -> M6 µs) (rapor 091)
-        self.imu_front = None               # kuyruğun önündeki GET_IMU cevabı (rapor 092)
-        self.imu_may_front = True           # arada başka satır gitti mi (rapor 092)
+        self.last_telem = None              # UART'tan çıkan son TELEM: (SEQ, DRDY -> TX bitti µs)
+        self.telem_front = None             # kuyruğun önündeki TELEM (rapor 092)
+        self.telem_may_front = True         # arada başka satır gitti mi (rapor 092)
         self.meas_t0 = 0.0
         self.nb_min = 18
         self.heap_free = 40000
@@ -91,7 +89,7 @@ class SimBoard:
         self.out = out_fn
         for t in self._threads:
             t.start()
-        self._report({"type": "boot", "ep": self.epoch, "fw": "0.3-sim"})
+        self._report({"type": "boot", "ep": self.epoch, "fw": "0.4-sim"})
 
     def stop(self):
         self._running = False
@@ -112,33 +110,32 @@ class SimBoard:
         return s
 
     # ------------------------------------------------------------ TX yolu (uart_tx.c)
-    def _admit(self, kind, data, is_ctrl, t_rx=None):
+    def _admit(self, kind, data, is_ctrl, telem=None):
         """prvAdmit: boş yer 0 -> TXQ_FULL; kontrol dışı ve boş yer <= 2 -> TXQ_RESERVE.
-        Yalnız GET_IMU cevabı queue'nun önüne (xQueueSendToFront, rapor 091)."""
+        Yalnız TELEM queue'nun önüne (xQueueSendToFront); rezervi yalnız komut cevapları kullanır.
+        telem: (DRDY zamanı, SEQ)."""
         with self._txcv:
             free = TXQ_LEN - len(self.txq)
             if free == 0:
                 self.c["txq_full"] += 1
                 return False
-            to_front = t_rx is not None and self.imu_front is None and self.imu_may_front
-            # Rezervi yalnız öne giden tek GET_IMU cevabı kullanabilir (rapor 092)
-            may_reserve = is_ctrl and (t_rx is None or to_front)
-            if not may_reserve and free <= TXQ_RESERVE:
+            to_front = telem is not None and self.telem_front is None and self.telem_may_front
+            if not is_ctrl and free <= TXQ_RESERVE:
                 self.c["txq_reserve"] += 1
                 return False
-            if to_front:   # yalnız GET_IMU, önde en çok bir, sırayla (091, 092)
-                self.imu_front = data
-                self.imu_may_front = False
-                self.txq.appendleft((kind, data, t_rx))
+            if to_front:   # yalnız TELEM, önde en çok bir, sırayla (rapor 092)
+                self.telem_front = data
+                self.telem_may_front = False
+                self.txq.appendleft((kind, data, telem))
             else:
-                self.txq.append((kind, data, t_rx))
+                self.txq.append((kind, data, telem))
             self.c["txq_ok"] += 1
             self._txcv.notify()
             return True
 
-    def _post_frame(self, frame, is_ctrl=False, t_rx=None):
+    def _post_frame(self, frame, is_ctrl=False, telem=None):
         self.c["if_out"] += 1
-        return self._admit("frame", frame, is_ctrl, t_rx)
+        return self._admit("frame", frame, is_ctrl, telem)
 
     def _report(self, obj):
         text = json.dumps(obj, separators=(",", ":"))
@@ -155,11 +152,11 @@ class SimBoard:
                     self._txcv.wait(0.2)
                 if not self._running:
                     return
-                kind, data, t_rx = self.txq.popleft()
-                if data is self.imu_front:
-                    self.imu_front = None
+                kind, data, telem = self.txq.popleft()
+                if data is self.telem_front:
+                    self.telem_front = None
                 else:
-                    self.imu_may_front = True
+                    self.telem_may_front = True
             if kind == "frame":
                 if len(data) < 60:
                     data = data + b"\x00" * (60 - len(data))
@@ -170,15 +167,15 @@ class SimBoard:
             if self.realtime:
                 time.sleep(len(line) * self.char_s)
             self.c["tx_lines"] += 1
-            if t_rx is not None:
-                # GET_IMU cevabı: M1 -> M6 (uart_tx.c prvImuReplyDone)
-                t_rx, req_id = t_rx
-                ms = (time.perf_counter() - t_rx) * 1000.0
-                self.last_imu = (req_id, min(0xFFFF, int(ms * 1000)))
-                if ms > proto.IMU_TARGET_MS:
-                    self.c["imu_reply_over10"] += 1
-                if ms > proto.IMU_DEADLINE_MS:
-                    self.c["imu_reply_miss"] += 1
+            if telem is not None:
+                # TELEM: DRDY -> TX bitti (uart_tx.c prvTelemDone), bir sonraki TELEM taşır
+                t_drdy, seq = telem
+                ms = (time.perf_counter() - t_drdy) * 1000.0
+                self.last_telem = (seq, max(1, min(0xFFFF, int(ms * 1000))))
+                if ms > proto.TELEM_TARGET_MS:
+                    self.c["telem_over10"] += 1
+                if ms > proto.TELEM_DEADLINE_MS:
+                    self.c["telem_miss"] += 1
             if self.out is not None:
                 self.out(line)
             if self.txdelay_ms:
@@ -281,7 +278,7 @@ class SimBoard:
         self.c["lines_total"] += 1
         if s == "HELLO":
             self.c["console_cmds"] += 1
-            self._report({"type": "hello", "fw": "0.3-sim", "board": "STM32F746G-DISCO (sim)",
+            self._report({"type": "hello", "fw": "0.4-sim", "board": "STM32F746G-DISCO (sim)",
                           "ip": self.ip, "ports": [5000, 5001, 5002], "ep": self.epoch})
         elif s == "STATE":
             self.c["console_cmds"] += 1
@@ -348,7 +345,7 @@ class SimBoard:
     def _arp_request(self, ip):
         self._post_frame(eth.build_arp(1, self.mac, self.ip, b"\x00" * 6, ip))
 
-    def _sendto(self, sport, dst_ip, dport, payload, is_ctrl, t_rx=None):
+    def _sendto(self, sport, dst_ip, dport, payload, is_ctrl, telem=None):
         """FreeRTOS_sendto: hedef ARP'de yoksa paket ARP isteğine dönüşür (payload kaybolur)."""
         mac = self.arp.get(dst_ip)
         if mac is None:
@@ -357,7 +354,7 @@ class SimBoard:
             return True                       # sendto yine > 0 döner (tasarım 10.3)
         frame = eth.build_udp_frame(mac, self.mac, self.ip, dst_ip, sport, dport, payload, self._ip_id())
         self.c["ip_evt_tx"] += 1
-        return self._post_frame(frame, is_ctrl, t_rx) or True
+        return self._post_frame(frame, is_ctrl, telem) or True
 
     # ------------------------------------------------------------ udp_in.c callback
     def _callback(self, lane, f):
@@ -381,8 +378,7 @@ class SimBoard:
     # ------------------------------------------------------------ pkt_parser.c
     ROUTES = {
         "crit": {proto.CMD_START: (0, 0, 0, 0), proto.CMD_STOP: (0, 0, 0, 0),
-                 proto.CMD_SET_RATE: (2, 2, 0, 0), proto.CMD_GET_STATS: (1, 1, 0, 0),
-                 proto.CMD_GET_IMU: (0, 0, 0, 0)},
+                 proto.CMD_SET_RATE: (2, 2, 0, 0), proto.CMD_GET_STATS: (1, 1, 0, 0)},
         "low": {proto.ENV: (3, 17, 2, 0), proto.BULK: (5, 200, 0, 1), proto.CAL: (12, 12, 0, 2)},
     }
 
@@ -459,11 +455,6 @@ class SimBoard:
             status = proto.ST_E_REQID
             self.c["cmd_invalid"] += 1
             extra = self._type_extra(pkt, status)
-        elif pkt.type == proto.CMD_GET_IMU:
-            # Yan etkisiz okuma, tekrar penceresine girmez (rapor 086 G2).
-            status = self._validate(pkt)
-            self.c["cmd_imu_ok" if status == proto.ST_OK else "cmd_imu_refused"] += 1   # rapor 092
-            extra = self._type_extra(pkt, status)
         else:
             seen = next((d for d in self.dedup if d[0] == src_ip and d[1] == pkt.req_id), None)
             # İçerik = tür + LEN + payload'un ilk 4 baytı (cmd.c prvKeptBytes; geçerli her
@@ -494,10 +485,7 @@ class SimBoard:
         flags = proto.FLAG_RESP | (proto.FLAG_ERR if status != proto.ST_OK else 0)
         body = proto.payload_response(status, self.epoch, self.state_bits(), lat, extra)
         data = proto.encode(proto.Packet(pkt.type, flags, self.reply_seq, pkt.req_id, body))
-        imu_ok = pkt.type == proto.CMD_GET_IMU and status == proto.ST_OK
-        # GET_IMU hata cevabı rezervi kullanmaz (rapor 092): sıradan öğe gibi arkaya
-        is_ctrl = pkt.type != proto.CMD_GET_IMU or imu_ok
-        self._sendto(proto.PORT_CTRL, src_ip, sport, data, is_ctrl, (t_rx, pkt.req_id) if imu_ok else None)
+        self._sendto(proto.PORT_CTRL, src_ip, sport, data, True)
 
     def _validate(self, pkt):
         """cmd.c prvValidate sırası: tür -> uzunluk -> aralık / durum (tasarım 16.2, 16.3)."""
@@ -516,18 +504,13 @@ class SimBoard:
             if ln != 2:
                 return proto.ST_E_LEN
             hz = struct.unpack(">H", pkt.payload)[0]
-            if not proto.RATE_MIN_HZ <= hz <= proto.RATE_MAX_HZ:
+            if hz not in proto.RATES_HZ:
                 return proto.ST_E_RANGE
         elif pkt.type == proto.CMD_GET_STATS:
             if ln != 1:
                 return proto.ST_E_LEN
             if pkt.payload[0] >= proto.STATS_PAGES:
                 return proto.ST_E_RANGE
-        elif pkt.type == proto.CMD_GET_IMU:
-            if ln != 0:
-                return proto.ST_E_LEN
-            if not self.meas_en or self.att is None:
-                return proto.ST_E_STATE
         else:
             return proto.ST_E_TYPE
         return proto.ST_OK
@@ -541,9 +524,6 @@ class SimBoard:
                 self.fault = 0
                 self._report({"type": "fault", "set": 0, "why": 0})
             self.dest = (src_ip, sport)
-            self.sample_idx = 0
-            self.acc = 0
-            self.att = None
             self.meas_t0 = time.perf_counter()
             self.meas_en = True
         elif pkt.type == proto.CMD_STOP:
@@ -554,10 +534,6 @@ class SimBoard:
     def _type_extra(self, pkt, status):
         if pkt.type == proto.CMD_SET_RATE:
             return struct.pack(">H", self.rate)
-        if pkt.type == proto.CMD_GET_IMU and status == proto.ST_OK:
-            idx, tick, accel, gyro, ang, flags = self.att
-            prq, pus = self.last_imu
-            return proto.payload_imu_reply(idx, tick, accel, gyro, ang, flags, 0, prq, pus)
         if pkt.type == proto.CMD_GET_STATS and status == proto.ST_OK:
             page = pkt.payload[0]
             tick = self.now_tick()
@@ -622,26 +598,13 @@ class SimBoard:
             self._parse("low", ip, sport, data, now)
 
     # ------------------------------------------------------------ meas_task.c
-    def _sample(self):
-        k = self.sample_idx
-        w = 2 * math.pi * 0.5 * k / 100.0
-        ax = int(1000 * math.sin(w)) - self.cal[0]
-        ay = int(1000 * math.cos(w)) - self.cal[1]
-        az = 8192 - self.cal[2]
-        gx = int(300 * math.sin(w * 0.3)) - self.cal[3]
-        gy = int(150 * math.cos(w * 0.7)) - self.cal[4]
-        gz = self.rng.randint(-20, 20) - self.cal[5]
-        clamp = lambda v: max(-32768, min(32767, v))
-        return tuple(map(clamp, (ax, ay, az))), tuple(map(clamp, (gx, gy, gz)))
-
-    def _attitude(self, idx):
-        """GET_IMU için bir uçuş: yavaş roll / pitch salınımı, sabit hızda yaw. İvme açılarla
-        tutarlı (yer çekimi gövde ekseninde), jiroskop açıların türevi. İlk 1 s bias ölçümü:
-        yaw 0, BIAS_READY yok (meas_task.c ile aynı davranış)."""
-        t = idx / 100.0
+    def _attitude(self, t):
+        """Bir uçuş: yavaş roll / pitch salınımı, sabit hızda yaw (t: START'tan beri s). İvme açılarla
+        tutarlı (yer çekimi gövde ekseninde), jiroskop açıların türevi. İlk 1 s bias ölçümü: yaw 0,
+        BIAS_READY yok (meas_task.c ile aynı davranış). CAL ofsetleri ham değerlerden düşülür."""
         roll = 35.0 * math.sin(2 * math.pi * 0.10 * t)
         pitch = 20.0 * math.sin(2 * math.pi * 0.07 * t + 0.6)
-        bias = idx < 100
+        bias = t < 1.0
         yaw = 0.0 if bias else ((25.0 * (t - 1.0) + 180.0) % 360.0) - 180.0
         r, p = math.radians(roll), math.radians(pitch)
         g = 8192
@@ -649,27 +612,29 @@ class SimBoard:
         droll = 35.0 * 2 * math.pi * 0.10 * math.cos(2 * math.pi * 0.10 * t)
         dpitch = 20.0 * 2 * math.pi * 0.07 * math.cos(2 * math.pi * 0.07 * t + 0.6)
         gyro = tuple(int(v * proto.GYRO_LSB_PER_DPS) for v in (droll, dpitch, 0.0 if bias else 25.0))
+        clamp = lambda v: max(-32768, min(32767, v))
+        accel = tuple(clamp(v - c) for v, c in zip(accel, self.cal[:3]))
+        gyro = tuple(clamp(v - c) for v, c in zip(gyro, self.cal[3:]))
         flags = proto.ATT_FLAG_ACC_USED | (0 if bias else proto.ATT_FLAG_BIAS_READY)
         ang = tuple(max(-18000, min(18000, int(round(a * 100)))) for a in (roll, pitch, yaw))
-        return (idx, self.now_tick(), accel, gyro, ang, flags)
+        return accel, gyro, ang, flags
 
     def _meas_step(self):
+        """Bir IMU örneği (DRDY) = bir TELEM; önceki TELEM'in kart içi gecikmesi bu mesajda gider."""
         if not (self.meas_en and self.state_bits() & proto.STATE_NET_READY) or self.dest is None:
             return
-        idx = self.sample_idx
-        self.sample_idx += 1
-        self.att = self._attitude(idx)
-        self.acc += self.rate
-        if self.acc < 100:
-            return
-        self.acc -= 100
-        accel, gyro = self._sample()
-        payload = proto.payload_telem(idx, self.now_tick(), accel, gyro)
-        data = proto.encode(proto.Packet(proto.TELEM, 0, self.telem_seq, 0, payload))
+        t_drdy = time.perf_counter()
+        accel, gyro, ang, flags = self._attitude(t_drdy - self.meas_t0)
+        prev_seq, prev_us = self.last_telem if self.last_telem is not None else (0, 0)
+        if self.last_telem is not None:
+            flags |= proto.TELEM_FLAG_PREV
+        payload = proto.payload_telem(accel, gyro, ang, flags, prev_seq, prev_us)
+        seq = self.telem_seq
+        data = proto.encode(proto.Packet(proto.TELEM, 0, seq, 0, payload))
         self.telem_seq = (self.telem_seq + 1) & 0xFFFF
         self.c["telem_gen"] += 1
         self.c["telem_sendto_ok"] += 1
-        self._sendto(proto.PORT_TELEM, self.dest[0], self.dest[1], data, False)
+        self._sendto(proto.PORT_TELEM, self.dest[0], self.dest[1], data, False, (t_drdy, seq))
 
     # ------------------------------------------------------------ periyodik işler
     def _resources(self, typ):
@@ -693,7 +658,7 @@ class SimBoard:
                 if self.arp_pending is not None and now - self.arp_pending[1] > ARP_WAIT_S:
                     self.arp_pending = None
                 if now >= next_meas:
-                    next_meas += 0.01
+                    next_meas += 1.0 / self.rate
                     if now - next_meas > 0.2:
                         next_meas = now
                     self._meas_step()

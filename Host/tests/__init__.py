@@ -10,7 +10,7 @@ TESTS = {
     "T05": ("t05_repeat", "Tekrarlanan komut", "REQ_ID dedup, E_CONFLICT"),
     "T06": ("t06_tx_stall", "TX tıkanması", "TX queue'su, kontrol rezervi, TXDELAY"),
     "T07": ("t07_longrun", "Uzun çalışma", "sızıntı, ARP, EPOCH (≥ 30 dk)"),
-    "T08": ("t08_imu_deadline", "IMU açıları, GET_IMU deadline", "roll / pitch / yaw, M1 -> M6 ≤ 12 ms"),
+    "T08": ("t08_imu_deadline", "IMU hızları, TELEM gecikmesi", "10–200 Hz, roll / pitch / yaw, DRDY -> TX ≤ 12 ms"),
 }
 
 

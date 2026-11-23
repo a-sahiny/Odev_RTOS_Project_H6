@@ -5,7 +5,7 @@
     python vnet.py --port COM5 monitor
     python vnet.py --port COM5 start --rate 20 --seconds 5
     python vnet.py --port COM5 stats
-    python vnet.py --port COM5 imu --seconds 5
+    python vnet.py --port COM5 imu --rate 100 --seconds 5
     python vnet.py --port COM5 test T01 T02 T05
     python vnet.py --sim test all --minutes 2
     python vnet.py gui
@@ -60,8 +60,9 @@ def cmd_monitor(args, h):
             print(time.strftime("%H:%M:%S"), "JSON", json.dumps({k: v for k, v in data.items() if not k.startswith("_")},
                                                                 ensure_ascii=False))
         elif kind == "telem":
-            print(time.strftime("%H:%M:%S"), "TELEM seq %5d idx %7d tick %8d a=%s g=%s" % (
-                data.seq, data.index, data.tick, data.accel, data.gyro))
+            print(time.strftime("%H:%M:%S"), "TELEM seq %5d a=%s g=%s r/p/y=%.2f/%.2f/%.2f önceki %s" % (
+                data.seq, data.accel, data.gyro, data.roll, data.pitch, data.yaw,
+                "%.2f ms" % data.prev_ms if data.prev_valid else "-"))
         elif kind == "response":
             print(time.strftime("%H:%M:%S"), "CEVAP REQ_ID %d %s %s" % (data.req_id, proto.TYPE_NAMES.get(data.type),
                                                                        data.status_name))
@@ -88,32 +89,43 @@ def cmd_stats(args, h):
 
 
 def cmd_imu(args, h):
-    """START, sonra GET_IMU'yu periyotla sorar; her 10. örneği ve sonunda kart zamanıyla deadline özetini yazar."""
-    from .hoststack import ImuPoller
+    """SET_RATE + START; TELEM'leri dinler, her 10. örneği yazar; sonda STOP ve kart zamanıyla gecikme özeti."""
+    from .hoststack import TelemLatencyStats
+    if args.rate:
+        r = h.set_rate(args.rate)
+        print("SET_RATE %d: %s, uygulanan %s Hz" % (args.rate, r.status_name, r.applied_rate))
+    lat = TelemLatencyStats()
+    count = [0]
+
+    def show(kind, t):
+        if kind != "telem":
+            return
+        lat.add(t)
+        count[0] += 1
+        if count[0] % 10 == 1:
+            print("seq %5d  roll %8.2f  pitch %7.2f  yaw %8.2f  %s  kart DRDY->TX bitti (önceki) %s" % (
+                t.seq, t.roll, t.pitch, t.yaw, "bias hazır" if t.bias_ready else "bias ölçülüyor",
+                "%6.2f ms" % t.prev_ms if t.prev_valid else "-"))
+    c0 = h.get_counters()
+    h.listeners.append(show)
     r = h.start()
     print("START: %s, STATE %s" % (r.status_name, proto.state_text(r.state)))
     if not r.ok:
-        print("START reddedildi (%s): GET_IMU E_STATE döner." % r.status_name)
+        h.listeners.remove(show)
+        print("START reddedildi (%s): telemetri gelmez." % r.status_name)
         return 2
-    count = [0]
-
-    def show(imu):
-        count[0] += 1
-        if count[0] % 10 == 1:
-            print("idx %7d  roll %8.2f  pitch %7.2f  yaw %8.2f  %s  kart M1->M6 (önceki) %6.2f ms  LAT_US %4d" % (
-                imu.index, imu.roll, imu.pitch, imu.yaw, "bias hazır" if imu.bias_ready else "bias ölçülüyor",
-                imu.prev_us / 1000.0, imu.lat_us))
-    poller = ImuPoller(h, period_ms=args.period, on_sample=show)
-    poller.start()
     try:
         time.sleep(args.seconds)
     except KeyboardInterrupt:
         pass
-    poller.stop()
-    print(json.dumps(poller.stats.summary(), ensure_ascii=False))
+    # Ölçüm açık kalırsa port kapalıyken ST-LINK'in tamponu taşar, bir sonraki açılışta yarım satırlar gelir.
+    print("STOP: %s" % h.stop().status_name)
+    h.listeners.remove(show)
+    print("alınan %d TELEM, %.1f Hz" % (count[0], h.telem.rate_hz()))
+    print(json.dumps(lat.summary(), ensure_ascii=False))
     c = h.get_counters()
-    print("kart: imu_reply_over10 %d, imu_reply_miss %d (M1 -> M6, deadline 12 ms)" % (
-        c["imu_reply_over10"], c["imu_reply_miss"]))
+    print("kart: telem_over10 +%d, telem_miss +%d (DRDY -> TX bitti, hedef 10 ms, deadline 12 ms)" % (
+        (c["telem_over10"] - c0["telem_over10"]) & 0xFFFFFFFF, (c["telem_miss"] - c0["telem_miss"]) & 0xFFFFFFFF))
     return 0
 
 
@@ -155,7 +167,7 @@ def main(argv=None):
         sys.path.insert(0, HOST_DIR)        # 'tests' paketi; exe'de paketin içinde gelir
     p = argparse.ArgumentParser(prog="vnet", description="STM32F746 telemetri istasyonu host aracı")
     p.add_argument("--port", help="seri port (ör. COM5); verilmezse ST-LINK aranır")
-    p.add_argument("--baud", type=int, default=625000, help="UART1 hızı (rapor 086: 625000)")
+    p.add_argument("--baud", type=int, default=1000000, help="UART1 hızı (1000000: TELEM satırı ≤ 2 ms)")
     p.add_argument("--sim", action="store_true", help="kart yerine Python simülatörü")
     p.add_argument("--seed", type=int, default=1, help="simülatör seed'i")
     p.add_argument("--fcs", choices=("none", "0", "1"), default="1", help="host->kart FRAME biçimi")
@@ -172,7 +184,7 @@ def main(argv=None):
     sp.add_argument("--rate", type=int)
     sp.add_argument("--seconds", type=float, default=0)
     sub.add_parser("stop")
-    sp = sub.add_parser("rate")
+    sp = sub.add_parser("rate", help="SET_RATE: IMU / TELEM hızı (10, 20, 50, 100, 200)")
     sp.add_argument("hz", type=int)
     sp = sub.add_parser("stats", help="GET_STATS sayfa 0..3")
     sp.add_argument("--all", action="store_true", help="sıfır sayaçları da yaz")
@@ -187,9 +199,9 @@ def main(argv=None):
     sp.add_argument("--bytes", type=int, default=64)
     sp = sub.add_parser("cal")
     sp.add_argument("offsets", type=int, nargs=6)
-    sp = sub.add_parser("imu", help="START + GET_IMU (roll / pitch / yaw), 20 ms periyotla")
+    sp = sub.add_parser("imu", help="START + TELEM (roll / pitch / yaw ve kart içi gecikme) izle")
     sp.add_argument("--seconds", type=float, default=5)
-    sp.add_argument("--period", type=float, default=proto.IMU_PERIOD_MS, help="istek periyodu, ms (varsayılan 20)")
+    sp.add_argument("--rate", type=int, choices=proto.RATES_HZ, help="önce SET_RATE (Hz)")
     sp = sub.add_parser("test", help="T01..T08 ya da all")
     sp.add_argument("ids", nargs="+")
     sp.add_argument("--minutes", type=float, help="T07 süresi (varsayılan 30)")
@@ -233,7 +245,7 @@ def main(argv=None):
                 return 2
             if args.seconds:
                 h.listeners.append(lambda k, d: k == "telem" and print(
-                    "TELEM seq %5d idx %6d a=%s g=%s" % (d.seq, d.index, d.accel, d.gyro)))
+                    "TELEM seq %5d a=%s g=%s r/p/y=%.2f/%.2f/%.2f" % (d.seq, d.accel, d.gyro, d.roll, d.pitch, d.yaw)))
                 time.sleep(args.seconds)
                 print("alınan %d, kayıp (SEQ boşluğu) %d, %.1f Hz" % (h.telem.received, h.telem.gaps,
                                                                       h.telem.rate_hz()))

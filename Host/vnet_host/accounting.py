@@ -69,10 +69,9 @@ def equalities(d: dict, host_tx_bytes: int = None, host_rx_lines: int = None):
     out.append(Check("L5", "evt_posted_crit + evt_net_posted + evt_posted_low = handled_ctrl + handled_work + no_handler",
                      _s(d, "evt_posted_crit", "evt_net_posted", "evt_posted_low"),
                      _s(d, "evt_handled_ctrl", "evt_handled_work", "evt_no_handler")))
-    out.append(Check("L5", "evt_handled_ctrl = cmd_new + cmd_replay + cmd_conflict + cmd_invalid + cmd_imu_ok "
-                           "+ cmd_imu_refused + evt_net_posted",
+    out.append(Check("L5", "evt_handled_ctrl = cmd_new + cmd_replay + cmd_conflict + cmd_invalid + evt_net_posted",
                      d["evt_handled_ctrl"], _s(d, "cmd_new", "cmd_replay", "cmd_conflict", "cmd_invalid",
-                                               "cmd_imu_ok", "cmd_imu_refused", "evt_net_posted")))
+                                               "evt_net_posted")))
     out.append(Check("L5", "evt_handled_work = env_pkts + env_bad + bulk_pkts + cal_applied + cal_rejected",
                      d["evt_handled_work"], _s(d, "env_pkts", "env_bad", "bulk_pkts", "cal_applied", "cal_rejected")))
     out.append(Check("L6", "telem_gen = telem_sendto_ok + telem_sendto_fail",

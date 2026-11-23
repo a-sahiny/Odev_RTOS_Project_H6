@@ -55,6 +55,9 @@ void App_Init( void )
     /* First: the pool Inits register with Stats, the task Inits store their
      * handles there; a later memset would zero what they counted. */
     Stats_Init();
+
+    /* EPOCH ilk rastgele sayıdan alınır: tohum ve DWT ondan önce hazır olmalı */
+    NetApp_RandomInit();
     SysState_Init();
 
     /* Event queues and descriptor pools before NetApp_Init: the network hook

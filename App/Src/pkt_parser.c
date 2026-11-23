@@ -129,8 +129,7 @@ static const ParserRoute_t xCritRoutes[] =
     { APP_TYPE_CMD_START,     0U,                0U,                0U, eAppCmdEvent, 0U },
     { APP_TYPE_CMD_STOP,      0U,                0U,                0U, eAppCmdEvent, 0U },
     { APP_TYPE_CMD_SET_RATE,  APP_LEN_SET_RATE,  APP_LEN_SET_RATE,  0U, eAppCmdEvent, 0U },
-    { APP_TYPE_CMD_GET_STATS, APP_LEN_GET_STATS, APP_LEN_GET_STATS, 0U, eAppCmdEvent, 0U },
-    { APP_TYPE_CMD_GET_IMU,   APP_LEN_GET_IMU,   APP_LEN_GET_IMU,   0U, eAppCmdEvent, 0U }    /* report 086 */
+    { APP_TYPE_CMD_GET_STATS, APP_LEN_GET_STATS, APP_LEN_GET_STATS, 0U, eAppCmdEvent, 0U }
 };
 
 /* A packet on the command port whose TYPE no lane knows: it still goes to

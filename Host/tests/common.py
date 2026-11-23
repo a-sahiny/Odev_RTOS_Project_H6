@@ -93,20 +93,19 @@ def prepare(h, res, rate=None):
 
 
 def counters(h):
-    """Sayaç görüntüsü. Arka planda GET_IMU poller'ı varsa (GUI izlemesi) o anda kısa süre bekletilir
-    (rapor 092): hat sakinleşir, görüntü ve host'un yazdığı bayt sayısı ('_host_tx') aynı anı görür."""
-    with h.quiesce():
-        for attempt in range(3):
-            h.drain(quiet_s=0.15, timeout=2.0)
-            timeouts0 = h.c["cmd_timeout"]
-            c = h.get_counters()
-            # Bir sayfanın cevabı gelmeyip aynı REQ_ID ile tekrarlandıysa (USB / VCP'de kesilen satır),
-            # kart o GET_STATS'ı iki kez işledi: sayfalar arasında fazladan bir olay var, görüntü tek an
-            # değil (rapor 092, kartta T06 L4 / L5 ±1). Görüntü yeniden alınır.
-            if h.c["cmd_timeout"] == timeouts0:
-                break
-        c["_retakes"] = attempt
-        c["_host_tx"] = h.link.tx_bytes
+    """Sayaç görüntüsü: önce hat sakinleşir (drain), görüntü ve host'un yazdığı bayt sayısı ('_host_tx')
+    aynı anı görür."""
+    for attempt in range(3):
+        h.drain(quiet_s=0.15, timeout=2.0)
+        timeouts0 = h.c["cmd_timeout"]
+        c = h.get_counters()
+        # Bir sayfanın cevabı gelmeyip aynı REQ_ID ile tekrarlandıysa (USB / VCP'de kesilen satır),
+        # kart o GET_STATS'ı iki kez işledi: sayfalar arasında fazladan bir olay var, görüntü tek an
+        # değil (rapor 092, kartta T06 L4 / L5 ±1). Görüntü yeniden alınır.
+        if h.c["cmd_timeout"] == timeouts0:
+            break
+    c["_retakes"] = attempt
+    c["_host_tx"] = h.link.tx_bytes
     return c
 
 

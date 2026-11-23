@@ -65,8 +65,8 @@ static uint8_t ucIdleWrapped;
 static uint32_t ulLastEvtCycles;
 static uint32_t ulRefCycles;
 
-/* Shortest time the DMA can need for one lap: 256 x 16 us = 4096 us at
- * 625000 baud, 15/16 of it (3840 us) for the baud tolerance of both ends. */
+/* Shortest time the DMA can need for one lap: 256 x 10 us = 2560 us at
+ * 1 Mbaud, 15/16 of it (2400 us) for the baud tolerance of both ends. */
 #define UART_LINK_LAP_MIN_US \
     ( ( APP_UART_RX_DMA_BYTES * APP_UART_CHAR_US * 15U ) / 16U )
 /* Two events closer than this belong to one chain (3 characters). */
@@ -84,13 +84,13 @@ static TaskHandle_t xTxWaiter = NULL;
 
 /* When the last bit of the last line left USART1 (DWT cycles). Written by
  * HAL_UART_TxCpltCallback (ISR), read by uartTx after UartLink_SendDma gave
- * pdPASS: the M6 of a GET_IMU reply (report 091). One aligned 32-bit word:
+ * pdPASS: the M6 of a TELEM line (DRDY -> M6). One aligned 32-bit word:
  * a single store / load. */
 static volatile uint32_t ulTxDoneCycles;
 
 /* Longest line time plus the margin (docs 3.2 step 5): the upper bound for
- * the xWait of UartLink_SendDma. 544 B x 16 us = 8.7 ms -> 9 + 20 = 29 ms at
- * 625000 baud (report 086; 68 ms at 115200). */
+ * the xWait of UartLink_SendDma. 544 B x 10 us = 5.4 ms -> 6 + 20 = 26 ms at
+ * 1 Mbaud (68 ms at 115200). */
 #define UART_LINK_TX_WAIT_MAX_MS \
     ( ( ( ( APP_UART_TX_DMA_BYTES * APP_UART_CHAR_US ) + 999U ) / 1000U ) + APP_UART_TX_MARGIN_MS )
 
@@ -277,7 +277,7 @@ static void prvRxEventISR( uint32_t ulEvent, uint16_t usSize, BaseType_t * pxWok
     const uint32_t ulNow = DWT->CYCCNT;
     uint32_t ulSinceRef;
 
-    /* Unsigned differences: right across a CYCCNT wrap (171 s at 25 MHz). */
+    /* Unsigned differences: right across a CYCCNT wrap (19.9 s at 216 MHz). */
     if( ( ulNow - ulLastEvtCycles ) >= ( UART_LINK_CHAIN_US * ulCyclesPerUs ) )
     {
         ulRefCycles = ulLastEvtCycles;      /* a new chain starts */
@@ -328,11 +328,11 @@ static void prvRxEventISR( uint32_t ulEvent, uint16_t usSize, BaseType_t * pxWok
      * event was at 0 as well: the DMA went once around the whole ring
      * without the HT in between being served, and 256 bytes were
      * overwritten before they were read. A lag needs the NVIC 5 ISRs late by
-     * ~2 ms (half a ring at 625000); long before that other things fail.
+     * ~1.3 ms (half a ring at 1 Mbaud); long before that other things fail.
      * Not a lag (report 091): a line that ends at or just after the end of
      * the ring with the IDLE served before the TC (both pending, USART1_IRQn
      * 37 wins over DMA2_Stream2_IRQn 58; the TC needs to be late by only one
-     * character, 16 us at 625000). The IDLE already copied up to the current
+     * character, 10 us at 1 Mbaud). The IDLE already copied up to the current
      * position across the wrap, so the TC of the same wrap (it reports the
      * same position, stm32f7xx_hal_uart.c:3530) finds no new bytes. Counted
      * on its own, nothing is lost. A real lap after such an IDLE always

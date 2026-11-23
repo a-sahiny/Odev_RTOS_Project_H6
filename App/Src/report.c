@@ -121,6 +121,30 @@ void Report_Fault( BaseType_t xSet, uint32_t ulWhy )
 }
 
 /*---------------------------------------------------------------------------*/
+void Report_ImuRate( uint16_t usHz, const uint8_t * pucWritten, const uint8_t * pucRead, BaseType_t xOk )
+{
+    ReportWriter_t xW;
+    uint32_t ulW[ 3 ];
+    uint32_t ulR[ 3 ];
+    size_t x;
+
+    for( x = 0U; x < 3U; x++ )
+    {
+        ulW[ x ] = pucWritten[ x ];
+        ulR[ x ] = pucRead[ x ];
+    }
+
+    if( prvBegin( &xW, "imu_rate" ) != 0U )
+    {
+        prvPutU32( &xW, "hz", usHz );
+        prvPutU32Array( &xW, "w", ulW, 3U );
+        prvPutU32Array( &xW, "r", ulR, 3U );
+        prvPutU32( &xW, "ok", ( xOk != pdFALSE ) ? 1U : 0U );
+        prvFinish( &xW );
+    }
+}
+
+/*---------------------------------------------------------------------------*/
 void Report_Boot( void )
 {
     ReportWriter_t xW;
