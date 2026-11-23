@@ -35,6 +35,7 @@
 
 #include "app_config.h"
 #include "app_stats.h"
+#include "raw_link.h"
 
 /* Defined by CubeMX in main.c; only this file uses it (K3). */
 extern UART_HandleTypeDef huart1;
@@ -447,6 +448,12 @@ void HAL_UART_TxCpltCallback( UART_HandleTypeDef * huart )
             portYIELD_FROM_ISR( xWoken );
         }
     }
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    else if( huart->Instance == USART6 )
+    {
+        raw_link_tx_done_isr();
+    }
+#endif
 }
 
 /*---------------------------------------------------------------------------*/

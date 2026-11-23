@@ -23,6 +23,7 @@
 #include "meas_task.h"
 #include "net_app.h"
 #include "pkt_parser.h"
+#include "raw_link.h"
 #include "report.h"
 #include "sys_state.h"
 #include "uart_link.h"
@@ -78,6 +79,9 @@ void App_Init( void )
      * before Meas_Init: it creates the CAL mailbox (docs 21.5). */
     prvCheck( CtrlTask_Init(), "CtrlTask_Init" );
     prvCheck( WorkerTask_Init(), "WorkerTask_Init" );
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    raw_link_init();        /* meas ilk örneğini yollamadan önce */
+#endif
     prvCheck( Meas_Init(), "Meas_Init" );
 
     /* Last: the interface, the end-point and the IP task. */

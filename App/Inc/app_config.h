@@ -23,6 +23,20 @@
 #define APP_BOARD_STR                   "STM32F746G-DISCO"
 
 /*----------------------------------------------------------------------------
+ * Telemetri hedefi: derleme ayarı.
+ * PC    : TELEM yalnız USART1'den, START ile (önceki davranış).
+ * MP257 : ham TELEM verisi açılıştan itibaren USART6'dan; PC'den START gelirse
+ *         USART1'den de önceki gibi gider.
+ *--------------------------------------------------------------------------*/
+#define APP_TELEM_TARGET_PC             0
+#define APP_TELEM_TARGET_MP257          1
+#ifndef APP_TELEM_TARGET                /* -DAPP_TELEM_TARGET=1 ile de seçilir */
+#define APP_TELEM_TARGET                APP_TELEM_TARGET_PC
+#endif
+
+#define APP_RAW_BAUD                    460800U /* USART6: 23 bayt = 0,5 ms  */
+
+/*----------------------------------------------------------------------------
  * Task priorities (docs 4). IP task = ipconfigIP_TASK_PRIORITY = 5.
  * The critical lane runs ABOVE the IP task on purpose (docs 4.1, D16).
  *--------------------------------------------------------------------------*/

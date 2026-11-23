@@ -48,6 +48,7 @@
 #include "app_types.h"
 #include "imu_spi.h"
 #include "pkt_format.h"
+#include "raw_link.h"
 #include "sys_state.h"
 #include "uart_tx.h"        /* UartTx_GetLastTelem */
 #include "udp_in.h"
@@ -117,6 +118,9 @@ typedef struct xMEAS_STATE
     uint32_t ulStartsSeen;      /* the START this measurement belongs to   */
     uint16_t usRateInForce;     /* the rate the IMU runs at now            */
     uint16_t usSeq;             /* TELEM SEQ since start-up (K3)           */
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    uint16_t usRawSeq;          /* USART6 mesaj sırası                     */
+#endif
     TickType_t xDrdyWait;       /* one sample period + margin, in ticks    */
     uint8_t ucRateChanged;      /* 1: next DRDY may still be at the old rate */
     uint8_t ucFailRun;          /* reads in a row that failed (K6)         */
@@ -149,6 +153,9 @@ static BaseType_t prvLoadDestination( MeasDest_t * pxOut );
 static BaseType_t prvAcquire( Sample_t * pxOut );
 static void prvApplyCal( Sample_t * pxSample );
 static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const MeasDest_t * pxDest );
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+static void prvSendRaw( const Sample_t * pxSample, uint8_t ucFlags );
+#endif
 static void prvKeepDrdy( uint16_t usSeq, uint32_t ulCycles );
 static int16_t prvSubSat( int16_t sValue, int16_t sOffset );
 static void prvAttitudeReset( void );
@@ -265,13 +272,25 @@ static void prvMeasTask( void * pvParameters )
     Sample_t xSample;
     MeasDest_t xNow;
     uint8_t ucFlags;
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    BaseType_t xPcOn;           /* PC yolu açık: NET_READY ve START var */
+#endif
 
     ( void ) pvParameters;
 
     prvMeasInitialise();
 
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    prvAttitudeReset();         /* START beklenmez: bias ölçümü hemen başlar */
+#endif
+
     for( ; ; )
     {
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+        /* MP257 hep örnek alır; PC yolu START / STOP'a uyar. */
+        xPcOn = ( ( SysState_WaitMeasAllowed( 0U ) == pdPASS ) &&
+                  ( prvLoadDestination( &xNow ) == pdPASS ) ) ? pdTRUE : pdFALSE;
+#else
         /* docs 12: NET_READY and MEAS_EN (ALL). 100 ms rounds: never an
          * unbounded block; STOP / FAULT stop the loop here. */
         if( SysState_WaitMeasAllowed( APP_MS( APP_MEAS_WAIT_MS ) ) != pdPASS )
@@ -285,6 +304,7 @@ static void prvMeasTask( void * pvParameters )
              * destination first); wait for the next round. */
             continue;
         }
+#endif
 
         /* SET_RATE: the IMU goes to the new rate before the next sample. */
         if( Meas_GetRateHz() != xMeas.usRateInForce )
@@ -292,7 +312,11 @@ static void prvMeasTask( void * pvParameters )
             prvApplyNewRate();
         }
 
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+        if( ( xPcOn == pdTRUE ) && ( xNow.ulStarts != xMeas.ulStartsSeen ) )
+#else
         if( xNow.ulStarts != xMeas.ulStartsSeen )
+#endif
         {
             /* A new START: the attitude begins again (K2). A DRDY that came
              * before the START is dropped: the first TELEM is the next fresh
@@ -300,7 +324,8 @@ static void prvMeasTask( void * pvParameters )
              * measurement was off (seen on the board: 34 ms at 10 Hz). */
             xMeas.ulStartsSeen = xNow.ulStarts;
             prvAttitudeReset();
-#if ( APP_MEAS_SOURCE == APP_MEAS_SOURCE_IMU )
+            /* MP257: DRDY sürekli tüketilir, eskisi birikmez; atılırsa örnek kaybolur. */
+#if ( ( APP_MEAS_SOURCE == APP_MEAS_SOURCE_IMU ) && ( APP_TELEM_TARGET == APP_TELEM_TARGET_PC ) )
             Imu_DiscardStaleDrdy();
 #endif
         }
@@ -312,7 +337,18 @@ static void prvMeasTask( void * pvParameters )
 
         prvApplyCal( &xSample );
         ucFlags = prvAttitudeUpdate( &xSample );
+
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+        /* Önce MP257: PC yolunun sendto beklemesi (<= 2 ms) ham süreye girmez. */
+        prvSendRaw( &xSample, ucFlags );
+
+        if( xPcOn == pdTRUE )
+        {
+            prvSendTelemetry( &xSample, ucFlags, &xNow );
+        }
+#else
         prvSendTelemetry( &xSample, ucFlags, &xNow );
+#endif
     }
 }
 
@@ -560,6 +596,38 @@ static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const 
 
     Stats_Inc( ( lSent > 0 ) ? eStatTelemSendtoOk : eStatTelemSendtoFail );
 }
+
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+/*---------------------------------------------------------------------------*/
+/* prvSendRaw: prvSendTelemetry ile aynı 23 bayt veri, başlıksız ve CRC'siz. */
+/* prev_seq / prev_us USART6 hattının kendi ölçümüdür.                       */
+/*---------------------------------------------------------------------------*/
+static void prvSendRaw( const Sample_t * pxSample, uint8_t ucFlags )
+{
+    uint8_t ucPayload[ APP_LEN_TELEM ];
+    uint32_t ulPrev = raw_link_last();
+    size_t x;
+
+    for( x = 0U; x < 3U; x++ )
+    {
+        Pkt_WriteU16( &ucPayload[ 2U * x ], ( uint16_t ) pxSample->sAccel[ x ] );
+        Pkt_WriteU16( &ucPayload[ 6U + ( 2U * x ) ], ( uint16_t ) pxSample->sGyro[ x ] );
+        Pkt_WriteU16( &ucPayload[ 12U + ( 2U * x ) ], ( uint16_t ) prvCentiDeg( xAtt.fAngle[ x ] ) );
+    }
+
+    if( ulPrev != 0U )
+    {
+        ucFlags = ( uint8_t ) ( ucFlags | APP_TELEM_FLAG_PREV );
+    }
+
+    ucPayload[ APP_TELEM_FLAGS_OFFSET ] = ucFlags;
+    Pkt_WriteU16( &ucPayload[ APP_TELEM_PREV_OFFSET ], ( uint16_t ) ( ulPrev >> 16 ) );
+    Pkt_WriteU16( &ucPayload[ APP_TELEM_PREV_OFFSET + 2U ], ( uint16_t ) ulPrev );
+
+    raw_link_send( ucPayload, xMeas.usRawSeq, pxSample->ulDrdyCycles );
+    xMeas.usRawSeq++;       /* düşen mesaj da sayılır: MP257 boşluğu prev_seq'te görür */
+}
+#endif
 
 /*---------------------------------------------------------------------------*/
 /* prvKeepDrdy: the DRDY time of TELEM usSeq for uartTx (Meas_GetTelemDrdy). */
