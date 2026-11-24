@@ -84,7 +84,7 @@ def dinle(sock, dur, paketler):
             continue
         except ConnectionResetError:
             continue                    # Windows: onceki gonderime ICMP cevabi
-        paketler.append((time.monotonic(), kim[0], veri))
+        paketler.append((time.perf_counter(), kim[0], veri))   # monotonic Windows'ta 15,6 ms adimli
 
 
 def degerlendir(s, sureler, ek, paketler, sure, bitis):
@@ -125,7 +125,7 @@ def degerlendir(s, sureler, ek, paketler, sure, bitis):
         satir.append((adet > 0 and 0 < az <= ort <= cok, "%s: en az %.1f, ort %.1f, en cok %.1f us (acilistan beri en az/en cok)" % (ad, az / 400, ort / 400, cok / 400)))
     if len(paketler) > 1:
         ara = [(y[0] - x[0]) * 1000 for x, y in zip(paketler, paketler[1:])]
-        print("bilgi: PC'de paket araligi ort %.2f, en cok %.2f ms" % (sum(ara) / len(ara), max(ara)))
+        print("bilgi: PC'de paket araligi en az %.2f, ort %.2f, en cok %.2f ms" % (min(ara), sum(ara) / len(ara), max(ara)))
     return satir
 
 
