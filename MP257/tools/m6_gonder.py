@@ -1,5 +1,5 @@
 # M6 gonderme olcumu, PC'de calisir: kart /dev/rpmsg0'dan paketleri okur, PC Host'un decode'u ile denetler.
-# Karta dosya yazmaz; M33'e yalniz '1' (gonder) ve '0' (dur) komutu gider. Kullanim: python m6_gonder.py [saniye]   (varsayilan 60)
+# Karta dosya yazmaz; M33'e yalniz '1' (gonder, saniyede bir yenilenir) ve '0' (dur) komutu gider. Kullanim: python m6_gonder.py [saniye]   (varsayilan 60)
 import base64
 import pathlib
 import subprocess
@@ -18,17 +18,28 @@ KART_EK = '''
 import base64
 import select
 
-SAYAC = SAYAC + ("link_sent", "link_skipped", "link_drops", "link_rx", "link_unknown", "ipcc_busy", "ipcc_errors")
+SAYAC = SAYAC + ("link_sent", "link_skipped", "link_drops", "link_rx", "link_unknown", "link_expired", "ipcc_busy", "ipcc_errors")
 SURE = SURE + (("proc_time", "T4-T3 isleme"), ("send_time", "T5-T4 Linux verme"))
 AYGIT = "/dev/rpmsg0"
+KOMUT = []
 
 
-def topla(fd, sinir, sessizlik, saat):
-    """Sinir anina kadar gelen paketler; ardindan hat sessizlik saniye susana kadar kalanlar."""
-    out = []
+def komut(fd, harf):
+    """M33'e tek baytlik komut yollar, sayar."""
+    os.write(fd, harf)
+    KOMUT.append(harf)
+
+
+def topla(fd, sinir, sessizlik, saat, yenile=False):
+    """Sinir anina kadar gelen paketler; ardindan hat sessizlik saniye susana kadar kalanlar. yenile: saniyede bir gonder komutu."""
+    out, sonraki = [], saat() + 1
     while saat() < sinir + 5:           # M33 susmazsa burada biter
         kalan = sinir - saat()
-        if select.select([fd], [], [], kalan if kalan > 0 else sessizlik)[0]:
+        if yenile and saat() >= sonraki:
+            komut(fd, b"1")
+            sonraki += 1
+        bekle = min(kalan, sonraki - saat()) if yenile else kalan
+        if select.select([fd], [], [], max(0.0, bekle) if kalan > 0 else sessizlik)[0]:
             out.append(os.read(fd, 512))
         elif kalan <= 0:
             break
@@ -47,18 +58,20 @@ def kart_main(oku, saat, sure, ham):
         return 2
     fd = os.open(AYGIT, os.O_RDWR)
     try:
-        os.write(fd, b"0")
+        komut(fd, b"0")
         topla(fd, saat(), 0.3, saat)    # onceden birikmis paketler atilir
         a = anlik(oku, sem)
+        KOMUT.clear()
         print("%.0f saniye okunuyor..." % sure, flush=True)
-        os.write(fd, b"1")
-        paket = topla(fd, saat() + sure, 0.0, saat)
-        os.write(fd, b"0")
+        komut(fd, b"1")
+        paket = topla(fd, saat() + sure, 0.0, saat, True)
+        komut(fd, b"0")
         paket += topla(fd, saat(), 0.5, saat)
         b = anlik(oku, sem)
     finally:
         os.write(fd, b"0")              # okuyan kalmiyor: M33 dursun
         os.close(fd)
+    print("SAYAC komut %d" % len(KOMUT))
     for k in SAYAC:
         print("SAYAC %s %d" % (k, (b[k] - a[k]) & 0xFFFFFFFF))
     for k, ad in SURE:
@@ -108,8 +121,9 @@ def degerlendir(s, sureler, paketler, sure):
              (n > 1 and bosluk == 0, "SEQ boslugu %d" % bosluk),
              (s["link_sent"] == n, "M33'un gonderdigi %d, Linux'un aldigi %d" % (s["link_sent"], n)),
              (s["link_drops"] == 0, "tampon dolu kaybi %d" % s["link_drops"]),
-             (s["link_unknown"] == 0 and s["link_rx"] == 2,
-              "M33'un aldigi komut %d (beklenen 2), taninmayan %d" % (s["link_rx"], s["link_unknown"])),
+             (s["link_unknown"] == 0 and s["link_rx"] == s["komut"],
+              "M33'un aldigi komut %d (yollanan %d), taninmayan %d" % (s["link_rx"], s["komut"], s["link_unknown"])),
+             (s["link_expired"] == 0, "yenilenmedigi icin durma %d" % s["link_expired"]),
              (s["ipcc_errors"] == 0, "IPCC hatasi %d, atlanan haber %d" % (s["ipcc_errors"], s["ipcc_busy"]))]
     for k, ad in (("bad_len", "yanlis uzunluk"), ("seq_gaps", "hat sira boslugu"),
                   ("rx_errors", "hat hatasi"), ("queue_drops", "kuyruk kaybi")):

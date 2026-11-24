@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M7: Linux UDP Programı</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* ---------- Tokens ---------- */
+:root{
+  --ink:#0B0F1A; --ink-2:#131B2C; --ink-line:#26324A;
+  --paper:#FAFAF7; --paper-2:#F0F1EA; --paper-line:#DFE2D8;
+  --text:#14171F; --muted:#565E6E; --text-d:#EEF2F8; --muted-d:#A6B1C4;
+  --lime:#A8D84A; --cyan:#22E4FF; --magenta:#FF3DCB; --amber:#FFC21A; --violet:#9B88FF; --mint:#4FD1A0; --red:#FF4D5E;
+  --lime-band:#D3E8A2; /* geniş zemin için yumuşatılmış yeşil; parlak neon geniş alanda göz yoruyor */
+  --lime-ink:#3D6900; --cyan-ink:#006B7A; --magenta-ink:#A3007F; --amber-ink:#7E5200; --violet-ink:#4B2FD1; --mint-ink:#00704A;
+  --code-bg:#070A12; --code-text:#E6EDF3;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Cascadia Mono",monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:72px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;font:16px/1.65 var(--sans);background:var(--paper);color:var(--text)}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+@media (min-width:760px){.wrap{padding:0 32px}}
+
+/* ---------- Bands (zemin ritmi) ---------- */
+.band{--bg:var(--paper);--fg:var(--text);--mu:var(--muted);--card:#fff;--card-line:var(--paper-line);--chip:var(--paper-2);
+  background:var(--bg);color:var(--fg);padding:56px 0;position:relative}
+.band.dark{--bg:var(--ink);--fg:var(--text-d);--mu:var(--muted-d);--card:var(--ink-2);--card-line:var(--ink-line);--chip:rgba(255,255,255,.08)}
+.band.dark::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--acc,var(--lime))}
+.band.tint{--bg:#F6F2FF;--card:#fff;--card-line:#E3DBFA;--chip:#ECE6FD}
+.band.neon{--bg:var(--lime-band);--fg:#0B0F1A;--mu:#36421C;--card:rgba(255,255,255,.55);--card-line:rgba(11,15,26,.18);--chip:rgba(11,15,26,.08)}
+.band.amber{--bg:var(--amber);--fg:#0B0F1A;--mu:#4A3500;--card:rgba(255,255,255,.6);--card-line:rgba(11,15,26,.2);--chip:rgba(11,15,26,.08)}
+.band a{color:var(--acc-ink,var(--lime-ink))}
+.band.dark a{color:var(--acc,var(--lime))}
+.band.neon a,.band.amber a{color:#0B0F1A;text-decoration-thickness:2px}
+.mu{color:var(--mu)}
+
+/* ---------- Type ---------- */
+h1,h2,h3{line-height:1.2;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(30px,6vw,56px);font-weight:700}
+h2{font-size:clamp(24px,3.6vw,34px);font-weight:700}
+h3{font-size:18px;font-weight:600}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--acc-ink,var(--lime-ink));margin-bottom:12px}
+.dark .eyebrow{color:var(--acc,var(--lime))}
+.neon .eyebrow,.amber .eyebrow{color:#0B0F1A}
+p{margin:10px 0}
+code{font-family:var(--mono);font-size:.86em;background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}
+pre{background:var(--code-bg);color:var(--code-text);border-left:3px solid var(--acc,var(--lime));border-radius:8px;padding:12px 14px;margin:10px 0;overflow-x:auto;font:13.5px/1.6 var(--mono)}
+pre code{background:none;padding:0;font-size:inherit;overflow-wrap:anywhere}
+pre{white-space:pre-wrap;overflow-wrap:anywhere} /* uzun satırlar görsel olarak kayar; kopyalanan metin değişmez */
+.sw{font-family:var(--mono);font-weight:800;letter-spacing:.12em;background:var(--chip);padding:0 6px;border-radius:5px}
+
+/* ---------- Hero ---------- */
+.hero{--acc:var(--lime);padding:72px 0 56px;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:auto -10% -40% auto;width:620px;height:620px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(168,216,74,.16),rgba(34,228,255,.10) 55%,transparent);pointer-events:none}
+.hero .lead{font-size:18px;max-width:720px;color:var(--muted-d)}
+.hero h1 span{background:linear-gradient(90deg,var(--lime),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpis{display:grid;gap:12px;margin-top:28px;grid-template-columns:1fr}
+@media (min-width:760px){.kpis{grid-template-columns:repeat(3,1fr)}}
+.kpi{border:1px solid var(--ink-line);border-radius:var(--r);padding:16px 18px;background:rgba(255,255,255,.03);position:relative;z-index:1}
+.kpi b{display:block;font:800 26px/1.2 var(--mono);color:#fff}
+.kpi b em{font-style:normal;color:var(--lime)}
+.kpi span{color:var(--muted-d);font-size:14px}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:22px;font-size:14px;color:var(--muted-d);position:relative;z-index:1}
+
+/* ---------- Badges (her zeminde okunur: neon dolgu + siyah yazı) ---------- */
+.b{display:inline-block;font:700 11.5px/1.5 var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:999px;color:#0B0F1A;white-space:nowrap;vertical-align:1px}
+.b-st{background:var(--lime)} .b-yr{background:var(--cyan)} .b-ks{background:var(--amber)} .b-gn{background:#D5D9E0}
+.band.neon .b-st{background:#0B0F1A;color:var(--lime)}
+.band.amber .b-ks{background:#0B0F1A;color:var(--amber)}
+
+/* ---------- Sticky nav ---------- */
+.topnav{position:sticky;top:0;z-index:20;background:rgba(11,15,26,.92);backdrop-filter:saturate(1.4) blur(8px);-webkit-backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--ink-line)}
+.topnav .wrap{display:flex;align-items:center;gap:10px;min-height:56px;overflow-x:auto;scrollbar-width:none}
+.topnav .wrap::-webkit-scrollbar{display:none}
+.pill{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:40px;padding:6px 12px;border-radius:999px;border:1px solid var(--ink-line);color:var(--text-d);text-decoration:none;font:600 13px/1 var(--mono);transition:border-color .2s,background-color .2s}
+.pill:hover,.pill:focus-visible{border-color:var(--c);background:rgba(255,255,255,.05)}
+.pill i{width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+.pill small{color:var(--muted-d);font-weight:400}
+.overall{margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:10px;color:var(--text-d);font:700 13px/1 var(--mono)}
+.segs{display:flex;gap:3px;width:150px;height:8px}
+.segs span{flex:1;border-radius:99px;background:var(--ink-line);overflow:hidden}
+.segs span i{display:block;height:100%;width:0;background:var(--c);transition:width .3s ease-out}
+
+/* ---------- Cards / grids ---------- */
+.grid{display:grid;gap:16px;margin-top:24px}
+@media (min-width:860px){.grid.c2{grid-template-columns:1fr 1fr}}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:20px 22px}
+.card.stripe{border-left:5px solid var(--sc,var(--lime))}
+.src{font-size:13.5px;color:var(--mu);margin-top:12px;line-height:1.7}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0;font:600 12.5px/1 var(--mono)}
+.flow span{padding:7px 9px;border-radius:7px;background:var(--ink);color:var(--text-d);border:1px solid var(--ink-line)}
+.flow span:last-child{background:var(--magenta);color:#0B0F1A;border-color:var(--magenta)}
+.flow b{color:var(--mu)}
+
+/* ---------- DIP switch görselleri ---------- */
+.dips{display:grid;gap:14px;margin-top:26px;grid-template-columns:1fr}
+@media (min-width:640px){.dips{grid-template-columns:1fr 1fr}}
+@media (min-width:1000px){.dips{grid-template-columns:repeat(4,1fr)}}
+.mode{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px}
+.mode.hl{background:#0B0F1A;color:var(--text-d);border-color:#0B0F1A}
+.mode h3{font-size:16px}
+.mode .use{font-size:13.5px;margin-top:6px;opacity:.85}
+.dip{display:flex;gap:8px;background:#1B1F2A;border-radius:8px;padding:10px 12px 8px;margin:12px 0 4px;width:max-content}
+.dip div{display:flex;flex-direction:column;align-items:center;gap:4px}
+.dip u{display:block;width:20px;height:34px;border-radius:4px;background:#2E3546;position:relative;text-decoration:none}
+.dip u::after{content:"";position:absolute;left:3px;right:3px;height:13px;border-radius:3px;bottom:3px;background:#E9ECF2}
+.dip u.on::after{top:3px;bottom:auto;background:var(--lime);box-shadow:0 0 6px var(--lime)}
+.dip small{font:600 10px/1 var(--mono);color:#A6B1C4}
+.code{font:800 22px/1 var(--mono);letter-spacing:.18em}
+
+/* ---------- Phase ---------- */
+.phase-head{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 20px;align-items:end}
+.num{font:800 clamp(64px,11vw,120px)/.8 var(--mono);color:transparent;-webkit-text-stroke:2px var(--acc-ink);letter-spacing:-.04em}
+.dark .num{-webkit-text-stroke-color:var(--acc);text-shadow:0 0 28px color-mix(in srgb,var(--acc) 35%,transparent)}
+.goal{grid-column:1/-1;margin-top:14px;padding:12px 16px;border-radius:10px;background:var(--chip);font-size:15px}
+.goal strong{color:var(--acc-ink)}
+.dark .goal strong{color:var(--acc)}
+.pbar{grid-column:1/-1;height:8px;border-radius:99px;background:var(--chip);overflow:hidden;margin-top:12px}
+.pbar i{display:block;height:100%;width:0;background:var(--acc);transition:width .3s ease-out}
+.dark .pbar i{box-shadow:0 0 12px var(--acc)}
+
+.steps{margin-top:24px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.grid>*,.dips>*,.step,.body{min-width:0}
+.step{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px 18px 16px 12px;transition:border-color .2s,box-shadow .2s}
+.step.done{border-color:var(--acc-ink);box-shadow:inset 5px 0 0 var(--acc)}
+.dark .step.done{border-color:var(--acc)}
+.step-h{display:flex;align-items:flex-start;gap:8px}
+.check{flex:0 0 auto;display:grid;place-items:center;width:44px;height:44px;margin:-10px 0 -10px -6px;cursor:pointer}
+.check input{appearance:none;-webkit-appearance:none;margin:0;width:22px;height:22px;border:2px solid var(--mu);border-radius:6px;cursor:pointer;display:grid;place-items:center;transition:background-color .15s,border-color .15s}
+.check input:checked{background:var(--acc);border-color:var(--acc)}
+.check input:checked::after{content:"";width:6px;height:11px;border:solid #0B0F1A;border-width:0 3px 3px 0;transform:translateY(-1px) rotate(45deg)}
+.check input:focus-visible{outline:3px solid var(--acc);outline-offset:3px}
+.sid{font:700 13px/1.4 var(--mono);color:var(--acc-ink);padding-top:2px;flex:0 0 auto}
+.dark .sid{color:var(--acc)}
+.step-h h3{flex:1;min-width:0;padding-top:1px;overflow-wrap:anywhere}
+.body{margin-left:42px}
+@media (max-width:600px){.body{margin-left:6px}.step{padding-right:14px}}
+.body ul,.body ol{margin:8px 0;padding-left:22px}
+.lbl{font:700 11.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mu);margin-top:14px}
+
+/* ---------- "Ne oluyor" açıklaması ---------- */
+.why{border-left:4px solid var(--acc);background:var(--chip);border-radius:0 10px 10px 0;padding:10px 14px;margin:10px 0}
+.why b:first-child{color:var(--acc-ink)}
+.dark .why b:first-child{color:var(--acc)}
+.path{display:block;font:600 13px/1.5 var(--mono);background:var(--chip);border:1px dashed var(--card-line);border-radius:8px;padding:8px 10px;margin:8px 0;overflow-wrap:anywhere}
+pre .c{color:#8B97AB}
+
+/* ---------- Callouts ---------- */
+.note{border-radius:10px;padding:12px 16px;margin:12px 0;border:1px solid}
+.note.warn{background:#FFF6D9;border-color:#F3D27A;color:#3E2C00}
+.note.danger{background:#FFE5E8;border-color:#FFB3BC;color:#5A0A14}
+.dark .note.warn{background:rgba(255,194,26,.1);border-color:rgba(255,194,26,.45);color:#FFE7A6}
+.dark .note.danger{background:rgba(255,77,94,.1);border-color:rgba(255,77,94,.5);color:#FFC7CD}
+
+/* ---------- Tables ---------- */
+.tbl{overflow-x:auto;margin-top:16px;border-radius:var(--r);border:1px solid var(--card-line);background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--card-line)}
+tr:last-child td{border-bottom:0}
+th{font:700 11.5px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+
+footer.band{padding:40px 0;font-size:14px}
+
+/* ---------- Reveal ---------- */
+.js .reveal{opacity:0;transform:translateY(14px);transition:opacity .5s ease-out,transform .5s ease-out}
+.js .reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.js .reveal{opacity:1;transform:none;transition:none}}
+
+/* ---------- Print ---------- */
+@media print{
+  .topnav,.hero::after{display:none}
+  .band,.band.dark,.band.neon,.band.amber,.band.tint{background:#fff!important;color:#000!important;padding:20px 0;--fg:#000;--mu:#333;--card:#fff;--card-line:#bbb;--chip:#eee}
+  .band.dark::before{display:none}
+  .num{-webkit-text-stroke-color:#000!important;text-shadow:none!important}
+  .js .reveal{opacity:1;transform:none}
+  .step,.mode{break-inside:avoid}
+  pre{border:1px solid #999}
+}
+.b-red{background:var(--red)}
+.pill{min-height:44px}
+.grid{grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+
+/* ---------- Bu sayfaya özel ---------- */
+.qs{display:grid;gap:10px;margin-top:28px;grid-template-columns:minmax(0,1fr);position:relative;z-index:1}
+@media (min-width:760px){.qs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.band.dark .qs a{display:flex;align-items:center;gap:12px;min-height:48px;padding:10px 14px;border:1px solid var(--ink-line);border-radius:10px;background:rgba(255,255,255,.03);color:var(--text-d);text-decoration:none;font-size:15px;line-height:1.35;min-width:0;overflow-wrap:anywhere}
+.band.dark .qs a:hover,.band.dark .qs a:focus-visible{border-color:var(--lime)}
+.qs a b{flex:0 0 auto;font:800 13px/1 var(--mono);background:var(--lime);color:#0B0F1A;border-radius:6px;padding:6px 8px}
+.short{font-size:17px;font-weight:600;margin:10px 0}
+.chip-box{border:2px dashed rgba(11,15,26,.45);border-radius:18px;padding:16px;margin-top:20px}
+.chip-box>b{font:700 13px/1.4 var(--mono)}
+.cores{display:grid;gap:12px;margin-top:12px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.cores{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.core{background:#0B0F1A;color:#EEF2F8;border-radius:12px;padding:16px;border-top:6px solid var(--cc);min-width:0}
+.core h3{font:800 20px/1.2 var(--mono);color:var(--cc)}
+.core p{margin:6px 0;font-size:14.5px}
+.core code{background:rgba(255,255,255,.12)}
+.chain{display:grid;gap:10px;margin:16px 0;grid-template-columns:minmax(0,1fr);counter-reset:c}
+@media (min-width:860px){.chain{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.chain div{background:var(--card);border:1px solid var(--card-line);border-top:5px solid var(--acc);border-radius:10px;padding:12px;font-size:14px;min-width:0;overflow-wrap:anywhere}
+.chain div b{display:block;font:800 14px/1.3 var(--mono);margin-bottom:4px}
+.where{display:inline-block;font:700 12px/1.5 var(--mono);background:var(--acc);color:#0B0F1A;border-radius:6px;padding:2px 9px;margin-top:10px}
+.ok{border-left:4px solid var(--mint);background:var(--chip);border-radius:0 10px 10px 0;padding:8px 14px;margin:10px 0;font-size:15px}
+.ok p{margin:4px 0}
+.step .check input{flex:0 0 auto}
+.sid{white-space:nowrap}
+table.sm{min-width:0}
+td{overflow-wrap:anywhere}
+.term{display:grid;gap:14px;margin-top:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.term{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.overall{white-space:nowrap}
+@media (max-width:600px){.segs{width:90px}}
+
+/* ---------- M2 sayfası ---------- */
+p,li,h1,h2,h3,summary{overflow-wrap:anywhere}
+.cbox{margin:10px 0;border-radius:8px;overflow:hidden;background:var(--code-bg);border-left:3px solid var(--acc);min-width:0}
+.cf{font:600 12px/1.5 var(--mono);color:#A6B1C4;padding:8px 14px 0;overflow-wrap:anywhere}
+.cbox pre{margin:0;border-left:0;border-radius:0;padding:6px 0 10px;background:none}
+.cl{display:block;padding:0 14px 0 52px;position:relative;white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.6em}
+.cl i{position:absolute;left:0;width:42px;text-align:right;font-style:normal;color:#8B97AB;font-size:11.5px}
+.cl.hl{background:rgba(255,194,26,.16);box-shadow:inset 3px 0 0 var(--amber)}
+.player{margin-top:24px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+.stage{position:relative;display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr));padding:16px;border:1px solid var(--card-line);border-radius:var(--r);background:var(--card)}
+@media (min-width:760px){.stage{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;padding:22px}}
+.node{border:2px solid var(--card-line);border-radius:12px;padding:12px;min-width:0;background:var(--bg);transition:border-color .3s,box-shadow .3s;overflow-wrap:anywhere;position:relative}
+.node b{display:block;font:800 14px/1.3 var(--mono)}
+.node small{color:var(--mu);font-size:12.5px;display:block}
+.node em{display:inline-block;margin-top:8px;font:700 12px/1.4 var(--mono);font-style:normal;background:var(--chip);border-radius:6px;padding:3px 8px;max-width:100%}
+.node.on{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 30%,transparent)}
+.node.on em{background:var(--acc);color:#0B0F1A}
+.lamp{position:absolute;right:12px;top:12px;width:18px;height:18px;border-radius:50%;background:#3A4152;border:2px solid #6B7488;transition:background-color .2s,box-shadow .2s}
+.lamp.on{background:#FF9A2E;border-color:#FFC27D;box-shadow:0 0 16px 4px rgba(255,154,46,.8)}
+.pkt{position:absolute;left:0;top:0;width:16px;height:16px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber);opacity:0;pointer-events:none;z-index:3}
+.tline{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);color:var(--mu)}
+.tline div{flex:1;height:10px;border-radius:99px;background:var(--chip);overflow:hidden;min-width:0}
+.tline i{display:block;height:100%;width:0;background:var(--acc)}
+.pside{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px 18px;min-width:0}
+@media (min-width:760px){.pside{min-height:400px}}
+.pnum{font:700 12px/1.4 var(--mono);color:var(--acc-ink)} .dark .pnum{color:var(--acc)}
+.ptitle{font-size:20px;margin-top:4px}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px}
+.ctrl button{min-height:46px;min-width:72px;padding:8px 16px;border-radius:10px;border:1px solid var(--card-line);background:var(--card);color:var(--fg);font:700 14px/1 var(--mono);cursor:pointer}
+.ctrl button.pri{background:var(--acc);color:#0B0F1A;border-color:var(--acc)}
+.ctrl button:focus-visible,.hepsi summary:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.hepsi summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font:600 14px/1.4 var(--mono);text-decoration:underline}
+.plist{padding-left:22px;margin:8px 0} .plist li{margin:14px 0} .plist p{margin:4px 0}
+@media (prefers-reduced-motion:reduce){.node,.lamp{transition:none}.pkt{display:none}}
+@media print{.stage,.pside,.ctrl,.tline{display:none}.cbox{background:#fff;border:1px solid #999}.cl,.cf,.cl i{color:#000}}
+.eyebrow,td,.goal{overflow-wrap:anywhere}#sorun .where{background:#A8D84A}.player.bad .pside{border-left:6px solid var(--red)}.player.good .pside{border-left:6px solid var(--mint)}
+.sahne{margin-top:24px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.sahne:focus-visible{outline:3px solid var(--acc);outline-offset:6px;border-radius:12px}
+.alan{position:relative;border:1px solid var(--card-line);border-radius:18px;background:var(--card);padding:14px;overflow:hidden}
+.seritler{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);position:relative;z-index:1}
+@media (min-width:860px){.seritler{grid-template-columns:repeat(3,minmax(0,1fr));gap:56px}.alan{padding:22px}}
+.serit{border:1px dashed color-mix(in srgb,var(--lc) 55%,transparent);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0;background:color-mix(in srgb,var(--lc) 6%,transparent)}
+.serit>h4{margin:0;font:800 13px/1.3 var(--mono);display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
+.serit>h4::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--lc);flex:0 0 auto}
+.nd{border:2px solid var(--card-line);border-radius:12px;padding:10px 12px;background:var(--bg);position:relative;min-width:0;transition:border-color .35s,box-shadow .35s,transform .35s;overflow-wrap:anywhere}
+.nd>b{display:block;font:800 13.5px/1.35 var(--mono);padding-right:34px}
+.nd>small{display:block;color:var(--mu);font-size:12.5px;line-height:1.4}
+.nd>em{display:inline-block;margin-top:7px;font:700 12px/1.45 var(--mono);font-style:normal;background:var(--chip);border-radius:6px;padding:3px 8px;max-width:100%;transition:background-color .3s,color .3s}
+.nd>em:empty{display:none}
+.nd.on{border-color:var(--lc);box-shadow:0 0 0 3px color-mix(in srgb,var(--lc) 35%,transparent)}
+.nd.on>em{background:var(--lc);color:#0B0F1A}
+.nd.ok{border-color:#4FD1A0}.nd.ok>em{background:#4FD1A0;color:#0B0F1A}
+.nd.kotu{border-color:#FF4D5E}.nd.kotu>em{background:#FF8A95;color:#0B0F1A}
+.nd .im{position:absolute;right:10px;top:9px;font:800 11px/1.5 var(--mono);color:var(--mu);white-space:nowrap}
+.nd.uyku{border-style:dashed}
+.nd.uyku .im::after{content:"z z z";animation:zz 2.4s ease-in-out infinite}
+.nd.calis{border-color:var(--lc)}
+.nd.calis .im::after{content:"";display:inline-block;width:13px;height:13px;border-radius:50%;border:3px solid color-mix(in srgb,var(--lc) 30%,transparent);border-top-color:var(--lc);animation:don 1s linear infinite}
+.nd.yeni{animation:yeni .8s ease-out}
+.yuva{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px;margin-top:8px}
+.yuva i{height:16px;border-radius:4px;border:1px solid var(--card-line);background:var(--chip);transition:background-color .4s,transform .4s}
+.yuva i.bos{background:color-mix(in srgb,#22E4FF 55%,transparent);border-color:#22E4FF}
+.yuva i.dolu{background:#FFC21A;border-color:#FFC21A;transform:scale(1.08)}
+.teller{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:hidden}
+.teller path{fill:none;stroke:var(--card-line);stroke-width:2}
+.teller path.ak{stroke:var(--tc,#FFC21A);stroke-width:3;stroke-dasharray:8 7;animation:ak 1s linear infinite}
+.jeton{position:absolute;left:0;top:0;z-index:3;pointer-events:none;font:800 11.5px/1 var(--mono);color:#0B0F1A;background:var(--tc,#FFC21A);border-radius:999px;padding:6px 10px;white-space:nowrap;box-shadow:0 2px 14px rgba(0,0,0,.35);opacity:0}
+.anlat{border:1px solid var(--card-line);border-radius:var(--r);background:var(--card);padding:14px 18px;min-width:0}
+.iki{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.anlat{min-height:196px}.iki{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.kumanda{display:flex;flex-wrap:wrap;gap:10px 18px;justify-content:space-between}}
+@media (max-width:859px){.anlat{min-height:300px}.serit{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:10px}.serit>h4{grid-column:1/-1}.nd{padding:8px 9px}.ray{margin-top:10px}}
+.sahne .kod{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}.sahne .kod .cbox{margin:0}.sahne .gunluk{margin:0}
+.anlat .no{font:700 12px/1.4 var(--mono);color:var(--acc-ink)}.dark .anlat .no{color:var(--acc)}
+.anlat h3{font-size:21px;margin-top:4px}
+.kutucuk{border-left:4px solid var(--acc);background:var(--chip);border-radius:0 10px 10px 0;padding:9px 13px;margin-top:10px}
+.kutucuk b{display:block;font:800 11.5px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--acc-ink)}.dark .kutucuk b{color:var(--acc)}
+.kutucuk.ned{border-left-color:#9B88FF}
+.gunluk{margin-top:10px;background:#070A12;color:#B9F5C9;border-radius:8px;padding:9px 12px;font:12.5px/1.6 var(--mono);overflow-wrap:anywhere;white-space:pre-wrap}
+.gunluk:empty{display:none}
+.sahne.bad .anlat{border-left:6px solid var(--red)}.sahne.good .anlat{border-left:6px solid var(--mint)}
+.sure{height:5px;border-radius:99px;background:var(--chip);overflow:hidden}.sure i{display:block;height:100%;width:0;background:var(--acc)}
+.ray{display:flex;flex-wrap:wrap;gap:6px}
+.ray button{min-width:44px;min-height:44px;border-radius:10px;border:1px solid var(--card-line);background:var(--card);color:var(--fg);font:700 13px/1 var(--mono);cursor:pointer}
+.ray button.gec{border-color:var(--acc)}
+.ray button.su{background:var(--acc);border-color:var(--acc);color:#0B0F1A}
+.ray button:focus-visible,.sim button:focus-visible,.sim input:focus-visible,.harita button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.sim{margin-top:20px;border:1px solid var(--card-line);border-radius:18px;background:var(--card);padding:18px;min-width:0}
+.sim h3{font-size:20px}
+.sim label{display:block;font:600 14px/1.5 var(--sans);margin-top:14px}
+.sim label output{font:800 14px/1 var(--mono);background:var(--chip);border-radius:6px;padding:3px 8px;margin-left:6px}
+.sim input[type=range]{width:100%;height:44px;accent-color:var(--acc);margin:0}
+.iz{margin-top:14px}
+.iz>div:first-child{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font:700 13px/1.5 var(--mono)}
+.cizgi{position:relative;height:46px;border-radius:10px;background:var(--chip);overflow:hidden;margin-top:6px}
+.cizgi u{position:absolute;top:8px;bottom:8px;width:3px;border-radius:3px;background:#FF8A95;text-decoration:none}
+.cizgi u.y{background:#4FD1A0;width:6px;top:3px;bottom:3px}
+.cizgi u.h{background:#22E4FF;width:2px;top:0;bottom:0}
+.cizgi s{position:absolute;top:0;bottom:0;width:2px;background:var(--fg);left:0;text-decoration:none}
+.cizgi span{position:absolute;top:50%;transform:translateY(-50%);font:700 11px/1.2 var(--mono);padding:3px 6px;border-radius:6px;background:var(--bg);color:var(--fg);white-space:nowrap}
+.sonuc{display:grid;gap:10px;grid-template-columns:minmax(0,1fr);margin-top:14px}
+@media (min-width:700px){.sonuc{grid-template-columns:1fr 1fr}}
+.sonuc>div{border-radius:12px;padding:12px 14px;border:2px solid var(--card-line);min-width:0;overflow-wrap:anywhere}
+.sonuc>div.iyi{border-color:#4FD1A0}.sonuc>div.kotu{border-color:#FF4D5E}
+.sonuc b{font:800 14px/1.4 var(--mono);display:block}
+.harita{display:flex;gap:4px;margin-top:16px;min-width:0}
+.harita button{min-width:0;min-height:84px;border:0;border-radius:10px;background:var(--hc);color:#0B0F1A;font:800 12px/1.3 var(--mono);cursor:pointer;padding:8px 6px;overflow-wrap:anywhere;opacity:.72;transition:opacity .2s,transform .2s}
+.harita button[aria-pressed=true]{opacity:1;transform:translateY(-4px)}
+.hbilgi{border:1px solid var(--card-line);border-radius:12px;background:var(--card);padding:14px 16px;margin-top:12px}
+@media (max-width:560px){.harita{flex-direction:column}.harita button{min-height:52px;flex:none!important}}
+.dolu-bar{height:26px;border-radius:8px;background:var(--chip);overflow:hidden;margin:6px 0 2px}.dolu-bar i{display:block;height:100%;background:var(--acc)}
+@keyframes zz{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes don{to{transform:rotate(360deg)}}
+@keyframes ak{to{stroke-dashoffset:-30}}
+@keyframes yeni{0%{transform:scale(1)}35%{transform:scale(1.04)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.nd,.yuva i{transition:none}.nd.yeni,.nd.uyku .im::after,.nd.calis .im::after,.teller path.ak{animation:none}.jeton{display:none}}
+@media print{.alan,.anlat,.ray,.sure,.sim input{display:none}}
+#kart .where,#ayar .where{background:var(--acc)}
+.kalp{position:relative;height:96px;border-radius:12px;background:var(--chip);margin-top:14px;overflow:hidden}
+.kalp u{position:absolute;bottom:10px;width:4px;height:34px;border-radius:3px;background:#22E4FF;text-decoration:none;transform:translateX(-2px)}
+.kalp b{position:absolute;top:12px;height:22px;border-radius:6px;background:#A8D84A}
+.kalp s{position:absolute;top:0;bottom:0;width:3px;background:#FF4D5E;text-decoration:none}
+.kalp .son{background:#FFC21A}
+.sim .sec button[aria-pressed=true]{background:var(--acc);color:#0B0F1A;border-color:var(--acc)}
+</style>
+</head>
+<body>
+<header class="band dark hero"><div class="wrap" style="position:relative;z-index:1">
+<div class="eyebrow">STM32MP257F-DK · M7 · 25.11.2026</div>
+<h1>F746’dan PC’ye:<br><span>6003 / 6003 UDP paketi.</span></h1>
+<p class="lead">M7’de yapılanlar: kartın Linux’unda çalışan C programı, çökmeye karşı 3 saniyelik süre, uçtan uca ölçüm ve kart testleri.</p>
+<div class="kpis"><div class="kpi"><b>Kayıp <em>0</em></b><span>60 saniyede PC’ye 6003 paket; CRC hatası 0, SEQ boşluğu 0</span></div><div class="kpi"><b>%0,56 <em>işlemci</em></b><span>Saniyede 101 uyanma: 100 paket + 1 zamanlayıcı</span></div><div class="kpi"><b>2,01 <em>s</em></b><span>Program öldürülünce M33’ün kendiliğinden durması (en çok 3 s)</span></div></div>
+<div class="legend"><span><span class="b b-st">GEÇTİ</span> Ölçütü sağladı</span><span><span class="b b-red">KALDI</span> Sağlamadı, nedeni arandı</span><span><span class="b b-ks">BAKILACAK</span> Henüz yapılmadı</span></div>
+<h2 style="margin-top:44px;font-size:22px">Bu sayfada</h2>
+<div class="qs"><a href="#resim"><b>1</b>Büyük resim</a><a href="#yol"><b>2</b>Paketin Linux’taki yolu (animasyon)</a><a href="#kod"><b>3</b>telem_udp.c</a><a href="#kira"><b>4</b>Çökmeye karşı 3 saniye (animasyon ve deneme)</a><a href="#derle"><b>5</b>M33’teki değişiklik ve derleme</a><a href="#hata"><b>6</b>Hatalar ve düzeltmeler</a><a href="#anim"><b>7</b>Derleme hatası ve kapanış (2 animasyon)</a><a href="#kart"><b>8</b>Kartta yapılanlar</a><a href="#rapor"><b>9</b>Test raporu ve M8’e kalanlar</a></div>
+</div></header>
+<nav class="topnav" aria-label="Bölümler"><div class="wrap" id="navWrap"><div class="overall" aria-live="polite"><div class="segs" id="segs"></div><span id="overall">0/0</span></div></div></nav>
+<section class="band sec" id="resim" data-name="Büyük resim" style="--acc:var(--lime);--acc-ink:var(--lime-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">01</div><div><div class="eyebrow">M7 · büyük resim</div><h2>Zincirin son halkası</h2></div><div class="goal"><strong>Amaç:</strong> Linux’a ulaşan paketleri ağdan PC’ye yollamak. Programın işi taşımaktır; paketi değiştirmez.</div><div class="pbar"><i></i></div></div>
+<div class="steps">
+<article class="step" data-id="r1"><div class="step-h"><label class="check" aria-label="Okudum: Zincir"><input type="checkbox"></label><span class="sid">1</span><h3>Zincir</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Halka</th><th>Ne yapıyor?</th><th>Hangi adımda?</th></tr></thead><tbody><tr><td>F746</td><td>23 baytlık ham mesaj, 100 Hz</td><td>M4</td></tr><tr><td>M33 (Zephyr)</td><td>33 baytlık TELEM paketi</td><td>M5</td></tr><tr><td>RPMsg</td><td>M33’ten Linux’a</td><td>M6</td></tr><tr><td><b>telem_udp</b></td><td>Linux’tan UDP ile PC’ye</td><td><b>M7</b></td></tr><tr><td>Host</td><td>PC’de ekrana</td><td>M8</td></tr></tbody></table></div></div></article>
+<article class="step" data-id="r2"><div class="step-h"><label class="check" aria-label="Okudum: Adresler"><input type="checkbox"></label><span class="sid">2</span><h3>Adresler</h3></div><div class="body"><div class="tbl"><table class="sm"><thead><tr><th>Taraf</th><th>Adres</th></tr></thead><tbody><tr><td>Kart (usb0)</td><td><code>192.168.7.1</code></td></tr><tr><td>PC</td><td><code>192.168.7.66</code></td></tr><tr><td>UDP portu</td><td><code>5002</code>, Host’un TELEM portu</td></tr></tbody></table></div><p>Bağlantı kartın USB kablosu üzerindeki ağdır. Windows güvenlik duvarı bu testlerde paketi engellemedi.</p></div></article>
+<article class="step" data-id="r3"><div class="step-h"><label class="check" aria-label="Okudum: Neden hazır bir araç değil de C programı?"><input type="checkbox"></label><span class="sid">3</span><h3>Neden hazır bir araç değil de C programı?</h3></div><div class="body"><ul><li>Her RPMsg mesajı tek UDP paketi olmalı; bayt akışı gibi davranan araçlar sınırları bozabilir.</li><li>Açılışta “gönder”, kapanışta “dur” komutu gerekiyor.</li><li>Kaybı saymak gerekiyor.</li></ul></div></article>
+</div>
+</div></section>
+<section class="band dark sec" id="yol" data-name="Yolculuk" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">02</div><div><div class="eyebrow">Animasyon · 9 adım</div><h2>Paketin Linux’taki yolu</h2></div><div class="goal"><strong>Tek poll, üç olay.</strong> Program hiçbir zaman boş dönmez.</div><div class="pbar"><i></i></div></div>
+<div class="sahne" id="sA" tabindex="0" aria-label="Adım adım animasyon; sağ ve sol ok tuşlarıyla gezilir">
+<div class="anlat"><div class="no"></div><h3></h3><div class="iki"><div class="kutucuk"><b>Ne oluyor?</b><span class="ne" aria-live="polite"></span></div><div class="kutucuk ned"><b>Neden?</b><span class="nedm"></span></div></div></div>
+<div class="alan"><svg class="teller" aria-hidden="true"></svg><div class="seritler"><div class="serit" style="--lc:#A8D84A"><h4>M33 ve çekirdek</h4><div class="nd" data-n="m33"><span class="im" aria-hidden="true"></span><b>M33</b><small>link_send</small><em></em></div><div class="nd" data-n="dev"><span class="im" aria-hidden="true"></span><b>/dev/rpmsg0</b><small>çekirdek kuyruğu</small><em></em></div></div><div class="serit" style="--lc:#22E4FF"><h4>telem_udp (C)</h4><div class="nd" data-n="poll"><span class="im" aria-hidden="true"></span><b>Olay döngüsü</b><small>poll()</small><em></em></div><div class="nd" data-n="tim"><span class="im" aria-hidden="true"></span><b>Zamanlayıcı</b><small>timerfd, 1 s</small><em></em></div><div class="nd" data-n="soc"><span class="im" aria-hidden="true"></span><b>UDP soketi</b><small>port 5002</small><em></em></div><div class="nd" data-n="usb"><span class="im" aria-hidden="true"></span><b>usb0</b><small>USB ağı</small><em></em></div></div><div class="serit" style="--lc:#FF8BE0"><h4>PC</h4><div class="nd" data-n="win"><span class="im" aria-hidden="true"></span><b>PC soketi</b><small>192.168.7.66:5002</small><em></em></div><div class="nd" data-n="host"><span class="im" aria-hidden="true"></span><b>Host decode</b><small>proto.py</small><em></em></div></div></div></div>
+<div class="sure" aria-hidden="true"><i></i></div>
+<div class="kumanda"><div class="ctrl"><button type="button" data-a="oynat" class="pri">Oynat</button><button type="button" data-a="geri">Geri</button><button type="button" data-a="ileri">İleri</button><button type="button" data-a="ilk">Başa dön</button><button type="button" data-a="hiz">Hız 1×</button></div><div class="ray" aria-label="Adımlar"></div></div>
+<div class="gunluk" aria-label="Çıktı"></div><div class="kod"></div>
+<details class="hepsi"><summary>Bütün adımları yazı olarak göster</summary><ol class="plist"><li><b>Herkes uyuyor</b><p>Program üç şeyi tek yerde bekler: aygıt, zamanlayıcı, sinyal. −1, “süre sınırı yok” demektir.</p><p><b>Neden?</b> Ölçüldü: saniyede 101 kez uyanıyor (100 paket + 1 zamanlayıcı). İşlemci payı %0,56.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>177</i>if (poll(fds, FD_COUNT, -1) &lt; 0)</span></code></pre></div></li><li><b>M33 paketi verir</b><p>M6’da anlatılan yol: tampon, vring, IPCC. Paket /dev/rpmsg0 kuyruğuna düşer.</p></li><li><b>Program uyanır</b><p>Çekirdek poll’u bitirir; program hangi olayın geldiğine bakar.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>187</i>if ((fds[FD_DEV].revents &amp; POLLIN) &amp;&amp; !forward(fds[FD_DEV].fd, sock, n))</span><span class="cl"><i>188</i>{</span><span class="cl"><i>189</i>    return 2;</span><span class="cl"><i>190</i>}</span></code></pre></div></li><li><b>Tek read, tek paket</b><p>Her read tam bir RPMsg mesajı verir. Paketin başını aramak gerekmez.</p><p><b>Neden?</b> Tampon 512 bayt: küçük olsaydı çekirdek fazlasını sessizce atardı.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>141</i>ssize_t len = read(dev, buf, sizeof(buf));   // her okuma tam bir RPMsg mesajı</span></code></pre></div></li><li><b>Uzunluk denetimi</b><p>33 bayt değilse yollanmaz, bad_len sayılır. CRC’ye burada bakılmaz.</p><p><b>Neden?</b> CRC’yi Host denetliyor; aynı işi iki kez yapmak gerekmez.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>148</i>if (len != PKT_SIZE)</span><span class="cl"><i>149</i>{</span><span class="cl"><i>150</i>    if (len == 0)</span><span class="cl"><i>151</i>    {</span><span class="cl"><i>152</i>        return 0;</span><span class="cl"><i>153</i>    }</span><span class="cl"><i>154</i> </span><span class="cl"><i>155</i>    ++n-&gt;bad_len;</span><span class="cl"><i>156</i>    continue;</span><span class="cl"><i>157</i>}</span></code></pre></div></li><li><b>UDP’ye verilir</b><p>Paket değiştirilmeden yollanır. Hata olursa tekrar denenmez, sayılır.</p><p><b>Neden?</b> Canlı veride eski paketi tekrar yollamak, yenisini geciktirmekten kötüdür.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>161</i>if (send(sock, buf, PKT_SIZE, 0) == PKT_SIZE)</span><span class="cl"><i>162</i>{</span><span class="cl"><i>163</i>    ++n-&gt;sent;</span><span class="cl"><i>164</i>}</span><span class="cl"><i>165</i>else</span><span class="cl"><i>166</i>{</span><span class="cl"><i>167</i>    ++n-&gt;send_errors;                        // canlı veri: tekrar denenmez, sayılır</span><span class="cl"><i>168</i>}</span></code></pre></div></li><li><b>USB üzerinden PC’ye</b><p>Kartın USB ağ bağlantısı kullanılır. Ayrı bir kablo gerekmez.</p></li><li><b>PC’de Host çözer</b><p>Host’un decode fonksiyonu hiç değişmeden paketi çözdü.</p><p><b>Neden?</b> Kartta 60 saniyede 6003 / 6003 paket.</p></li><li><b>Program yine uyur</b><p>Bekleyen paket kalmadıysa read EAGAIN döndürür ve program poll’a geri gider.</p></li></ol></details></div>
+<div class="steps"><article class="step" data-id="y0"><div class="step-h"><label class="check" aria-label="Okudum: Yolculuğu anladım"><input type="checkbox"></label><span class="sid">✓</span><h3>Yolculuğu anladım</h3></div><div class="body"><p>Bekleme, yoklama ve sleep yok: program yalnız bir olay olunca çalışır.</p></div></article></div>
+</div></section>
+<section class="band tint sec" id="kod" data-name="Kod" style="--acc:var(--violet);--acc-ink:var(--violet-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">03</div><div><div class="eyebrow">Linux programı</div><h2>telem_udp.c</h2></div><div class="goal"><strong>Dosya:</strong> <code>C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257\linux\telem_udp.c</code>. <code>-Wall -Wextra -Wpedantic -Werror</code> ile temiz derlenir.</div><div class="pbar"><i></i></div></div>
+<div class="steps">
+<article class="step" data-id="k1"><div class="step-h"><label class="check" aria-label="Okudum: Başlık, sabitler, sayaçlar"><input type="checkbox"></label><span class="sid">1</span><h3>Başlık, sabitler, sayaçlar</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>1</i>/* M33&#x27;ün TELEM paketlerini /dev/rpmsg0&#x27;dan okur, UDP ile PC&#x27;ye yollar. Kullanım: telem_udp &lt;PC IP&gt; &lt;port&gt; [aygıt]</span><span class="cl"><i>2</i> * Olay bekler, yoklamaz: aygıt, sinyal ve 1 saniyelik zamanlayıcı tek poll() içinde. Çıkış: 0 düzgün, 1 kurulum, 2 aygıt kapandı. */</span><span class="cl"><i>3</i>#include &lt;arpa/inet.h&gt;</span><span class="cl"><i>4</i>#include &lt;errno.h&gt;</span><span class="cl"><i>5</i>#include &lt;fcntl.h&gt;</span><span class="cl"><i>6</i>#include &lt;poll.h&gt;</span><span class="cl"><i>7</i>#include &lt;signal.h&gt;</span><span class="cl"><i>8</i>#include &lt;stdint.h&gt;</span><span class="cl"><i>9</i>#include &lt;stdio.h&gt;</span><span class="cl"><i>10</i>#include &lt;stdlib.h&gt;</span><span class="cl"><i>11</i>#include &lt;string.h&gt;</span><span class="cl"><i>12</i>#include &lt;sys/signalfd.h&gt;</span><span class="cl"><i>13</i>#include &lt;sys/socket.h&gt;</span><span class="cl"><i>14</i>#include &lt;sys/timerfd.h&gt;</span><span class="cl"><i>15</i>#include &lt;unistd.h&gt;</span><span class="cl"><i>16</i> </span><span class="cl"><i>17</i>#define PKT_SIZE    33                               // TELEM paketi, bayt</span><span class="cl"><i>18</i>#define BUF_SIZE    512                              // RPMsg tamponu; küçük olsaydı fazlası sessizce kesilirdi</span><span class="cl"><i>19</i>#define RENEW_S     1                                // &#x27;1&#x27; yenileme aralığı; M33 3 saniye yenilenmezse durur</span><span class="cl"><i>20</i>#define CMD_START   &quot;1&quot;</span><span class="cl"><i>21</i>#define CMD_STOP    &quot;0&quot;</span><span class="cl"><i>22</i> </span><span class="cl"><i>23</i>enum { FD_DEV, FD_SIGNAL, FD_TIMER, FD_COUNT };</span><span class="cl"><i>24</i> </span><span class="cl"><i>25</i>typedef struct</span><span class="cl"><i>26</i>{</span><span class="cl"><i>27</i>    unsigned long received;                          // aygıttan okunan paket</span><span class="cl"><i>28</i>    unsigned long sent;                              // UDP&#x27;ye verilen paket</span><span class="cl"><i>29</i>    unsigned long stale;                             // açılışta atılan eski paket</span><span class="cl"><i>30</i>    unsigned long bad_len;                           // 33 bayt olmayan mesaj</span><span class="cl"><i>31</i>    unsigned long send_errors;                       // UDP&#x27;nin reddettiği paket (PC dinlemiyor, hat kapalı)</span><span class="cl"><i>32</i>    unsigned long renew_errors;                      // M33&#x27;e verilemeyen &#x27;1&#x27;</span><span class="cl"><i>33</i>} Counters;</span></code></pre></div><div class="tbl"><table class="sm"><thead><tr><th>Sabit</th><th>Neden bu değer?</th></tr></thead><tbody><tr><td><code>BUF_SIZE 512</code></td><td>RPMsg tamponu; küçük okuma fazlayı sessizce keser</td></tr><tr><td><code>RENEW_S 1</code></td><td>M33 3 saniye bekliyor; iki yenileme kaçsa bile sürer</td></tr></tbody></table></div></div></article>
+<article class="step" data-id="k2"><div class="step-h"><label class="check" aria-label="Okudum: Yardımcılar: hata, port, soket"><input type="checkbox"></label><span class="sid">2</span><h3>Yardımcılar: hata, port, soket</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>35</i>/* Hata mesajını yazar; kurulum hatası kodunu döndürür. */</span><span class="cl"><i>36</i>static int fail(const char *what)</span><span class="cl"><i>37</i>{</span><span class="cl"><i>38</i>    fprintf(stderr, &quot;telem_udp: %s: %s\n&quot;, what, strerror(errno));</span><span class="cl"><i>39</i> </span><span class="cl"><i>40</i>    return 1;</span><span class="cl"><i>41</i>}</span><span class="cl"><i>42</i> </span><span class="cl"><i>43</i>/* Ondalık portu okur; 1..65535 dışında 0 döndürür. */</span><span class="cl"><i>44</i>static uint16_t parse_port(const char *text)</span><span class="cl"><i>45</i>{</span><span class="cl"><i>46</i>    char *end;</span><span class="cl"><i>47</i> </span><span class="cl"><i>48</i>    errno = 0;</span><span class="cl"><i>49</i>    unsigned long value = strtoul(text, &amp;end, 10);</span><span class="cl"><i>50</i> </span><span class="cl"><i>51</i>    if (errno != 0 || end == text || *end != &#x27;\0&#x27; || value &gt; 65535)</span><span class="cl"><i>52</i>    {</span><span class="cl"><i>53</i>        return 0;</span><span class="cl"><i>54</i>    }</span><span class="cl"><i>55</i> </span><span class="cl"><i>56</i>    return (uint16_t)value;</span><span class="cl"><i>57</i>}</span><span class="cl"><i>58</i> </span><span class="cl"><i>59</i>/* PC&#x27;ye bağlı UDP soketi açar; hata -1. */</span><span class="cl"><i>60</i>static int open_socket(const char *ip, uint16_t port)</span><span class="cl"><i>61</i>{</span><span class="cl"><i>62</i>    struct sockaddr_in to = { .sin_family = AF_INET, .sin_port = htons(port) };</span><span class="cl"><i>63</i> </span><span class="cl"><i>64</i>    if (inet_pton(AF_INET, ip, &amp;to.sin_addr) != 1)</span><span class="cl"><i>65</i>    {</span><span class="cl"><i>66</i>        errno = EINVAL;</span><span class="cl"><i>67</i>        return -1;</span><span class="cl"><i>68</i>    }</span><span class="cl"><i>69</i> </span><span class="cl"><i>70</i>    int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);</span><span class="cl"><i>71</i>    if (fd &lt; 0)</span><span class="cl"><i>72</i>    {</span><span class="cl"><i>73</i>        return -1;</span><span class="cl"><i>74</i>    }</span><span class="cl"><i>75</i> </span><span class="cl"><i>76</i>    if (connect(fd, (struct sockaddr *)&amp;to, sizeof(to)) != 0)</span><span class="cl"><i>77</i>    {</span><span class="cl"><i>78</i>        int saved = errno;</span><span class="cl"><i>79</i> </span><span class="cl"><i>80</i>        close(fd);</span><span class="cl"><i>81</i>        errno = saved;</span><span class="cl"><i>82</i>        return -1;</span><span class="cl"><i>83</i>    }</span><span class="cl"><i>84</i> </span><span class="cl"><i>85</i>    return fd;</span><span class="cl"><i>86</i>}</span></code></pre></div><p><code>connect</code> ile hedef sokete bağlanır; böylece <code>send</code> yeter ve PC dinlemiyorsa hata öğrenilir.</p></div></article>
+<article class="step" data-id="k3"><div class="step-h"><label class="check" aria-label="Okudum: Sinyal ve zamanlayıcıyı olaya çevirme"><input type="checkbox"></label><span class="sid">3</span><h3>Sinyal ve zamanlayıcıyı olaya çevirme</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>88</i>/* Ctrl+C ve kill&#x27;i dosya olayına çevirir; hata -1. */</span><span class="cl"><i>89</i>static int open_signals(void)</span><span class="cl"><i>90</i>{</span><span class="cl"><i>91</i>    sigset_t set;</span><span class="cl"><i>92</i> </span><span class="cl"><i>93</i>    sigemptyset(&amp;set);</span><span class="cl"><i>94</i>    sigaddset(&amp;set, SIGINT);</span><span class="cl"><i>95</i>    sigaddset(&amp;set, SIGTERM);</span><span class="cl"><i>96</i>    sigaddset(&amp;set, SIGHUP);                         // ssh koparsa da düzgün kapan</span><span class="cl"><i>97</i> </span><span class="cl"><i>98</i>    if (sigprocmask(SIG_BLOCK, &amp;set, NULL) != 0)</span><span class="cl"><i>99</i>    {</span><span class="cl"><i>100</i>        return -1;</span><span class="cl"><i>101</i>    }</span><span class="cl"><i>102</i> </span><span class="cl"><i>103</i>    return signalfd(-1, &amp;set, SFD_CLOEXEC | SFD_NONBLOCK);</span><span class="cl"><i>104</i>}</span><span class="cl"><i>105</i> </span><span class="cl"><i>106</i>/* Saniyede bir dolan zamanlayıcı; hata -1. */</span><span class="cl"><i>107</i>static int open_timer(void)</span><span class="cl"><i>108</i>{</span><span class="cl"><i>109</i>    struct itimerspec every = { .it_interval.tv_sec = RENEW_S, .it_value.tv_sec = RENEW_S };</span><span class="cl"><i>110</i>    int fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);</span><span class="cl"><i>111</i> </span><span class="cl"><i>112</i>    if (fd &gt;= 0 &amp;&amp; timerfd_settime(fd, 0, &amp;every, NULL) != 0)</span><span class="cl"><i>113</i>    {</span><span class="cl"><i>114</i>        int saved = errno;</span><span class="cl"><i>115</i> </span><span class="cl"><i>116</i>        close(fd);</span><span class="cl"><i>117</i>        errno = saved;</span><span class="cl"><i>118</i>        return -1;</span><span class="cl"><i>119</i>    }</span><span class="cl"><i>120</i> </span><span class="cl"><i>121</i>    return fd;</span><span class="cl"><i>122</i>}</span></code></pre></div><div class="tbl"><table class="sm"><thead><tr><th>Araç</th><th>Ne sağlar?</th></tr></thead><tbody><tr><td><code>signalfd</code></td><td>Ctrl+C, kill ve ssh kopması, okunabilir bir olay olur</td></tr><tr><td><code>timerfd</code></td><td>Saniyede bir olay; sleep gerekmez</td></tr></tbody></table></div></div></article>
+<article class="step" data-id="k4"><div class="step-h"><label class="check" aria-label="Okudum: Eskileri atma ve iletme"><input type="checkbox"></label><span class="sid">4</span><h3>Eskileri atma ve iletme</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>124</i>/* Açılışta çekirdekte birikmiş eski paketleri atar. */</span><span class="cl"><i>125</i>static void discard_stale(int dev, Counters *n)</span><span class="cl"><i>126</i>{</span><span class="cl"><i>127</i>    uint8_t buf[BUF_SIZE];</span><span class="cl"><i>128</i> </span><span class="cl"><i>129</i>    while (read(dev, buf, sizeof(buf)) &gt; 0)</span><span class="cl"><i>130</i>    {</span><span class="cl"><i>131</i>        ++n-&gt;stale;</span><span class="cl"><i>132</i>    }</span><span class="cl"><i>133</i>}</span><span class="cl"><i>134</i> </span><span class="cl"><i>135</i>/* Bekleyen bütün paketleri UDP&#x27;ye verir; aygıt çalışıyorsa 1, kapandıysa 0. */</span><span class="cl"><i>136</i>static int forward(int dev, int sock, Counters *n)</span><span class="cl"><i>137</i>{</span><span class="cl"><i>138</i>    for (;;)</span><span class="cl"><i>139</i>    {</span><span class="cl"><i>140</i>        uint8_t buf[BUF_SIZE];</span><span class="cl"><i>141</i>        ssize_t len = read(dev, buf, sizeof(buf));   // her okuma tam bir RPMsg mesajı</span><span class="cl"><i>142</i> </span><span class="cl"><i>143</i>        if (len &lt; 0)</span><span class="cl"><i>144</i>        {</span><span class="cl"><i>145</i>            return errno == EAGAIN || errno == EINTR; // EAGAIN: bekleyen paket kalmadı</span><span class="cl"><i>146</i>        }</span><span class="cl"><i>147</i> </span><span class="cl"><i>148</i>        if (len != PKT_SIZE)</span><span class="cl"><i>149</i>        {</span><span class="cl"><i>150</i>            if (len == 0)</span><span class="cl"><i>151</i>            {</span><span class="cl"><i>152</i>                return 0;</span><span class="cl"><i>153</i>            }</span><span class="cl"><i>154</i> </span><span class="cl"><i>155</i>            ++n-&gt;bad_len;</span><span class="cl"><i>156</i>            continue;</span><span class="cl"><i>157</i>        }</span><span class="cl"><i>158</i> </span><span class="cl"><i>159</i>        ++n-&gt;received;</span><span class="cl"><i>160</i> </span><span class="cl"><i>161</i>        if (send(sock, buf, PKT_SIZE, 0) == PKT_SIZE)</span><span class="cl"><i>162</i>        {</span><span class="cl"><i>163</i>            ++n-&gt;sent;</span><span class="cl"><i>164</i>        }</span><span class="cl"><i>165</i>        else</span><span class="cl"><i>166</i>        {</span><span class="cl"><i>167</i>            ++n-&gt;send_errors;                        // canlı veri: tekrar denenmez, sayılır</span><span class="cl"><i>168</i>        }</span><span class="cl"><i>169</i>    }</span><span class="cl"><i>170</i>}</span></code></pre></div></div></article>
+<article class="step" data-id="k5"><div class="step-h"><label class="check" aria-label="Okudum: Olay döngüsü"><input type="checkbox"></label><span class="sid">5</span><h3>Olay döngüsü</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>172</i>/* Olay döngüsü; 0 sinyalle düzgün bitiş, 2 aygıt kapandı. */</span><span class="cl"><i>173</i>static int run(struct pollfd *fds, int sock, Counters *n)</span><span class="cl"><i>174</i>{</span><span class="cl"><i>175</i>    for (;;)</span><span class="cl"><i>176</i>    {</span><span class="cl"><i>177</i>        if (poll(fds, FD_COUNT, -1) &lt; 0)</span><span class="cl"><i>178</i>        {</span><span class="cl"><i>179</i>            if (errno == EINTR)</span><span class="cl"><i>180</i>            {</span><span class="cl"><i>181</i>                continue;</span><span class="cl"><i>182</i>            }</span><span class="cl"><i>183</i> </span><span class="cl"><i>184</i>            return 2;</span><span class="cl"><i>185</i>        }</span><span class="cl"><i>186</i> </span><span class="cl"><i>187</i>        if ((fds[FD_DEV].revents &amp; POLLIN) &amp;&amp; !forward(fds[FD_DEV].fd, sock, n))</span><span class="cl"><i>188</i>        {</span><span class="cl"><i>189</i>            return 2;</span><span class="cl"><i>190</i>        }</span><span class="cl"><i>191</i> </span><span class="cl"><i>192</i>        if (fds[FD_DEV].revents &amp; (POLLERR | POLLHUP | POLLNVAL))</span><span class="cl"><i>193</i>        {</span><span class="cl"><i>194</i>            return 2;                                // M33 durdu ya da yeniden başlıyor</span><span class="cl"><i>195</i>        }</span><span class="cl"><i>196</i> </span><span class="cl"><i>197</i>        if (fds[FD_TIMER].revents &amp; POLLIN)</span><span class="cl"><i>198</i>        {</span><span class="cl"><i>199</i>            uint64_t ticks;</span><span class="cl"><i>200</i> </span><span class="cl"><i>201</i>            if (read(fds[FD_TIMER].fd, &amp;ticks, sizeof(ticks)) == (ssize_t)sizeof(ticks)</span><span class="cl"><i>202</i>                &amp;&amp; write(fds[FD_DEV].fd, CMD_START, 1) != 1)</span><span class="cl"><i>203</i>            {</span><span class="cl"><i>204</i>                ++n-&gt;renew_errors;</span><span class="cl"><i>205</i>            }</span><span class="cl"><i>206</i>        }</span><span class="cl"><i>207</i> </span><span class="cl"><i>208</i>        if (fds[FD_SIGNAL].revents &amp; POLLIN)</span><span class="cl"><i>209</i>        {</span><span class="cl"><i>210</i>            return 0;</span><span class="cl"><i>211</i>        }</span><span class="cl"><i>212</i>    }</span><span class="cl"><i>213</i>}</span></code></pre></div></div></article>
+<article class="step" data-id="k6"><div class="step-h"><label class="check" aria-label="Okudum: main"><input type="checkbox"></label><span class="sid">6</span><h3>main</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>215</i>int main(int argc, char **argv)</span><span class="cl"><i>216</i>{</span><span class="cl"><i>217</i>    if (argc &lt; 3 || argc &gt; 4)</span><span class="cl"><i>218</i>    {</span><span class="cl"><i>219</i>        fprintf(stderr, &quot;kullanim: telem_udp &lt;PC IP&gt; &lt;port&gt; [aygit]\n&quot;);</span><span class="cl"><i>220</i>        return 1;</span><span class="cl"><i>221</i>    }</span><span class="cl"><i>222</i> </span><span class="cl"><i>223</i>    const char *path = argc == 4 ? argv[3] : &quot;/dev/rpmsg0&quot;;</span><span class="cl"><i>224</i>    uint16_t port = parse_port(argv[2]);</span><span class="cl"><i>225</i> </span><span class="cl"><i>226</i>    if (port == 0)</span><span class="cl"><i>227</i>    {</span><span class="cl"><i>228</i>        fprintf(stderr, &quot;telem_udp: port 1..65535 olmali: %s\n&quot;, argv[2]);</span><span class="cl"><i>229</i>        return 1;</span><span class="cl"><i>230</i>    }</span><span class="cl"><i>231</i> </span><span class="cl"><i>232</i>    int sock = open_socket(argv[1], port);</span><span class="cl"><i>233</i>    if (sock &lt; 0)</span><span class="cl"><i>234</i>    {</span><span class="cl"><i>235</i>        return fail(argv[1]);</span><span class="cl"><i>236</i>    }</span><span class="cl"><i>237</i> </span><span class="cl"><i>238</i>    int signals = open_signals();</span><span class="cl"><i>239</i>    if (signals &lt; 0)</span><span class="cl"><i>240</i>    {</span><span class="cl"><i>241</i>        return fail(&quot;sinyal&quot;);</span><span class="cl"><i>242</i>    }</span><span class="cl"><i>243</i> </span><span class="cl"><i>244</i>    int timer = open_timer();</span><span class="cl"><i>245</i>    if (timer &lt; 0)</span><span class="cl"><i>246</i>    {</span><span class="cl"><i>247</i>        return fail(&quot;zamanlayici&quot;);</span><span class="cl"><i>248</i>    }</span><span class="cl"><i>249</i> </span><span class="cl"><i>250</i>    int dev = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);</span><span class="cl"><i>251</i>    if (dev &lt; 0)</span><span class="cl"><i>252</i>    {</span><span class="cl"><i>253</i>        return fail(path);</span><span class="cl"><i>254</i>    }</span><span class="cl"><i>255</i> </span><span class="cl"><i>256</i>    Counters n = { 0 };</span><span class="cl"><i>257</i> </span><span class="cl"><i>258</i>    discard_stale(dev, &amp;n);</span><span class="cl"><i>259</i> </span><span class="cl"><i>260</i>    if (write(dev, CMD_START, 1) != 1)</span><span class="cl"><i>261</i>    {</span><span class="cl"><i>262</i>        return fail(path);</span><span class="cl"><i>263</i>    }</span><span class="cl"><i>264</i> </span><span class="cl"><i>265</i>    struct pollfd fds[FD_COUNT] = {</span><span class="cl"><i>266</i>        [FD_DEV] = { .fd = dev, .events = POLLIN },</span><span class="cl"><i>267</i>        [FD_SIGNAL] = { .fd = signals, .events = POLLIN },</span><span class="cl"><i>268</i>        [FD_TIMER] = { .fd = timer, .events = POLLIN },</span><span class="cl"><i>269</i>    };</span><span class="cl"><i>270</i> </span><span class="cl"><i>271</i>    int result = run(fds, sock, &amp;n);</span><span class="cl"><i>272</i> </span><span class="cl"><i>273</i>    // Okuyan kalmıyor: M33 dursun. Aygıt kapandıysa bu yazma zaten başarısız olur</span><span class="cl"><i>274</i>    if (write(dev, CMD_STOP, 1) != 1 &amp;&amp; result == 0)</span><span class="cl"><i>275</i>    {</span><span class="cl"><i>276</i>        ++n.renew_errors;</span><span class="cl"><i>277</i>    }</span><span class="cl"><i>278</i> </span><span class="cl"><i>279</i>    fprintf(stderr, &quot;telem_udp: alinan %lu yollanan %lu eski %lu uzunluk %lu udp_hatasi %lu yenileme_hatasi %lu cikis %d\n&quot;,</span><span class="cl"><i>280</i>            n.received, n.sent, n.stale, n.bad_len, n.send_errors, n.renew_errors, result);</span><span class="cl"><i>281</i> </span><span class="cl"><i>282</i>    return result;</span><span class="cl"><i>283</i>}</span></code></pre></div><div class="tbl"><table class="sm"><thead><tr><th>Çıkış kodu</th><th>Anlamı</th></tr></thead><tbody><tr><td>0</td><td>Sinyalle düzgün kapandı</td></tr><tr><td>1</td><td>Kurulum hatası (adres, port, aygıt)</td></tr><tr><td>2</td><td>Çalışırken aygıt kapandı (M33 durdu)</td></tr></tbody></table></div></div></article>
+</div>
+</div></section>
+<section class="band dark sec" id="kira" data-name="Süre" style="--acc:var(--amber);--acc-ink:var(--amber-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">04</div><div><div class="eyebrow">Animasyon · 6 adım ve deneme</div><h2>Çökmeye karşı 3 saniye</h2></div><div class="goal"><strong>M6’dan kalan sorun:</strong> okuyan program “dur” diyemeden ölürse M33 göndermeye devam ediyordu.</div><div class="pbar"><i></i></div></div>
+<div class="sahne" id="sB" tabindex="0" aria-label="Adım adım animasyon; sağ ve sol ok tuşlarıyla gezilir">
+<div class="anlat"><div class="no"></div><h3></h3><div class="iki"><div class="kutucuk"><b>Ne oluyor?</b><span class="ne" aria-live="polite"></span></div><div class="kutucuk ned"><b>Neden?</b><span class="nedm"></span></div></div></div>
+<div class="alan"><svg class="teller" aria-hidden="true"></svg><div class="seritler"><div class="serit" style="--lc:#22E4FF"><h4>telem_udp (Linux)</h4><div class="nd" data-n="prg"><span class="im" aria-hidden="true"></span><b>Program</b><small>olay döngüsü</small><em></em></div><div class="nd" data-n="tim"><span class="im" aria-hidden="true"></span><b>timerfd</b><small>saniyede bir</small><em></em></div></div><div class="serit" style="--lc:#FFC21A"><h4>Arada</h4><div class="nd" data-n="cmd"><span class="im" aria-hidden="true"></span><b>Komut</b><small>vring1 üzerinden</small><em></em></div><div class="nd" data-n="q"><span class="im" aria-hidden="true"></span><b>Çekirdek kuyruğu</b><small>okunmayanlar</small><em></em></div></div><div class="serit" style="--lc:#A8D84A"><h4>M33 (Zephyr)</h4><div class="nd" data-n="on"><span class="im" aria-hidden="true"></span><b>link_on</b><small>gönder / gönderme</small><em></em></div><div class="nd" data-n="kz"><span class="im" aria-hidden="true"></span><b>lease_timer</b><small>k_timer, 3 s</small><em></em></div><div class="nd" data-n="snd"><span class="im" aria-hidden="true"></span><b>link_send</b><small>100 Hz</small><em></em></div></div></div></div>
+<div class="sure" aria-hidden="true"><i></i></div>
+<div class="kumanda"><div class="ctrl"><button type="button" data-a="oynat" class="pri">Oynat</button><button type="button" data-a="geri">Geri</button><button type="button" data-a="ileri">İleri</button><button type="button" data-a="ilk">Başa dön</button><button type="button" data-a="hiz">Hız 1×</button></div><div class="ray" aria-label="Adımlar"></div></div>
+<div class="gunluk" aria-label="Çıktı"></div><div class="kod"></div>
+<details class="hepsi"><summary>Bütün adımları yazı olarak göster</summary><ol class="plist"><li><b>Program açılır</b><p>Önce eskiden kalan paketler atılır, sonra 1 yollanır. M33 hem gönderir hem 3 saniyelik geri sayımı başlatır.</p><p><b>Neden?</b> k_timer geri sayımı donanım saatinden yürür; thread beklemez.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>258</i>discard_stale(dev, &amp;n);</span><span class="cl"><i>259</i> </span><span class="cl"><i>260</i>if (write(dev, CMD_START, 1) != 1)</span><span class="cl"><i>261</i>{</span><span class="cl"><i>262</i>    return fail(path);</span><span class="cl"><i>263</i>}</span></code></pre></div><div class="cbox"><div class="cf">MP257/zephyr/src/rpmsg_link.c</div><pre><code><span class="cl"><i>50</i>    if (command == &#x27;1&#x27;)</span><span class="cl"><i>51</i>    {</span><span class="cl"><i>52</i>        // Okuyan program çökerse &#x27;1&#x27; kesilir, süre dolunca gönderme durur</span><span class="cl"><i>53</i>        k_timer_start(&amp;lease_timer, K_MSEC(LINK_LEASE_MS), K_NO_WAIT);</span><span class="cl"><i>54</i>        link_on = 1;                                 // Linux&#x27;un adresi bu mesajla öğrenildi</span><span class="cl"><i>55</i>    }</span></code></pre></div></li><li><b>Her saniye yenilenir</b><p>timerfd saniyede bir olay üretir; program 1’i yeniler. Geri sayım hep baştan başlar.</p><p><b>Neden?</b> 3 saniye, en az iki yenilemenin kaçmasına dayanır.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>197</i>if (fds[FD_TIMER].revents &amp; POLLIN)</span><span class="cl"><i>198</i>{</span><span class="cl"><i>199</i>    uint64_t ticks;</span><span class="cl"><i>200</i> </span><span class="cl"><i>201</i>    if (read(fds[FD_TIMER].fd, &amp;ticks, sizeof(ticks)) == (ssize_t)sizeof(ticks)</span><span class="cl"><i>202</i>        &amp;&amp; write(fds[FD_DEV].fd, CMD_START, 1) != 1)</span><span class="cl"><i>203</i>    {</span><span class="cl"><i>204</i>        ++n-&gt;renew_errors;</span><span class="cl"><i>205</i>    }</span><span class="cl"><i>206</i>}</span></code></pre></div></li><li><b>Program çöker</b><p>kill -9 programa hiçbir şey yaptırmadan öldürür; 0 yollanamaz.</p><p><b>Neden?</b> İşte bu yüzden “düzgün kapan” tek başına yetmez.</p></li><li><b>Geri sayım işler</b><p>M33 hâlâ gönderiyor ama yenileme gelmiyor.</p></li><li><b>Süre doldu</b><p>k_timer kesmesi link_on’u 0 yapar, link_expired bir artar.</p><p><b>Neden?</b> Kartta ölçüldü: program öldükten 2,01 s sonra durdu.</p><div class="cbox"><div class="cf">MP257/zephyr/src/app_isr.c</div><pre><code><span class="cl"><i>80</i>void lease_isr(struct k_timer *timer)</span><span class="cl"><i>81</i>{</span><span class="cl"><i>82</i>    (void)timer;</span><span class="cl"><i>83</i>    link_on = 0;</span><span class="cl"><i>84</i>    ++link_expired;</span><span class="cl"><i>85</i>}</span></code></pre></div></li><li><b>Yeni program açılır</b><p>Çöküşten kalan 200 paket okunup atıldı; yenileri baştan numaralarıyla akmaya başladı.</p><div class="gunluk">telem_udp: alinan 1000 yollanan 1000 eski 200 uzunluk 0 udp_hatasi 0 yenileme_hatasi 0 cikis 0</div><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>124</i>/* Açılışta çekirdekte birikmiş eski paketleri atar. */</span><span class="cl"><i>125</i>static void discard_stale(int dev, Counters *n)</span><span class="cl"><i>126</i>{</span><span class="cl"><i>127</i>    uint8_t buf[BUF_SIZE];</span><span class="cl"><i>128</i> </span><span class="cl"><i>129</i>    while (read(dev, buf, sizeof(buf)) &gt; 0)</span><span class="cl"><i>130</i>    {</span><span class="cl"><i>131</i>        ++n-&gt;stale;</span><span class="cl"><i>132</i>    }</span><span class="cl"><i>133</i>}</span></code></pre></div></li></ol></details></div>
+<div class="sim" id="simK"><h3>Kendin dene: program ne zaman ve nasıl ölsün?</h3><div class="ctrl sec" style="margin-top:12px"><button type="button" data-m="kill" aria-pressed="true">Çökme (kill -9)</button><button type="button" data-m="term" aria-pressed="false">Düzgün kapanma</button></div><label>Program kaçıncı saniyede bitsin? <output></output><input type="range" min="10" max="100" value="55" aria-label="Program kaçıncı saniyede bitsin, onda bir saniye"></label><div class="kalp" aria-hidden="true"></div><p class="mu">Mavi: 1 komutu. Yeşil: M33 gönderiyor. Kırmızı: program bitti. Sarı: M33 durdu. Bu bir modeldir.</p><div class="sonuc" style="grid-template-columns:minmax(0,1fr)" aria-live="polite"><div class="rs"><b></b><p></p></div></div></div>
+<div class="steps"><article class="step" data-id="b0"><div class="step-h"><label class="check" aria-label="Okudum: Süreyi anladım"><input type="checkbox"></label><span class="sid">✓</span><h3>Süreyi anladım</h3></div><div class="body"><p>Birikme artık en çok yaklaşık 300 paketle sınırlı (3 saniye × 100). Kartta 200 paket birikti ve yeni program bunları attı.</p></div></article></div>
+</div></section>
+<section class="band sec" id="derle" data-name="M33 ve derleme" style="--acc:var(--magenta);--acc-ink:var(--magenta-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">05</div><div><div class="eyebrow">Zephyr ve derleme</div><h2>M33’teki değişiklik ve derleme betiği</h2></div><div class="goal"><strong>Zephyr kuralı:</strong> süre <code>k_timer</code> ile ölçülür. Bekleyen thread yok.</div><div class="pbar"><i></i></div></div>
+<div class="steps">
+<article class="step" data-id="e1"><div class="step-h"><label class="check" aria-label="Okudum: rpmsg_link.c"><input type="checkbox"></label><span class="sid">1</span><h3>rpmsg_link.c</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/zephyr/src/rpmsg_link.c</div><pre><code><span class="cl"><i>11</i>K_SEM_DEFINE(ipcc_sem, 0, 1);                        // 1 yeter: bir uyanışta bütün mesajlar işlenir</span><span class="cl"><i>12</i>K_TIMER_DEFINE(lease_timer, lease_isr, NULL);        // her &#x27;1&#x27; baştan başlatır</span></code></pre></div><div class="cbox"><div class="cf">MP257/zephyr/src/rpmsg_link.c</div><pre><code><span class="cl"><i>41</i>static int on_message(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src, void *priv)</span><span class="cl"><i>42</i>{</span><span class="cl"><i>43</i>    (void)ept;</span><span class="cl"><i>44</i>    (void)src;</span><span class="cl"><i>45</i>    (void)priv;</span><span class="cl"><i>46</i>    ++link_rx;</span><span class="cl"><i>47</i> </span><span class="cl"><i>48</i>    uint8_t command = len == 1 ? *(const uint8_t *)data : 0;</span><span class="cl"><i>49</i> </span><span class="cl"><i>50</i>    if (command == &#x27;1&#x27;)</span><span class="cl"><i>51</i>    {</span><span class="cl"><i>52</i>        // Okuyan program çökerse &#x27;1&#x27; kesilir, süre dolunca gönderme durur</span><span class="cl"><i>53</i>        k_timer_start(&amp;lease_timer, K_MSEC(LINK_LEASE_MS), K_NO_WAIT);</span><span class="cl"><i>54</i>        link_on = 1;                                 // Linux&#x27;un adresi bu mesajla öğrenildi</span><span class="cl"><i>55</i>    }</span><span class="cl"><i>56</i>    else if (command == &#x27;0&#x27;)</span><span class="cl"><i>57</i>    {</span><span class="cl"><i>58</i>        k_timer_stop(&amp;lease_timer);</span><span class="cl"><i>59</i>        link_on = 0;                                 // okuyan yok: paketler Linux çekirdeğinde birikmesin</span><span class="cl"><i>60</i>    }</span><span class="cl"><i>61</i>    else</span><span class="cl"><i>62</i>    {</span><span class="cl"><i>63</i>        ++link_unknown;</span><span class="cl"><i>64</i>    }</span><span class="cl"><i>65</i> </span><span class="cl"><i>66</i>    return RPMSG_SUCCESS;</span><span class="cl"><i>67</i>}</span></code></pre></div><p><code>k_timer_start</code> çalışan bir sayacı baştan başlatır; yenileme bu kadar kolay. <code>0</code> gelince <code>k_timer_stop</code>.</p></div></article>
+<article class="step" data-id="e2"><div class="step-h"><label class="check" aria-label="Okudum: app_isr.c: süre dolunca"><input type="checkbox"></label><span class="sid">2</span><h3>app_isr.c: süre dolunca</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/zephyr/src/app_isr.c</div><pre><code><span class="cl"><i>79</i>/* Linux&#x27;un &#x27;1&#x27; komutu yenilenmedi: göndermeyi kapatır. */</span><span class="cl"><i>80</i>void lease_isr(struct k_timer *timer)</span><span class="cl"><i>81</i>{</span><span class="cl"><i>82</i>    (void)timer;</span><span class="cl"><i>83</i>    link_on = 0;</span><span class="cl"><i>84</i>    ++link_expired;</span><span class="cl"><i>85</i>}</span></code></pre></div><div class="cbox"><div class="cf">MP257/zephyr/src/rpmsg_link.h</div><pre><code><span class="cl"><i>4</i>#define LINK_LEASE_MS 3000U                          // son &#x27;1&#x27;den bu kadar sonra gönderme kendiliğinden durur</span></code></pre></div><div class="cbox"><div class="cf">MP257/zephyr/src/rpmsg_link.h</div><pre><code><span class="cl"><i>18</i>extern volatile uint32_t link_expired;               // &#x27;1&#x27; yenilenmediği için durma sayısı</span></code></pre></div></div></article>
+<article class="step" data-id="e3"><div class="step-h"><label class="check" aria-label="Okudum: Derleme betiği"><input type="checkbox"></label><span class="sid">3</span><h3>Derleme betiği</h3></div><div class="body"><div class="why"><b>Ne oluyor?</b> telem_udp.c, PC’deki Android NDK’nin clang derleyicisiyle kart için derlenir. Karta bir şey yazmaz.</div><span class="where">PC’de (PowerShell)</span><pre><code><span class="c"># kart için derler; çıktı C:\Users\Asus\AppData\Local\Temp\telem_udp</span>
+powershell -ExecutionPolicy Bypass -File C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257\linux\derle.ps1 -Cikti C:\Users\Asus\AppData\Local\Temp\telem_udp</code></pre><div class="ok"><p><b>Beklenen sonuç:</b> <code>tamam: … (439624 bayt)</code>.</p><p><b>Olmazsa:</b> <code>Android NDK bulunamadi</code> çıkarsa betiğe <code>-Derleyici</code> ile clang.exe yolu verilir.</p></div><div class="cbox"><div class="cf">MP257/linux/derle.ps1</div><pre><code><span class="cl"><i>17</i>&amp; $Derleyici --target=aarch64-linux-android29 -static -s -O2 -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -o $Cikti &quot;$PSScriptRoot\telem_udp.c&quot;</span><span class="cl"><i>18</i>if ($LASTEXITCODE -ne 0) { throw &quot;derleme basarisiz: $LASTEXITCODE&quot; }</span></code></pre></div></div></article>
+<article class="step" data-id="e4"><div class="step-h"><label class="check" aria-label="Okudum: Bellekte yer"><input type="checkbox"></label><span class="sid">4</span><h3>Bellekte yer</h3></div><div class="body"><div class="tbl"><table><thead><tr><th></th><th>M6</th><th>M7</th></tr></thead><tbody><tr><td>M33 FLASH (64 KB)</td><td>31.836</td><td>32.388 (%49,42)</td></tr><tr><td>M33 RAM (64 KB)</td><td>9.284</td><td>9.340 (%14,25)</td></tr><tr><td>telem_udp</td><td>—</td><td>439.624 bayt, tek dosya</td></tr></tbody></table></div></div></article>
+</div>
+</div></section>
+<section class="band neon sec" id="hata" data-name="Hatalar" style="--acc:#3D6900;--acc-ink:var(--lime-ink)"><div class="wrap reveal">
+<div class="eyebrow">M7’de çıkanlar</div><h2>06 · Hatalar ve düzeltmeler</h2><div class="pbar"><i></i></div>
+<div class="tbl"><table><thead><tr><th>Nerede</th><th>Görülen</th><th>Neden</th><th>Çözüm</th><th>Şimdi</th></tr></thead><tbody><tr><td>Derleme</td><td>Kart için C derleyicisi yok</td><td>Kartta gcc yok, PC’de ST SDK’sı yok</td><td>PC’de kurulu Android NDK kullanıldı; bir şey indirilmedi</td><td><span class="b b-st">GEÇTİ</span></td></tr><tr><td>Kart</td><td>Program <code>Aborted</code>, çıkış 134</td><td>android21 hedefinin statik programında TLS hizası 8</td><td>Hedef android29</td><td><span class="b b-st">GEÇTİ</span> Animasyon A</td></tr><tr><td>Kart</td><td>Kopyalama hatası</td><td><code>/home/root</code> bu imajda yok, ev klasörü <code>/root</code></td><td>Yol düzeltildi</td><td><span class="b b-st">GEÇTİ</span></td></tr><tr><td>M6 betiği</td><td><code>m6_gonder.py</code> artık 3 saniyede susardı</td><td>M33 yenileme bekliyor</td><td>Betik saniyede bir yeniliyor; “yenilenmediği için durma” denetimi eklendi</td><td><span class="b b-st">GEÇTİ</span> 60 s, kayıp 0</td></tr><tr><td>Davranış</td><td>PC dinlemiyorken paketlerin yarısı <code>udp_hatasi</code></td><td>Karşı taraf “port kapalı” cevabı verince bir sonraki yollama bu hatayı alır</td><td>Sayılıyor; program durmuyor</td><td>Beklenen davranış. PC dinlemeye başladığında en çok bir paket bu yüzden kaybolabilir</td></tr></tbody></table></div>
+<div class="steps"><article class="step" data-id="h0"><div class="step-h"><label class="check" aria-label="Okudum: Hataları okudum"><input type="checkbox"></label><span class="sid">✓</span><h3>Hataları okudum</h3></div><div class="body"><p>Ölçümlerde kayıp ya da bozuk paket çıkmadı.</p></div></article></div></div></section>
+<section class="band dark sec" id="anim" data-name="Animasyonlar" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">07</div><div><div class="eyebrow">Animasyon · 4 + 6 adım</div><h2>Derleme hatası ve düzgün kapanış</h2></div><div class="goal"><strong>HATA</strong> adımları kartta gerçekten görüldü.</div><div class="pbar"><i></i></div></div>
+<h3 style="margin-top:28px">A · Program kartta neden açılmadı?</h3><div class="sahne" id="sC" tabindex="0" aria-label="Adım adım animasyon; sağ ve sol ok tuşlarıyla gezilir">
+<div class="anlat"><div class="no"></div><h3></h3><div class="iki"><div class="kutucuk"><b>Ne oluyor?</b><span class="ne" aria-live="polite"></span></div><div class="kutucuk ned"><b>Neden?</b><span class="nedm"></span></div></div></div>
+<div class="alan"><svg class="teller" aria-hidden="true"></svg><div class="seritler"><div class="serit" style="--lc:#FF8BE0"><h4>PC</h4><div class="nd" data-n="drl"><span class="im" aria-hidden="true"></span><b>clang (NDK 27)</b><small>derle.ps1</small><em></em></div></div><div class="serit" style="--lc:#FFC21A"><h4>Dosya</h4><div class="nd" data-n="dos"><span class="im" aria-hidden="true"></span><b>telem_udp</b><small>statik program</small><em></em></div></div><div class="serit" style="--lc:#22E4FF"><h4>Kart</h4><div class="nd" data-n="krt"><span class="im" aria-hidden="true"></span><b>Linux</b><small>aarch64</small><em></em></div><div class="nd" data-n="son"><span class="im" aria-hidden="true"></span><b>Sonuç</b><small>kartta</small><em></em></div></div></div></div>
+<div class="sure" aria-hidden="true"><i></i></div>
+<div class="kumanda"><div class="ctrl"><button type="button" data-a="oynat" class="pri">Oynat</button><button type="button" data-a="geri">Geri</button><button type="button" data-a="ileri">İleri</button><button type="button" data-a="ilk">Başa dön</button><button type="button" data-a="hiz">Hız 1×</button></div><div class="ray" aria-label="Adımlar"></div></div>
+<div class="gunluk" aria-label="Çıktı"></div><div class="kod"></div>
+<details class="hepsi"><summary>Bütün adımları yazı olarak göster</summary><ol class="plist"><li><b>HATA · Program açılmadı</b><p>Kart için derleyici PC’de yoktu, karttaki Linux’ta da gcc yok. Android NDK’nin clang’ı zaten kuruluydu; indirme yapmadan onu kullandık.</p></li><li><b>HATA · Kartta durdu</b><p>Programın içine gömülen C kütüphanesi, thread verisi bölümünün 64 bayta hizalı olmasını istiyor; eski hedef 8 bayt hizalıyor.</p><p><b>Neden?</b> TLS: her thread’in kendi değişkenlerinin durduğu bölüm.</p><div class="gunluk">error: &quot;./telem_udp&quot;: executable&#x27;s TLS segment is underaligned: alignment is 8 (skew 0), needs to be at least 64 for ARM64 Bionic</div></li><li><b>ŞİMDİ · Yeni hedef</b><p>Hedef android29 yapıldı. Kod aynı, yalnız derleme hedefi değişti.</p></li><li><b>ŞİMDİ · Kartta çalışıyor</b><p>439.624 baytlık tek dosya; kartta başka kütüphane gerektirmiyor.</p><p><b>Neden?</b> derle.ps1 içinde neden android29 olduğu yazılı.</p></li></ol></details></div>
+<h3 style="margin-top:40px">B · Düzgün kapanış</h3><div class="sahne" id="sD" tabindex="0" aria-label="Adım adım animasyon; sağ ve sol ok tuşlarıyla gezilir">
+<div class="anlat"><div class="no"></div><h3></h3><div class="iki"><div class="kutucuk"><b>Ne oluyor?</b><span class="ne" aria-live="polite"></span></div><div class="kutucuk ned"><b>Neden?</b><span class="nedm"></span></div></div></div>
+<div class="alan"><svg class="teller" aria-hidden="true"></svg><div class="seritler"><div class="serit" style="--lc:#FF8BE0"><h4>Kullanıcı</h4><div class="nd" data-n="kul"><span class="im" aria-hidden="true"></span><b>Ctrl+C / kill</b><small>ya da ssh kopması</small><em></em></div></div><div class="serit" style="--lc:#22E4FF"><h4>telem_udp</h4><div class="nd" data-n="sig"><span class="im" aria-hidden="true"></span><b>signalfd</b><small>sinyal → olay</small><em></em></div><div class="nd" data-n="prg"><span class="im" aria-hidden="true"></span><b>Olay döngüsü</b><small>poll()</small><em></em></div><div class="nd" data-n="cik"><span class="im" aria-hidden="true"></span><b>Çıkış</b><small>özet ve kod</small><em></em></div></div><div class="serit" style="--lc:#A8D84A"><h4>M33</h4><div class="nd" data-n="m33"><span class="im" aria-hidden="true"></span><b>link_send</b><small>100 Hz</small><em></em></div></div></div></div>
+<div class="sure" aria-hidden="true"><i></i></div>
+<div class="kumanda"><div class="ctrl"><button type="button" data-a="oynat" class="pri">Oynat</button><button type="button" data-a="geri">Geri</button><button type="button" data-a="ileri">İleri</button><button type="button" data-a="ilk">Başa dön</button><button type="button" data-a="hiz">Hız 1×</button></div><div class="ray" aria-label="Adımlar"></div></div>
+<div class="gunluk" aria-label="Çıktı"></div><div class="kod"></div>
+<details class="hepsi"><summary>Bütün adımları yazı olarak göster</summary><ol class="plist"><li><b>Çalışıyor</b><p>Program paket yolluyor.</p></li><li><b>Sinyal dosya olayına döner</b><p>Sinyal, programı yarıda kesmez; signalfd sayesinde poll’un beklediği olaylardan biri olur.</p><p><b>Neden?</b> Sinyal işleyicisi içinde iş yapmak tehlikelidir. Böyle olunca kapanış da sıradan bir olaydır.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>88</i>/* Ctrl+C ve kill&#x27;i dosya olayına çevirir; hata -1. */</span><span class="cl"><i>89</i>static int open_signals(void)</span><span class="cl"><i>90</i>{</span><span class="cl"><i>91</i>    sigset_t set;</span><span class="cl"><i>92</i> </span><span class="cl"><i>93</i>    sigemptyset(&amp;set);</span><span class="cl"><i>94</i>    sigaddset(&amp;set, SIGINT);</span><span class="cl"><i>95</i>    sigaddset(&amp;set, SIGTERM);</span><span class="cl"><i>96</i>    sigaddset(&amp;set, SIGHUP);                         // ssh koparsa da düzgün kapan</span><span class="cl"><i>97</i> </span><span class="cl"><i>98</i>    if (sigprocmask(SIG_BLOCK, &amp;set, NULL) != 0)</span><span class="cl"><i>99</i>    {</span><span class="cl"><i>100</i>        return -1;</span><span class="cl"><i>101</i>    }</span><span class="cl"><i>102</i> </span><span class="cl"><i>103</i>    return signalfd(-1, &amp;set, SFD_CLOEXEC | SFD_NONBLOCK);</span><span class="cl"><i>104</i>}</span></code></pre></div></li><li><b>Döngü düzgün biter</b><p>O ana kadar okunan paketler yollanmıştır.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>208</i>if (fds[FD_SIGNAL].revents &amp; POLLIN)</span><span class="cl"><i>209</i>{</span><span class="cl"><i>210</i>    return 0;</span><span class="cl"><i>211</i>}</span></code></pre></div></li><li><b>M33’e “dur”</b><p>Son iş olarak 0 yollanır. Kartta 0,0 s içinde durdu.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>273</i>// Okuyan kalmıyor: M33 dursun. Aygıt kapandıysa bu yazma zaten başarısız olur</span><span class="cl"><i>274</i>if (write(dev, CMD_STOP, 1) != 1 &amp;&amp; result == 0)</span><span class="cl"><i>275</i>{</span><span class="cl"><i>276</i>    ++n.renew_errors;</span><span class="cl"><i>277</i>}</span></code></pre></div></li><li><b>Hesap yazılır</b><p>Alınan, yollanan, eski, hatalı paketler tek satırda.</p><div class="gunluk">telem_udp: alinan 6003 yollanan 6003 eski 0 uzunluk 0 udp_hatasi 0 yenileme_hatasi 0 cikis 0</div></li><li><b>M33 durdurulursa</b><p>Linux M33’ü durdurursa aygıt kaybolur. Program 0,01 s içinde çıkış 2 ile kapandı; asılı kalmadı.</p><p><b>Neden?</b> M33 yeniden başlayınca program yeniden çalıştırılır.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>192</i>if (fds[FD_DEV].revents &amp; (POLLERR | POLLHUP | POLLNVAL))</span><span class="cl"><i>193</i>{</span><span class="cl"><i>194</i>    return 2;                                // M33 durdu ya da yeniden başlıyor</span><span class="cl"><i>195</i>}</span></code></pre></div></li></ol></details></div>
+<div class="steps"><article class="step" data-id="n0"><div class="step-h"><label class="check" aria-label="Okudum: İki animasyonu izledim"><input type="checkbox"></label><span class="sid">✓</span><h3>İki animasyonu izledim</h3></div><div class="body"><p>Düzgün kapanış bir olaydır; çökme ise M33’ün kendi sayacıyla karşılanır.</p></div></article></div>
+</div></section>
+<section class="band tint sec" id="kart" data-name="Kartta" style="--acc:var(--violet);--acc-ink:var(--violet-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">08</div><div><div class="eyebrow">Gerçek kart</div><h2>Kartta yapılanlar</h2></div><div class="goal"><strong>Claude çalıştırdı</strong> (kartları açık bıraktın). Karta iki dosya kondu: <code>/lib/firmware/mp257_m33.elf</code> ve <code>/root/telem_udp</code>. Açılışta kendiliğinden başlamaz.</div><div class="pbar"><i></i></div></div>
+<div class="steps">
+<article class="step" data-id="t1"><div class="step-h"><label class="check" aria-label="Okudum: Kopyalama ve M33’ü başlatma"><input type="checkbox"></label><span class="sid">1</span><h3>Kopyalama ve M33’ü başlatma</h3></div><div class="body"><div class="why"><b>Ne oluyor?</b> Yeni M33 programı ve telem_udp karta kopyalanır, M33 yeniden başlatılır.</div><span class="where">PC’de (PowerShell)</span><pre><code><span class="c"># M33 programını kopyalar</span>
+scp C:\zephyrproject\mp257_m33_derleme\zephyr\zephyr.elf root@192.168.7.1:/lib/firmware/mp257_m33.elf
+<span class="c"># telem_udp’yi kopyalar</span>
+scp C:\Users\Asus\AppData\Local\Temp\telem_udp root@192.168.7.1:/root/telem_udp
+<span class="c"># çalıştırma izni verir</span>
+ssh root@192.168.7.1 &quot;chmod +x /root/telem_udp&quot;</code></pre><span class="where">Kartta (ssh içinde)</span><pre><code><span class="c"># M33’ün klasörüne girer</span>
+cd /sys/devices/platform/ahb@1/0.m33/remoteproc/remoteproc*
+<span class="c"># adı gösterir; m33 olmalı</span>
+cat name
+<span class="c"># durdurur</span>
+echo stop &gt; state
+<span class="c"># başlatır</span>
+echo start &gt; state</code></pre><div class="ok"><p><b>Beklenen sonuç:</b> <code>/dev/rpmsg0</code> oluşur.</p><p><b>Olmazsa:</b> <code>name</code> satırı <code>m33</code> değilse dur.</p></div></div></article>
+<article class="step" data-id="t2"><div class="step-h"><label class="check" aria-label="Okudum: Elle çalıştırma"><input type="checkbox"></label><span class="sid">2</span><h3>Elle çalıştırma</h3></div><div class="body"><div class="why"><b>Ne oluyor?</b> Program paketleri PC’ye yollamaya başlar. Ctrl+C ile düzgün kapanır.</div><span class="where">Kartta (ssh içinde)</span><pre><code><span class="c"># PC’nin adresi ve portu verilir</span>
+/root/telem_udp 192.168.7.66 5002</code></pre><div class="ok"><p><b>Beklenen sonuç:</b> Ctrl+C’den sonra tek satır özet ve <code>cikis 0</code>.</p><p><b>Olmazsa:</b> <code>Device or resource busy</code>: başka bir kopya açık. <code>No such file or directory</code>: M33 çalışmıyor.</p></div></div></article>
+<article class="step" data-id="t3"><div class="step-h"><label class="check" aria-label="Okudum: Uçtan uca ölçüm"><input type="checkbox"></label><span class="sid">3</span><h3>Uçtan uca ölçüm</h3></div><div class="body"><div class="why"><b>Ne oluyor?</b> Betik kartta telem_udp’yi başlatır, PC’de UDP’yi dinler, paketleri Host’un decode’u ile çözer.</div><span class="where">PC’de (PowerShell)</span><pre><code><span class="c"># 60 saniye ölçer, SIGTERM ile kapatır</span>
+python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257\tools\m7_olc.py 60 TERM
+<span class="c"># çökme denemesi: 10 saniye sonra kill -9</span>
+python C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257\tools\m7_olc.py 10 KILL</code></pre><span class="where">Gelen çıktı (60 s, TERM)</span><pre><code>PC 192.168.7.66:5002 dinliyor, 60 saniye, bitis TERM
+bilgi: PC&#x27;de paket araligi ort 9.99, en cok 32.00 ms
+GECTI  PC&#x27;ye gelen UDP paketi 6003 (beklenen 6000, pay %2)
+GECTI  CRC / Host decode: 6003 / 6003 gecerli
+GECTI  SEQ boslugu 0
+GECTI  gonderen adres: 192.168.7.1
+GECTI  M33 tampon kaybi 0, IPCC hatasi 0
+GECTI  M33&#x27;un tanimadigi komut 0
+GECTI  yanlis uzunluk 0
+GECTI  hat sira boslugu 0
+GECTI  hat hatasi 0
+GECTI  kuyruk kaybi 0
+GECTI  program duzgun kapandi (cikis 0)
+GECTI  M33&#x27;un verdigi 6003, PC&#x27;nin aldigi 6003
+GECTI  sure dolmasi 0 (beklenen 0)
+GECTI  durma: program kapandiktan 0.0 s sonra
+GECTI  telem_udp: alinan 6003 yollanan 6003 eski 0 uzunluk 0 udp_hatasi 0 yenileme_hatasi 0 cikis 0
+GECTI  programin islemci payi %0.56 (0.337 s / 60 s)
+GECTI  T2-T1: en az 475.7, ort 476.0, en cok 476.9 us (acilistan beri en az/en cok)
+GECTI  T3-T2: en az 3.0, ort 3.0, en cok 3.0 us (acilistan beri en az/en cok)
+GECTI  T4-T3: en az 8.2, ort 8.2, en cok 8.2 us (acilistan beri en az/en cok)
+GECTI  T5-T4: en az 7.6, ort 7.6, en cok 9.5 us (acilistan beri en az/en cok)
+SONUC: GECTI</code></pre><div class="ok"><p><b>Beklenen sonuç:</b> <code>SONUC: GECTI</code>.</p><p><b>Olmazsa:</b> PC’ye hiç paket gelmezse güvenlik duvarına ve PC’nin <code>192.168.7.x</code> adresine bakılır.</p></div></div></article>
+<article class="step" data-id="t4"><div class="step-h"><label class="check" aria-label="Okudum: Bütün kart koşuları"><input type="checkbox"></label><span class="sid">4</span><h3>Bütün kart koşuları</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Koşu</th><th>Sonuç</th></tr></thead><tbody><tr><td>60 s, SIGTERM</td><td><span class="b b-st">GEÇTİ</span> 6003 / 6003</td></tr><tr><td>30 s, SIGINT (Ctrl+C)</td><td><span class="b b-st">GEÇTİ</span> 3001 / 3001</td></tr><tr><td>15 s, SIGHUP (ssh kopması)</td><td><span class="b b-st">GEÇTİ</span> 1501 / 1501</td></tr><tr><td>10 s, kill -9</td><td><span class="b b-st">GEÇTİ</span> 1001 paket, M33 2,01 s sonra durdu</td></tr><tr><td>Ardından 10 s</td><td><span class="b b-st">GEÇTİ</span> 1000 / 1000, 200 eski paket atıldı</td></tr><tr><td>M33 çalışırken durduruldu</td><td><span class="b b-st">GEÇTİ</span> program 0,01 s’de çıkış 2</td></tr><tr><td>M33 yokken çalıştırma</td><td><span class="b b-st">GEÇTİ</span> temiz hata, çıkış 1</td></tr><tr><td>M33 yeniden başladıktan sonra</td><td><span class="b b-st">GEÇTİ</span> 300 paket</td></tr><tr><td>İkinci kopya</td><td><span class="b b-st">GEÇTİ</span> “busy”, ilki etkilenmedi</td></tr><tr><td>PC dinlemiyorken</td><td><span class="b b-st">GEÇTİ</span> program yaşadı, hatalar sayıldı</td></tr></tbody></table></div></div></article>
+</div>
+</div></section>
+<section class="band" id="rapor" style="--acc:var(--mint);--acc-ink:var(--mint-ink)"><div class="wrap reveal"><div class="phase-head"><div class="num">09</div><div><div class="eyebrow">Test raporu</div><h2>M7 sonuçları</h2></div></div>
+<div class="tbl"><table><thead><tr><th>Test</th><th>Amaç</th><th>Nasıl</th><th>Sonuç</th></tr></thead><tbody><tr><td><b>L1</b></td><td>M33 yenilenmezse durur</td><td>QEMU, sahte Linux</td><td><span class="b b-st">GEÇTİ</span> tam 3000 ms; yenilenince sürer; “dur” sayacı da durdurur</td></tr><tr><td><b>L1 kart</b></td><td>Aynısı kartta</td><td>kill -9</td><td><span class="b b-st">GEÇTİ</span> 2,01 s</td></tr><tr><td><b>L2</b></td><td>M33 derlemesi</td><td>west, -Wall -Wextra</td><td><span class="b b-st">GEÇTİ</span> 0 uyarı, bekleme yok; ST başlığında 1 uyarı</td></tr><tr><td><b>L3</b></td><td>C programı derlemesi</td><td>-Wall -Wextra -Wpedantic -Werror</td><td><span class="b b-st">GEÇTİ</span></td></tr><tr><td><b>L4</b></td><td>Paket aynen geçer, yanlış uzunluk geçmez</td><td>Kartta FIFO + yerel UDP</td><td><span class="b b-st">GEÇTİ</span> 50 / 50 aynı, 0 fazla, 6 yanlış uzunluk sayıldı</td></tr><tr><td><b>L4 hata</b></td><td>Hata yolları</td><td>7 yanlış kullanım</td><td><span class="b b-st">GEÇTİ</span> hepsi çıkış 1, anlaşılır mesaj</td></tr><tr><td><b>L5</b></td><td>Uçtan uca kayıp 0</td><td><b>Kart ve PC</b>, 60 s</td><td><span class="b b-st">GEÇTİ</span> 6003 / 6003, CRC hatası 0</td></tr><tr><td><b>L6</b></td><td>Düzgün kapanma</td><td>TERM, INT, HUP</td><td><span class="b b-st">GEÇTİ</span> M33 hemen durdu</td></tr><tr><td><b>L7</b></td><td>Çökme</td><td>kill -9</td><td><span class="b b-st">GEÇTİ</span> birikme 200 paket, sonra atıldı</td></tr><tr><td><b>L8</b></td><td>M33 yeniden başlarken</td><td>Kartta durdur / başlat</td><td><span class="b b-st">GEÇTİ</span> asılı kalmadı</td></tr><tr><td><b>L9</b></td><td>M6 ölçümü</td><td>m6_gonder.py, 60 s</td><td><span class="b b-st">GEÇTİ</span> 6003 / 6003</td></tr><tr><td><b>L10</b></td><td>İşlemci yükü</td><td>/proc, rusage</td><td><span class="b b-st">GEÇTİ</span> %0,56; 101,2 uyanma/s</td></tr></tbody></table></div>
+<p class="mu">T3−T2 en azı bir koşuda 2,5 µs göründü (açılıştan beri en az); ortalama 3,0 µs değişmedi. PC’de paketler arası en çok 32 ms görüldü: Windows’un zamanlaması ve USB; M9’da incelenecek.</p>
+<h3 style="margin-top:28px">M8’e kalan</h3>
+<div class="tbl"><table><thead><tr><th>Konu</th><th>Durum</th></tr></thead><tbody><tr><td>Host’a UDP girişi, ekranda canlı açı</td><td><span class="b b-ks">BAKILACAK</span></td></tr><tr><td>Uçtan uca gecikme ölçümü</td><td><span class="b b-ks">BAKILACAK</span> M9</td></tr><tr><td>Programın açılışta kendiliğinden başlaması</td><td>İstenmedi; yapılmadı</td></tr><tr><td>Sınanmayan</td><td>Uzun süreli (saatler) çalışma, Wi-Fi ya da Ethernet üzerinden yollama</td></tr></tbody></table></div>
+</div></section>
+<section class="band amber" id="dikkat"><div class="wrap reveal"><div class="eyebrow">Dikkat</div><h2>Bilinmesi gerekenler</h2><div class="grid c2">
+<div class="card"><h3>M7’nin ölçütü sağlandı</h3><p>Planda “PC’de paketler görünür, CRC hatası 0” yazıyordu.</p></div>
+<div class="card"><h3>Derleyici</h3><p>Program Android NDK ile derleniyor. ST’nin SDK’sı kurulursa aynı C dosyası onunla da derlenmeli; bu denenmedi.</p></div>
+<div class="card"><h3>PC adresi değişirse</h3><p>Programa yeni adres verilir. <code>m7_olc.py</code> adresi kendisi bulur.</p></div>
+<div class="card"><h3>Karttaki dosyalar</h3><p><code>/root/telem_udp</code> elle kopyalandı; imaj yeniden yazılırsa gider.</p></div>
+<div class="card"><h3>Eski M33 programı</h3><p>telem_udp, M7 M33 programıyla birlikte kullanılmalı; M6 programında 3 saniyelik koruma yok.</p></div>
+<div class="card"><h3>Sırada M8</h3><p>Host’a UDP girişi. Başlanmadı.</p></div>
+</div></div></section>
+<footer class="band dark" style="--acc:var(--lime)"><div class="wrap"><p>Kaynaklar: kart, QEMU ve PC çıktıları, C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\MP257 dosyaları, Zephyr 4.5.0. İşaretler yalnız bu tarayıcıda saklanır.</p></div></footer>
+<script id="veri" type="application/json">{}</script>
+<script id="sahneveri" type="application/json">{"sA": {"tel": [["m33", "dev"], ["dev", "poll"], ["tim", "poll"], ["poll", "soc"], ["soc", "usb"], ["usb", "win"], ["win", "host"]], "adim": [{"t": "Herkes uyuyor", "v": {"m33": "mesaj bekliyor", "dev": "kuyruk boş", "poll": "poll içinde uyuyor", "tim": "1 s sayıyor", "soc": "UDP hazır", "usb": "sessiz", "win": "dinliyor", "host": "—"}, "st": {"m33": "uyku", "poll": "uyku", "win": "uyku"}, "on": ["poll"], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[177, "if (poll(fds, FD_COUNT, -1) < 0)", 0]]}], "x": "Program üç şeyi tek yerde bekler: aygıt, zamanlayıcı, sinyal. −1, “süre sınırı yok” demektir.", "n": "Ölçüldü: saniyede 101 kez uyanıyor (100 paket + 1 zamanlayıcı). İşlemci payı %0,56."}, {"t": "M33 paketi verir", "v": {"m33": "T5", "dev": "1 paket"}, "st": {"m33": "calis"}, "mv": [["m33", "dev", "SEQ 101", "#A8D84A"]], "x": "M6’da anlatılan yol: tampon, vring, IPCC. Paket /dev/rpmsg0 kuyruğuna düşer."}, {"t": "Program uyanır", "v": {"poll": "POLLIN"}, "st": {"poll": "calis", "m33": "uyku"}, "mv": [["dev", "poll", "veri var", "#22E4FF"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[187, "if ((fds[FD_DEV].revents & POLLIN) && !forward(fds[FD_DEV].fd, sock, n))", 0], [188, "{", 0], [189, "    return 2;", 0], [190, "}", 0]]}], "x": "Çekirdek poll’u bitirir; program hangi olayın geldiğine bakar."}, {"t": "Tek read, tek paket", "v": {"poll": "33 bayt okudu", "dev": "kuyruk boş"}, "mv": [["dev", "poll", "33 bayt", "#22E4FF"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[141, "ssize_t len = read(dev, buf, sizeof(buf));   // her okuma tam bir RPMsg mesajı", 0]]}], "x": "Her read tam bir RPMsg mesajı verir. Paketin başını aramak gerekmez.", "n": "Tampon 512 bayt: küçük olsaydı çekirdek fazlasını sessizce atardı."}, {"t": "Uzunluk denetimi", "v": {"poll": "33 = PKT_SIZE"}, "on": ["poll"], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[148, "if (len != PKT_SIZE)", 0], [149, "{", 0], [150, "    if (len == 0)", 0], [151, "    {", 0], [152, "        return 0;", 0], [153, "    }", 0], [154, "", 0], [155, "    ++n->bad_len;", 0], [156, "    continue;", 0], [157, "}", 0]]}], "x": "33 bayt değilse yollanmaz, bad_len sayılır. CRC’ye burada bakılmaz.", "n": "CRC’yi Host denetliyor; aynı işi iki kez yapmak gerekmez."}, {"t": "UDP’ye verilir", "v": {"soc": "yolladı", "poll": "sayaç + 1"}, "st": {"soc": "ok"}, "mv": [["poll", "soc", "33 bayt", "#22E4FF"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[161, "if (send(sock, buf, PKT_SIZE, 0) == PKT_SIZE)", 0], [162, "{", 0], [163, "    ++n->sent;", 0], [164, "}", 0], [165, "else", 0], [166, "{", 0], [167, "    ++n->send_errors;                        // canlı veri: tekrar denenmez, sayılır", 0], [168, "}", 0]]}], "x": "Paket değiştirilmeden yollanır. Hata olursa tekrar denenmez, sayılır.", "n": "Canlı veride eski paketi tekrar yollamak, yenisini geciktirmekten kötüdür."}, {"t": "USB üzerinden PC’ye", "v": {"usb": "192.168.7.1 → 192.168.7.66"}, "st": {"usb": "calis"}, "mv": [["soc", "usb", "UDP 5002", "#22E4FF"], ["usb", "win", "UDP 5002", "#FF8BE0"]], "x": "Kartın USB ağ bağlantısı kullanılır. Ayrı bir kablo gerekmez."}, {"t": "PC’de Host çözer", "v": {"win": "aldı", "host": "CRC doğru, SEQ 101", "usb": "sessiz"}, "st": {"win": "ok", "host": "ok", "usb": ""}, "mv": [["win", "host", "decode", "#FF8BE0"]], "x": "Host’un decode fonksiyonu hiç değişmeden paketi çözdü.", "n": "Kartta 60 saniyede 6003 / 6003 paket."}, {"t": "Program yine uyur", "v": {"poll": "poll içinde uyuyor", "soc": "UDP hazır", "win": "dinliyor"}, "st": {"poll": "uyku", "soc": "", "win": "uyku"}, "on": ["poll"], "x": "Bekleyen paket kalmadıysa read EAGAIN döndürür ve program poll’a geri gider."}]}, "sB": {"tel": [["tim", "prg"], ["prg", "cmd"], ["cmd", "on"], ["on", "kz"], ["snd", "q"], ["q", "prg"], ["on", "snd"]], "adim": [{"t": "Program açılır", "v": {"prg": "açıldı", "tim": "kuruldu", "cmd": "'1'", "on": "link_on = 1", "kz": "3,0 s", "snd": "gönderiyor", "q": "okunuyor"}, "st": {"prg": "calis", "snd": "calis", "kz": "ok"}, "mv": [["prg", "cmd", "'1'", "#22E4FF"], ["cmd", "on", "'1'", "#FFC21A"], ["on", "kz", "başlat", "#A8D84A"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[258, "discard_stale(dev, &n);", 0], [259, "", 0], [260, "if (write(dev, CMD_START, 1) != 1)", 0], [261, "{", 0], [262, "    return fail(path);", 0], [263, "}", 0]]}, {"f": "MP257/zephyr/src/rpmsg_link.c", "l": [[50, "    if (command == '1')", 0], [51, "    {", 0], [52, "        // Okuyan program çökerse '1' kesilir, süre dolunca gönderme durur", 0], [53, "        k_timer_start(&lease_timer, K_MSEC(LINK_LEASE_MS), K_NO_WAIT);", 0], [54, "        link_on = 1;                                 // Linux'un adresi bu mesajla öğrenildi", 0], [55, "    }", 0]]}], "x": "Önce eskiden kalan paketler atılır, sonra 1 yollanır. M33 hem gönderir hem 3 saniyelik geri sayımı başlatır.", "n": "k_timer geri sayımı donanım saatinden yürür; thread beklemez."}, {"t": "Her saniye yenilenir", "v": {"cmd": "'1' (her 1 s)", "kz": "yine 3,0 s"}, "mv": [["tim", "prg", "1 s", "#22E4FF"], ["prg", "cmd", "'1'", "#22E4FF"], ["on", "kz", "baştan", "#A8D84A"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[197, "if (fds[FD_TIMER].revents & POLLIN)", 0], [198, "{", 0], [199, "    uint64_t ticks;", 0], [200, "", 0], [201, "    if (read(fds[FD_TIMER].fd, &ticks, sizeof(ticks)) == (ssize_t)sizeof(ticks)", 0], [202, "        && write(fds[FD_DEV].fd, CMD_START, 1) != 1)", 0], [203, "    {", 0], [204, "        ++n->renew_errors;", 0], [205, "    }", 0], [206, "}", 0]]}], "x": "timerfd saniyede bir olay üretir; program 1’i yeniler. Geri sayım hep baştan başlar.", "n": "3 saniye, en az iki yenilemenin kaçmasına dayanır."}, {"t": "Program çöker", "v": {"prg": "kill -9", "tim": "yok", "cmd": "—", "q": "birikiyor"}, "st": {"prg": "kotu", "q": "kotu"}, "on": ["prg"], "x": "kill -9 programa hiçbir şey yaptırmadan öldürür; 0 yollanamaz.", "n": "İşte bu yüzden “düzgün kapan” tek başına yetmez."}, {"t": "Geri sayım işler", "v": {"kz": "1,0 s kaldı", "q": "yaklaşık 200 paket"}, "st": {"kz": "kotu"}, "mv": [["snd", "q", "paket", "#FF8A95"]], "x": "M33 hâlâ gönderiyor ama yenileme gelmiyor."}, {"t": "Süre doldu", "v": {"kz": "0", "on": "link_on = 0", "snd": "durdu", "q": "artmıyor"}, "st": {"kz": "", "snd": "uyku", "q": ""}, "mv": [["kz", "on", "kapat", "#A8D84A"]], "c": [{"f": "MP257/zephyr/src/app_isr.c", "l": [[80, "void lease_isr(struct k_timer *timer)", 0], [81, "{", 0], [82, "    (void)timer;", 0], [83, "    link_on = 0;", 0], [84, "    ++link_expired;", 0], [85, "}", 0]]}], "x": "k_timer kesmesi link_on’u 0 yapar, link_expired bir artar.", "n": "Kartta ölçüldü: program öldükten 2,01 s sonra durdu."}, {"t": "Yeni program açılır", "v": {"prg": "açıldı", "q": "200 eski paket atıldı", "cmd": "'1'", "on": "link_on = 1", "kz": "3,0 s", "snd": "gönderiyor", "tim": "kuruldu"}, "st": {"prg": "ok", "q": "ok", "kz": "ok", "snd": "calis"}, "mv": [["q", "prg", "200 eski", "#22E4FF"], ["prg", "cmd", "'1'", "#22E4FF"], ["cmd", "on", "'1'", "#FFC21A"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[124, "/* Açılışta çekirdekte birikmiş eski paketleri atar. */", 0], [125, "static void discard_stale(int dev, Counters *n)", 0], [126, "{", 0], [127, "    uint8_t buf[BUF_SIZE];", 0], [128, "", 0], [129, "    while (read(dev, buf, sizeof(buf)) > 0)", 0], [130, "    {", 0], [131, "        ++n->stale;", 0], [132, "    }", 0], [133, "}", 0]]}], "x": "Çöküşten kalan 200 paket okunup atıldı; yenileri baştan numaralarıyla akmaya başladı.", "g": "telem_udp: alinan 1000 yollanan 1000 eski 200 uzunluk 0 udp_hatasi 0 yenileme_hatasi 0 cikis 0"}]}, "sC": {"tel": [["drl", "dos"], ["dos", "krt"], ["krt", "son"]], "adim": [{"t": "HATA · Program açılmadı", "v": {"drl": "android21 hedefi", "dos": "TLS hizası 8", "krt": "—", "son": "—"}, "mv": [["drl", "dos", "derle", "#FF8A95"]], "x": "Kart için derleyici PC’de yoktu, karttaki Linux’ta da gcc yok. Android NDK’nin clang’ı zaten kuruluydu; indirme yapmadan onu kullandık."}, {"t": "HATA · Kartta durdu", "v": {"krt": "Aborted", "son": "çıkış 134"}, "st": {"krt": "kotu", "son": "kotu"}, "mv": [["dos", "krt", "çalıştır", "#FF8A95"]], "g": "error: \"./telem_udp\": executable's TLS segment is underaligned: alignment is 8 (skew 0), needs to be at least 64 for ARM64 Bionic", "x": "Programın içine gömülen C kütüphanesi, thread verisi bölümünün 64 bayta hizalı olmasını istiyor; eski hedef 8 bayt hizalıyor.", "n": "TLS: her thread’in kendi değişkenlerinin durduğu bölüm."}, {"t": "ŞİMDİ · Yeni hedef", "v": {"drl": "android29 hedefi", "dos": "TLS hizası 64"}, "st": {"drl": "ok", "dos": "ok"}, "mv": [["drl", "dos", "derle", "#A8D84A"]], "x": "Hedef android29 yapıldı. Kod aynı, yalnız derleme hedefi değişti."}, {"t": "ŞİMDİ · Kartta çalışıyor", "v": {"krt": "çalışıyor", "son": "6003 / 6003"}, "st": {"krt": "ok", "son": "ok"}, "mv": [["dos", "krt", "çalıştır", "#A8D84A"]], "x": "439.624 baytlık tek dosya; kartta başka kütüphane gerektirmiyor.", "n": "derle.ps1 içinde neden android29 olduğu yazılı."}]}, "sD": {"tel": [["kul", "sig"], ["sig", "prg"], ["prg", "m33"], ["prg", "cik"]], "adim": [{"t": "Çalışıyor", "v": {"kul": "Ctrl+C ya da kill", "sig": "bekliyor", "prg": "yolluyor", "m33": "gönderiyor", "cik": "—"}, "st": {"prg": "calis", "m33": "calis"}, "on": ["prg"], "x": "Program paket yolluyor."}, {"t": "Sinyal dosya olayına döner", "v": {"sig": "SIGTERM"}, "mv": [["kul", "sig", "SIGTERM", "#FF8BE0"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[88, "/* Ctrl+C ve kill'i dosya olayına çevirir; hata -1. */", 0], [89, "static int open_signals(void)", 0], [90, "{", 0], [91, "    sigset_t set;", 0], [92, "", 0], [93, "    sigemptyset(&set);", 0], [94, "    sigaddset(&set, SIGINT);", 0], [95, "    sigaddset(&set, SIGTERM);", 0], [96, "    sigaddset(&set, SIGHUP);                         // ssh koparsa da düzgün kapan", 0], [97, "", 0], [98, "    if (sigprocmask(SIG_BLOCK, &set, NULL) != 0)", 0], [99, "    {", 0], [100, "        return -1;", 0], [101, "    }", 0], [102, "", 0], [103, "    return signalfd(-1, &set, SFD_CLOEXEC | SFD_NONBLOCK);", 0], [104, "}", 0]]}], "x": "Sinyal, programı yarıda kesmez; signalfd sayesinde poll’un beklediği olaylardan biri olur.", "n": "Sinyal işleyicisi içinde iş yapmak tehlikelidir. Böyle olunca kapanış da sıradan bir olaydır."}, {"t": "Döngü düzgün biter", "v": {"prg": "döngüden çıktı"}, "st": {"prg": "ok"}, "mv": [["sig", "prg", "olay", "#22E4FF"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[208, "if (fds[FD_SIGNAL].revents & POLLIN)", 0], [209, "{", 0], [210, "    return 0;", 0], [211, "}", 0]]}], "x": "O ana kadar okunan paketler yollanmıştır."}, {"t": "M33’e “dur”", "v": {"m33": "durdu"}, "st": {"m33": "uyku"}, "mv": [["prg", "m33", "'0'", "#A8D84A"]], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[273, "// Okuyan kalmıyor: M33 dursun. Aygıt kapandıysa bu yazma zaten başarısız olur", 0], [274, "if (write(dev, CMD_STOP, 1) != 1 && result == 0)", 0], [275, "{", 0], [276, "    ++n.renew_errors;", 0], [277, "}", 0]]}], "x": "Son iş olarak 0 yollanır. Kartta 0,0 s içinde durdu."}, {"t": "Hesap yazılır", "v": {"cik": "çıkış 0", "prg": "bitti"}, "st": {"cik": "ok"}, "mv": [["prg", "cik", "özet", "#22E4FF"]], "x": "Alınan, yollanan, eski, hatalı paketler tek satırda.", "g": "telem_udp: alinan 6003 yollanan 6003 eski 0 uzunluk 0 udp_hatasi 0 yenileme_hatasi 0 cikis 0"}, {"t": "M33 durdurulursa", "v": {"prg": "POLLHUP / POLLERR", "cik": "çıkış 2"}, "st": {"prg": "ok"}, "on": ["prg", "cik"], "c": [{"f": "MP257/linux/telem_udp.c", "l": [[192, "if (fds[FD_DEV].revents & (POLLERR | POLLHUP | POLLNVAL))", 0], [193, "{", 0], [194, "    return 2;                                // M33 durdu ya da yeniden başlıyor", 0], [195, "}", 0]]}], "x": "Linux M33’ü durdurursa aygıt kaybolur. Program 0,01 s içinde çıkış 2 ile kapandı; asılı kalmadı.", "n": "M33 yeniden başlayınca program yeniden çalıştırılır."}]}}</script>
+<script>
+(function(){
+  document.documentElement.classList.add('js');
+  var az=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var V=JSON.parse(document.getElementById('veri').textContent);
+  function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+  function kutu(c){var b=el('div','cbox');b.appendChild(el('div','cf',c.f));var p=el('pre'),k=el('code');c.l.forEach(function(r){var s=el('span','cl'+(r[2]?' hl':''));s.appendChild(el('i','',r[0]||''));s.appendChild(document.createTextNode(r[1]||' '));k.appendChild(s);});p.appendChild(k);b.appendChild(p);return b;}
+  document.querySelectorAll('.player').forEach(function(pl){
+    var S=V[pl.id],i=-1,zam=null,gorev=null,q=function(s){return pl.querySelector(s);};
+    var stage=q('.stage'),pkt=q('.pkt'),oy=q('[data-a=oynat]'),tl=q('.tline i');
+    function nd(n){return stage.querySelector('[data-n="'+n+'"]');}
+    function ciz(k,hareket){
+      i=k;var d={},led=0,s=S[k];
+      for(var j=0;j<=k;j++){Object.keys(S[j].s||{}).forEach(function(n){d[n]=S[j].s[n];});if(S[j].led!=null)led=S[j].led;}
+      stage.querySelectorAll('.node').forEach(function(x){var n=x.getAttribute('data-n');x.querySelector('em').textContent=d[n]||'—';x.classList.toggle('on',n===s.a||n===s.b);var l=x.querySelector('.lamp');if(l)l.classList.toggle('on',!!led);});
+      q('.pnum').textContent='Adım '+(k+1)+' / '+S.length;q('.ptitle').textContent=s.t;pl.classList.toggle('bad',s.t.indexOf('HATA')===0);pl.classList.toggle('good',s.t.indexOf('ŞİMDİ')===0);q('.ptext').textContent=s.x;
+      var pc=q('.pcode');pc.textContent='';s.c.forEach(function(c){pc.appendChild(kutu(c));});
+      if(tl){tl.style.transition=(!az&&hareket&&s.w===100)?'width 4s linear':'none';tl.style.width=(s.w||0)+'%';}
+      if(gorev){gorev.cancel();gorev=null;}
+      if(!az&&hareket&&pkt.animate&&s.a!==s.b){
+        var r=stage.getBoundingClientRect(),m=function(n){var b=nd(n).getBoundingClientRect();return[b.left-r.left+b.width/2-8,b.top-r.top+b.height/2-8];},u=m(s.a),v=m(s.b);
+        gorev=pkt.animate([{transform:'translate('+u[0]+'px,'+u[1]+'px)',opacity:1},{transform:'translate('+v[0]+'px,'+v[1]+'px)',opacity:1}],{duration:1400,easing:'ease-in-out',iterations:Infinity});
+      }
+      q('[data-a=geri]').disabled=k===0;q('[data-a=ileri]').disabled=k===S.length-1;
+    }
+    function dur(){if(zam){clearInterval(zam);zam=null;}oy.textContent='Oynat';}
+    function oyna(){if(i===S.length-1)ciz(0,true);else ciz(i,true);oy.textContent='Duraklat';zam=setInterval(function(){if(i<S.length-1)ciz(i+1,true);if(i===S.length-1)dur();},7000);}
+    pl.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var a=b.getAttribute('data-a');
+      if(a==='oynat'){zam?dur():oyna();}else{dur();if(a==='ilk')ciz(0,true);if(a==='geri'&&i>0)ciz(i-1,true);if(a==='ileri'&&i<S.length-1)ciz(i+1,true);}});
+    ciz(0,false);
+    if(!az&&'IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){io.disconnect();if(!zam&&i===0)oyna();}});},{threshold:.35});io.observe(stage);}
+  });
+  var KEY='mp257-m7-v1',state={};try{state=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){state={};}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  var secs=[].slice.call(document.querySelectorAll('section.sec')),all=[].slice.call(document.querySelectorAll('.step')),nav=document.getElementById('navWrap'),box=nav.querySelector('.overall'),segs=document.getElementById('segs');
+  var renk={resim:'#A8D84A',yol:'#22E4FF',kod:'#9B88FF',kira:'#FFC21A',derle:'#FF3DCB',hata:'#A8D84A',anim:'#22E4FF',kart:'#9B88FF'};
+  secs.forEach(function(p){var a=el('a','pill');a.href='#'+p.id;a.style.setProperty('--c',renk[p.id]);a.appendChild(el('i'));a.appendChild(document.createTextNode(p.getAttribute('data-name')+' '));p._c=el('small');a.appendChild(p._c);nav.insertBefore(a,box);var s=el('span');s.style.setProperty('--c',renk[p.id]);p._s=el('i');s.appendChild(p._s);segs.appendChild(s);});
+  [['rapor','Rapor','#4FD1A0'],['dikkat','Dikkat','#FFC21A']].forEach(function(x){var a=el('a','pill');a.href='#'+x[0];a.style.setProperty('--c',x[2]);a.appendChild(el('i'));a.appendChild(document.createTextNode(x[1]));nav.insertBefore(a,box);});
+  function yenile(){var t=0;secs.forEach(function(p){var st=p.querySelectorAll('.step'),d=0;st.forEach(function(s){var c=s.querySelector('input').checked;s.classList.toggle('done',c);if(c)d++;});t+=d;var y=Math.round(d*100/st.length);p.querySelector('.pbar i').style.width=y+'%';p._s.style.width=y+'%';p._c.textContent=d+'/'+st.length;});document.getElementById('overall').textContent=t+'/'+all.length;}
+  all.forEach(function(s){var id=s.getAttribute('data-id'),cb=s.querySelector('input');cb.checked=!!state[id];cb.addEventListener('change',function(){state[id]=cb.checked;save();yenile();});});
+  yenile();
+  var rv=[].slice.call(document.querySelectorAll('.reveal'));function hep(){rv.forEach(function(x){x.classList.add('in');});}
+  if('IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -4% 0px'});rv.forEach(function(x){io.observe(x);});}else hep();
+  window.addEventListener('beforeprint',function(){hep();document.querySelectorAll('.hepsi').forEach(function(d){d.open=true;});});
+})();
+</script>
+<script>
+(function(){
+  var az=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var V=JSON.parse(document.getElementById('sahneveri').textContent);
+  var NS='http://www.w3.org/2000/svg';
+  function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+  function kutu(c){var b=el('div','cbox');b.appendChild(el('div','cf',c.f));var p=el('pre'),k=el('code');c.l.forEach(function(r){var s=el('span','cl'+(r[2]?' hl':''));s.appendChild(el('i','',r[0]||''));s.appendChild(document.createTextNode(r[1]||' '));k.appendChild(s);});p.appendChild(k);b.appendChild(p);return b;}
+  document.querySelectorAll('.sahne').forEach(function(sh){
+    var D=V[sh.id],S=D.adim,i=0,hiz=1,oynuyor=false,bas=0,kalan=0,raf=0,jet=[],anim=[];
+    var alan=sh.querySelector('.alan'),svg=sh.querySelector('.teller'),q=function(s){return sh.querySelector(s);};
+    var oy=q('[data-a=oynat]'),cub=q('.sure i'),ray=q('.ray'),tel={};
+    function nd(n){return alan.querySelector('[data-n="'+n+'"]');}
+    D.tel.forEach(function(w){var p=document.createElementNS(NS,'path');svg.appendChild(p);tel[w[0]+'>'+w[1]]=p;});
+    S.forEach(function(s,k){var b=el('button','',k+1);b.type='button';b.title=s.t;b.setAttribute('aria-label','Adım '+(k+1)+': '+s.t);b.addEventListener('click',function(){dur();git(k,true);});ray.appendChild(b);});
+    function yol(a,b){
+      var R=alan.getBoundingClientRect(),A=nd(a).getBoundingClientRect(),B=nd(b).getBoundingClientRect();
+      function m(r){return{x:r.left-R.left+r.width/2,y:r.top-R.top+r.height/2,w:r.width/2,h:r.height/2};}
+      var p=m(A),r=m(B),dx=r.x-p.x,dy=r.y-p.y;
+      if(Math.abs(dx)>p.w+r.w){var sx=dx>0?1:-1,x1=p.x+sx*p.w,x2=r.x-sx*r.w,o=(x2-x1)/2;return 'M'+x1+' '+p.y+' C'+(x1+o)+' '+p.y+' '+(x2-o)+' '+r.y+' '+x2+' '+r.y;}
+      var sy=dy>0?1:-1,y1=p.y+sy*p.h,y2=r.y-sy*r.h;
+      if(Math.abs(y2-y1)<40)return 'M'+p.x+' '+y1+' L'+r.x+' '+y2;
+      var k=p.x+p.w-14;return 'M'+k+' '+y1+' L'+k+' '+y2;
+    }
+    function teller(){D.tel.forEach(function(w){tel[w[0]+'>'+w[1]].setAttribute('d',yol(w[0],w[1]));});}
+    function temizle(){anim.forEach(function(a){a.cancel();});anim=[];jet.forEach(function(j){j.remove();});jet=[];}
+    function ciz(k,hareket){
+      i=k;var s=S[k],v={},st={},yv={};
+      for(var j=0;j<=k;j++){var u=S[j];Object.keys(u.v||{}).forEach(function(n){v[n]=u.v[n];});Object.keys(u.st||{}).forEach(function(n){st[n]=u.st[n];});Object.keys(u.yv||{}).forEach(function(n){yv[n]=u.yv[n];});}
+      var ak={};(s.mv||[]).forEach(function(m){ak[m[0]]=1;ak[m[1]]=1;});(s.on||[]).forEach(function(n){ak[n]=1;});
+      alan.querySelectorAll('.nd').forEach(function(x){
+        var n=x.getAttribute('data-n'),yeni=(s.v&&s.v[n]!=null)||(s.st&&s.st[n]);
+        x.className='nd'+(ak[n]?' on':'')+(st[n]?' '+st[n]:'');
+        x.querySelector('em').textContent=v[n]||'';
+        if(yeni&&hareket&&!az){void x.offsetWidth;x.classList.add('yeni');}
+        var y=x.querySelectorAll('.yuva i');if(y.length)y.forEach(function(c,z){c.className=(yv[n]||'--------').charAt(z)==='b'?'bos':(yv[n]||'--------').charAt(z)==='d'?'dolu':'';});
+      });
+      sh.classList.toggle('bad',s.t.indexOf('HATA')===0);sh.classList.toggle('good',s.t.indexOf('ŞİMDİ')===0);
+      q('.no').textContent='Adım '+(k+1)+' / '+S.length;q('.anlat h3').textContent=s.t;q('.ne').textContent=s.x;
+      q('.ned').style.display=s.n?'':'none';q('.nedm').textContent=s.n||'';q('.gunluk').textContent=s.g||'';
+      var sag=q('.kod');sag.textContent='';(s.c||[]).forEach(function(c){sag.appendChild(kutu(c));});
+      [].slice.call(ray.children).forEach(function(b,z){b.className=z===k?'su':z<k?'gec':'';if(z===k)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+      q('[data-a=geri]').disabled=k===0;q('[data-a=ileri]').disabled=k===S.length-1;
+      temizle();Object.keys(tel).forEach(function(t){tel[t].setAttribute('class','');});
+      teller();
+      (s.mv||[]).forEach(function(m,z){
+        var d=yol(m[0],m[1]),p=tel[m[0]+'>'+m[1]]||tel[m[1]+'>'+m[0]],renk=m[3]||'#FFC21A';
+        if(p){p.setAttribute('class','ak');p.style.setProperty('--tc',renk);if(tel[m[1]+'>'+m[0]]===p)p.setAttribute('d',d);}
+        if(az||!alan.animate)return;
+        var y=document.createElementNS(NS,'path');y.setAttribute('d',d);var L=y.getTotalLength(),t=el('div','jeton',m[2]);t.style.setProperty('--tc',renk);alan.appendChild(t);jet.push(t);
+        var w=t.offsetWidth/2,h=t.offsetHeight/2,W=alan.clientWidth,kf=[],N=24,n=(s.mv||[]).length,dl=1500;
+        for(var a=0;a<=N;a++){var P=y.getPointAtLength(L*a/N),X=Math.max(2,Math.min(W-2*w-2,P.x-w));kf.push({transform:'translate('+X+'px,'+(P.y-h)+'px)',opacity:a===0||a===N?0:1,offset:(z+a/N)/n*.92});}
+        if(z>0)kf.unshift({transform:kf[0].transform,opacity:0,offset:0});
+        kf.push({transform:kf[kf.length-1].transform,opacity:0,offset:1});
+        anim.push(t.animate(kf,{duration:(n*dl+500)/hiz,iterations:Infinity,easing:'linear'}));
+      });
+    }
+    function uzun(k){var s=S[k];return (2600+36*((s.x||'').length+(s.n||'').length))/hiz;}
+    function tik(z){if(!oynuyor)return;var g=(z-bas)/kalan;cub.style.width=Math.min(100,g*100)+'%';if(g>=1){if(i<S.length-1){git(i+1,true);bas=z;kalan=uzun(i);}else{dur();return;}}raf=requestAnimationFrame(tik);}
+    function git(k,h){ciz(k,h);}
+    function dur(){oynuyor=false;cancelAnimationFrame(raf);oy.textContent='Oynat';cub.style.width='0';}
+    function oyna(){if(i===S.length-1)git(0,true);else git(i,true);oynuyor=true;oy.textContent='Duraklat';bas=performance.now();kalan=uzun(i);raf=requestAnimationFrame(tik);}
+    sh.querySelector('.ctrl').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var a=b.getAttribute('data-a');
+      if(a==='oynat'){oynuyor?dur():oyna();}
+      else if(a==='hiz'){hiz=hiz===1?2:hiz===2?0.5:1;b.textContent='Hız '+String(hiz).replace('.',',')+'×';var p=oynuyor;ciz(i,false);if(p){bas=performance.now();kalan=uzun(i);}}
+      else{dur();if(a==='ilk')git(0,true);if(a==='geri'&&i>0)git(i-1,true);if(a==='ileri'&&i<S.length-1)git(i+1,true);}});
+    sh.addEventListener('keydown',function(e){if(e.target!==sh)return;if(e.key==='ArrowRight'&&i<S.length-1){dur();git(i+1,true);e.preventDefault();}if(e.key==='ArrowLeft'&&i>0){dur();git(i-1,true);e.preventDefault();}if(e.key===' '){oynuyor?dur():oyna();e.preventDefault();}});
+    ciz(0,false);
+    window.addEventListener('resize',function(){ciz(i,false);});
+    if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){ciz(i,false);});
+    if(!az&&'IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){io.disconnect();if(!oynuyor&&i===0)oyna();}});},{threshold:.4});io.observe(alan);}
+  });
+
+  // Bellek haritası
+  document.querySelectorAll('.harita').forEach(function(h){var bl=h.parentNode.querySelector('.hbilgi');
+    h.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){h.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',x===b);});bl.innerHTML=b.querySelector('template').innerHTML;});});
+    h.querySelector('button').click();});
+
+  // Deneme 1: yoklama mi, kesme mi
+  (function(){var s=document.getElementById('sim1');if(!s)return;var r=s.querySelector('input'),o=s.querySelector('output'),a=s.querySelector('.ya'),b=s.querySelector('.yb'),za=0;
+    function ciz(){var t=+r.value,x=function(v){return 1+v/100*97;};o.textContent=t+' ms';a.textContent='';b.textContent='';
+      function u(y,v,c){var e=el('u',c);e.style.left=x(v)+'%';y.appendChild(e);}
+      u(a,t,'h');u(b,t,'h');for(var k=0;k<t;k++)u(a,k,'');u(a,t,'y');u(b,0,'');u(b,t,'y');
+      s.querySelector('.ka').textContent='yaklaşık '+(t+1)+' kez bakar';s.querySelector('.kb').textContent=t===0?'1 kez bakar, hiç uyumaz':'1 kez bakar, 1 kez uyanır';
+      s.querySelector('.sa').textContent=t===0?'Linux hazırdı: ilk bakışta çıkar.':t+' kez boşuna bakar. Linux hiç gelmezse sonsuza kadar saniyede yaklaşık 1000 kez uyanmaya devam eder.';
+      s.querySelector('.sb').textContent=t===0?'Linux hazırdı: ilk bakışta çıkar, uyumaz.':t+' ms boyunca işlemciyi hiç kullanmaz. Linux hiç gelmezse uyur, telemetri etkilenmez (QEMU’da sınandı).';
+      [a,b].forEach(function(y){y.appendChild(el('s'));});}
+    function oynat(){cancelAnimationFrame(za);var b0=performance.now(),t=+r.value;(function f(z){var g=Math.min(1,(z-b0)/3000);[a,b].forEach(function(y){y.querySelector('s').style.left=(1+g*97)+'%';});if(g<1)za=requestAnimationFrame(f);})(b0);}
+    r.addEventListener('input',ciz);s.querySelector('button').addEventListener('click',function(){if(az){ciz();return;}oynat();});ciz();})();
+
+  // Deneme 2: kacan haber
+  (function(){var s=document.getElementById('sim2');if(!s)return;var m=s.querySelector('.rm'),l=s.querySelector('.rl'),y=s.querySelector('.yz');
+    function ciz(){var a=+m.value,b=+l.value,x=function(v){return 2+v/20*84;};s.querySelector('.om').textContent=a+' ms';s.querySelector('.ol').textContent=b+' ms';
+      y.textContent='';var e=el('u','y');e.style.left=x(a)+'%';y.appendChild(e);e=el('u','h');e.style.left=x(b)+'%';y.appendChild(e);
+      var kac=b<a,A=s.querySelector('.ra'),B=s.querySelector('.rb');
+      A.className='ra '+(kac?'kotu':'iyi');B.className='rb iyi';
+      A.querySelector('b').textContent=kac?'Asılı kalır':b+'. ms’de açılır';
+      A.querySelector('p').textContent=kac?'Haber, sürücü bayrakları silmeden önce geldi ve kayboldu. Thread bir daha gelmeyecek haberi sonsuza kadar bekler.':'Haber sürücü hazırken geldi, semafor verildi, thread uyandı.';
+      B.querySelector('b').textContent=(kac?a:b)+'. ms’de açılır';
+      B.querySelector('p').textContent=kac?'Haber kaybolsa da Linux’un durumu tabloda yazılı. Uyumadan önce okur, DRIVER_OK görür, hiç uyumaz.':'İlk bakışta durum 0, uyur. Haber gelince uyanır, tekrar bakar, DRIVER_OK görür.';}
+    m.addEventListener('input',ciz);l.addEventListener('input',ciz);ciz();})();
+
+  // Deneme 3: dolu kanal
+  (function(){var s=document.getElementById('sim3');if(!s)return;var bt=s.querySelectorAll('.sec button');
+    function ciz(d){bt.forEach(function(b){b.setAttribute('aria-pressed',b.getAttribute('data-d')===d);});
+      var A=s.querySelector('.ra'),B=s.querySelector('.rb'),x=d==='dolu';
+      A.className='ra '+(x?'kotu':'iyi');B.className='rb iyi';
+      A.querySelector('b').textContent=x?'while (dolu) { ; }':'Haber gönderilir';A.querySelector('p').textContent=x?'M33 burada döner, ta ki Linux bayrağı silene kadar. Linux durursa hiç çıkamaz.':'Kanal boş, bayrak kurulur, Linux kesme alır.';
+      B.querySelector('b').textContent=x?'ipcc_busy bir artar, hemen döner':'Haber gönderilir';B.querySelector('p').textContent=x?'Linux’un önünde zaten bir haber var; uyandığında vring’de bekleyen her şeyi alır. En kötü durumda yeni mesaj bir sonraki haberle görülür.':'Kanal boş, bayrak kurulur, Linux kesme alır.';}
+    bt.forEach(function(b){b.addEventListener('click',function(){ciz(b.getAttribute('data-d'));});});ciz('bos');})();
+})();
+
+(function(){var k=document.getElementById('simK');if(!k)return;var r=k.querySelector('input'),al=k.querySelector('.kalp'),bt=k.querySelectorAll('.sec button'),mod='kill';
+function ciz(){var t=+r.value/10,X=function(v){return 2+v/14*96;};k.querySelector('output').textContent=String(t.toFixed(1)).replace('.',',')+' s';al.textContent='';
+  bt.forEach(function(b){b.setAttribute('aria-pressed',b.getAttribute('data-m')===mod);});
+  var son=Math.floor(t+1e-9),bit=mod==='kill'?son+3:t;
+  function e(tag,c,l,w){var x=document.createElement(tag);if(c)x.className=c;x.style.left=X(l)+'%';if(w!=null)x.style.width=(w/14*96)+'%';al.appendChild(x);}
+  e('b','',0,bit);for(var i=0;i<=son;i++)e('u','',i);e('s','',t);e('s','son',bit);
+  var g=bit-t,p=Math.round(g*100);var R=k.querySelector('.rs');R.className='rs '+(p>0?'kotu':'iyi');
+  R.querySelector('b').textContent=mod==='kill'?'M33, çöktükten '+String(g.toFixed(1)).replace('.',',')+' s sonra durur':'M33 hemen durur';
+  R.querySelector('p').textContent=mod==='kill'?'Son 1 komutu '+son+'. saniyedeydi; 3 saniye sonra süre doldu. Arada yaklaşık '+p+' paket çekirdekte birikir, sonraki açılışta atılır.':'Program kapanırken 0 yolladı. Birikme yok.';}
+r.addEventListener('input',ciz);bt.forEach(function(b){b.addEventListener('click',function(){mod=b.getAttribute('data-m');ciz();});});ciz();})();
+</script>
+</body>
+</html>

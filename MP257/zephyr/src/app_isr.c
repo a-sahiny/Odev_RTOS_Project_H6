@@ -1,6 +1,7 @@
-/* Kesmeler: USART6 baytlarını mesaja ayırıp main thread'ine, IPCC haberini link thread'ine verir. */
+/* Kesmeler: USART6 baytlarını mesaja ayırıp main thread'ine, IPCC haberini link thread'ine verir; süre dolunca göndermeyi kapatır. */
 #include "app.h"
 #include "ipcc.h"
+#include "rpmsg_link.h"
 #include <zephyr/drivers/uart.h>
 
 static RawMsg msg;                                   // toplanan mesaj
@@ -73,4 +74,12 @@ void ipcc_isr(const struct device *dev, void *user_data, uint32_t channel, volat
     (void)channel;
     (void)data;
     k_sem_give(&ipcc_sem);
+}
+
+/* Linux'un '1' komutu yenilenmedi: göndermeyi kapatır. */
+void lease_isr(struct k_timer *timer)
+{
+    (void)timer;
+    link_on = 0;
+    ++link_expired;
 }

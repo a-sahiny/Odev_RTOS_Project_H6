@@ -9,12 +9,14 @@
 #define SHM_SIZE DT_REG_SIZE(DT_CHOSEN(zephyr_ipc_shm))
 
 K_SEM_DEFINE(ipcc_sem, 0, 1);                        // 1 yeter: bir uyanışta bütün mesajlar işlenir
+K_TIMER_DEFINE(lease_timer, lease_isr, NULL);        // her '1' baştan başlatır
 
 volatile uint32_t link_state = LINK_WAIT;
 volatile int32_t link_error;
 volatile uint32_t link_rx;
 volatile uint32_t link_unknown;
 volatile uint32_t link_on;
+volatile uint32_t link_expired;
 volatile uint32_t link_sent;
 volatile uint32_t link_skipped;
 volatile uint32_t link_drops;
@@ -35,7 +37,7 @@ static int notify_linux(void *priv, uint32_t id)
     return 0;
 }
 
-/* Linux'un tek baytlık komutunu uygular: '1' paket gönder, '0' dur. */
+/* Linux'un tek baytlık komutunu uygular: '1' LINK_LEASE_MS boyunca gönder, '0' dur. */
 static int on_message(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src, void *priv)
 {
     (void)ept;
@@ -47,10 +49,13 @@ static int on_message(struct rpmsg_endpoint *ept, void *data, size_t len, uint32
 
     if (command == '1')
     {
+        // Okuyan program çökerse '1' kesilir, süre dolunca gönderme durur
+        k_timer_start(&lease_timer, K_MSEC(LINK_LEASE_MS), K_NO_WAIT);
         link_on = 1;                                 // Linux'un adresi bu mesajla öğrenildi
     }
     else if (command == '0')
     {
+        k_timer_stop(&lease_timer);
         link_on = 0;                                 // okuyan yok: paketler Linux çekirdeğinde birikmesin
     }
     else
