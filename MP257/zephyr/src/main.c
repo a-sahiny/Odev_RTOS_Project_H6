@@ -1,5 +1,6 @@
-/* MP257 Cortex-M33 uygulaması. M5: F746'nın ham mesajlarını TELEM paketine çevirir, sırasını ve sürelerini tutar. */
+/* MP257 Cortex-M33 uygulaması. M6: F746'nın ham mesajlarını TELEM paketine çevirip Linux'a verir, sırasını ve sürelerini tutar. */
 #include "packet.h"
+#include "rpmsg_link.h"
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/sys/byteorder.h>
@@ -27,7 +28,8 @@ volatile uint32_t seq_gaps;                          // sırada atlama
 volatile Stat rx_time = { .min = UINT32_MAX };       // T2 - T1: ilk bayttan 23. bayta
 volatile Stat wake_time = { .min = UINT32_MAX };     // T3 - T2: kesmeden thread'e
 volatile Stat proc_time = { .min = UINT32_MAX };     // T4 - T3: sıra denetimi ve paket kurma
-uint8_t last_packet[PKT_SIZE];                       // son TELEM paketi, M6'da Linux'a verilecek
+volatile Stat send_time = { .min = UINT32_MAX };     // T5 - T4: paketi Linux'a verme, yalnız gönderilenler
+uint8_t last_packet[PKT_SIZE];                       // son TELEM paketi
 
 // Donanım tanımındaki led0: LD9, GPIOH pin 6
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
@@ -109,10 +111,19 @@ int main(void)
         packet_build(last_packet, msg.data);
         uint32_t built = k_cycle_get_32();           // T4
 
-        // Özetler T4'ten sonra: ölçüm kendi süresini işlemeye eklemez
+        int sent = link_send(last_packet, PKT_SIZE);
+        uint32_t handed = k_cycle_get_32();          // T5
+
+        // Özetler T5'ten sonra: ölçüm kendi süresini aşamalara eklemez
         stat_add(&rx_time, msg.last_cycles - msg.first_cycles);
         stat_add(&wake_time, woken - msg.last_cycles);
         stat_add(&proc_time, built - woken);
+
+        if (sent)
+        {
+            stat_add(&send_time, handed - built);
+        }
+
         ++msg_count;                                 // paket hazır olduktan sonra artar
 
         if (msg_count % LED_MSGS == 0 && gpio_pin_toggle_dt(&led) != 0)
