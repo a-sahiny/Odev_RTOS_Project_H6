@@ -1,0 +1,46 @@
+{
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.default.compileCommands": [
+        "C:/zephyrproject/mp257_m33_derleme/compile_commands.json"
+    ],
+    "stm32cube-ide-clangd.enable": false,
+    "C_Cpp.default.compilerPath": "C:/zephyrproject/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc.exe",
+    "C_Cpp.default.compilerArgs": [
+        "-mcpu=cortex-m33",
+        "-mthumb"
+    ],
+    "C_Cpp.default.cStandard": "gnu17",
+    "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
+    "C_Cpp.default.includePath": [
+        "C:/Users/Asus/Documents/GitHub/Odev_RTOS_Project_H6/MP257/zephyr/src",
+        "C:/zephyrproject/zephyr/include",
+        "C:/zephyrproject/mp257_m33_derleme/zephyr/include/generated",
+        "C:/zephyrproject/zephyr/soc/st/stm32",
+        "C:/zephyrproject/zephyr/soc/st/stm32/common",
+        "C:/zephyrproject/zephyr/soc/st/stm32/stm32mp2x",
+        "C:/zephyrproject/zephyr/soc/st/stm32/stm32mp2x/m33",
+        "C:/zephyrproject/zephyr/modules/cmsis_6",
+        "C:/zephyrproject/modules/hal/cmsis_6/CMSIS/Core/Include",
+        "C:/zephyrproject/modules/hal/stm32/stm32cube/stm32mp2xx/soc",
+        "C:/zephyrproject/modules/hal/stm32/stm32cube/stm32mp2xx/drivers/include",
+        "C:/zephyrproject/modules/hal/stm32/stm32cube/common_ll/include",
+        "C:/zephyrproject/zephyr/lib/libc/picolibc/include",
+        "C:/zephyrproject/zephyr/lib/libc/common/include"
+    ],
+    "C_Cpp.default.forcedInclude": [
+        "C:/zephyrproject/mp257_m33_derleme/zephyr/include/generated/zephyr/autoconf.h",
+        "C:/zephyrproject/zephyr/include/zephyr/toolchain/zephyr_stdint.h"
+    ],
+    "C_Cpp.default.defines": [
+        "CORE_CM33",
+        "STM32MP257Fxx",
+        "USE_HAL_DRIVER",
+        "USE_FULL_LL_DRIVER",
+        "HSE_VALUE=40000000",
+        "__ZEPHYR__=1",
+        "K_HEAP_MEM_POOL_SIZE=0",
+        "__PROGRAM_START",
+        "_POSIX_THREAD_SAFE_FUNCTIONS=200809L",
+        "__LINUX_ERRNO_EXTENSIONS__"
+    ]
+}

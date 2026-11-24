@@ -1,0 +1,45 @@
+/* STM32MP257F-DK M33: kart tanımının üstüne yazılan ayarlar. */
+
+/* F746 ham telemetri hattı: PF13 TX, PF14 RX */
+&usart6 {
+    current-speed = <460800>;
+    fifo-enable;                        /* 64 bayt: kesme gecikse de bayt taşmaz */
+};
+
+/* Kart tanımında konsol için açık; kullanılmıyor */
+&uart5 {
+    status = "disabled";
+};
+
+/* Program DDR yerine M33'ün iç belleği SRAM2'de: 64 KB kod, 64 KB veri */
+/ {
+    chosen {
+        zephyr,flash = &sram2_code;
+        zephyr,sram = &sram2_data;
+    };
+
+    sram2_code: memory@a060000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x0a060000 DT_SIZE_K(64)>;
+        zephyr,memory-region = "SRAM2_CODE";
+    };
+
+    sram2_data: memory@a070000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x0a070000 DT_SIZE_K(64)>;
+        zephyr,memory-region = "SRAM2_DATA";
+    };
+};
+
+/* Linux ile paylaşılan bellek: Linux'un ipc-shmem, vring ve tampon alanları, toplam 1 MB */
+/ {
+    chosen {
+        zephyr,ipc_shm = &ipc_shmem;
+        zephyr,ipc = &mailbox;
+    };
+
+    ipc_shmem: memory@81200000 {
+        compatible = "mmio-sram";
+        reg = <0x81200000 DT_SIZE_M(1)>;
+    };
+};
