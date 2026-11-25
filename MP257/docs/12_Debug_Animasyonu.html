@@ -352,6 +352,36 @@ p,li,h1,h2,h3,summary{overflow-wrap:anywhere}
 <nav class="topnav" aria-label="Bölümler"><div class="wrap" id="navWrap"><div class="overall" aria-live="polite"><div class="segs" id="segs"></div><span id="overall">0/0</span></div></div></nav>
 <section class="band tint sec" id="host" data-name="Host" style="--acc:var(--violet);--acc-ink:var(--violet-ink)"><div class="wrap reveal"><div class="phase-head"><div class="num">01</div><div><div class="eyebrow">Host · kopya</div><h2>Gerçek arayüzün kopyası</h2></div><div class="goal"><strong>Dene:</strong> Kontrol’de <b>▶ START</b> ya da <b>⚡ IMU örneği geldi</b>; MP257 (UDP) sekmesinde <b>▶ Başlat</b>. Yol aşağıdaki panelde oynar.</div><div class="pbar"><i></i></div></div><style>
 .sahne[hidden]{display:none!important}
+/* Debug paneli: diyagram solda, açıklama + düğmeler + adımlar + kod sağda; tek ekranda */
+@media (min-width:1000px){
+#debug .wrap{max-width:min(1640px,97vw)}
+#debug .sahne{grid-template-columns:minmax(0,1.55fr) minmax(360px,1fr);grid-template-areas:"alan anlat" "alan sure" "alan kumanda" "alan gunluk" "alan kod" "hepsi hepsi";grid-template-rows:auto auto auto auto 1fr auto;gap:10px 16px;align-items:start;scroll-margin-top:64px;margin-top:12px}
+#debug .sahne>.alan{grid-area:alan;align-self:start;padding:12px}
+#debug .sahne>.anlat{grid-area:anlat;min-height:0;padding:10px 14px}
+#debug .sahne>.sure{grid-area:sure}
+#debug .sahne>.kumanda{grid-area:kumanda;display:block}
+#debug .sahne>.gunluk{grid-area:gunluk;margin:0}
+#debug .sahne>.kod{grid-area:kod;max-height:clamp(150px,calc(100vh - 560px),460px);overflow:auto;align-self:start}
+#debug .sahne>.kod .cbox{overflow-x:auto}
+#debug .sahne>.kod pre,#debug .sahne>.kod .cl{white-space:pre;overflow-wrap:normal;word-break:normal}
+#debug .sahne>.kod code{font-size:12px}
+#debug .sahne>.hepsi{grid-area:hepsi}
+#debug .anlat h3{font-size:17px;margin:2px 0 0}
+#debug .iki{grid-template-columns:minmax(0,1fr);gap:6px}
+#debug .kutucuk{margin-top:6px;padding:6px 10px;font-size:13.5px;line-height:1.45}
+#debug .seritler{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:18px}
+#debug .serit{grid-template-columns:minmax(0,1fr);gap:7px;padding:8px}
+#debug .serit>h4{font-size:11.5px}
+#debug .nd{padding:5px 8px;border-radius:9px}
+#debug .nd>b{font-size:12px;padding-right:26px}
+#debug .nd>small{font-size:11px;line-height:1.3}
+#debug .nd>em{margin-top:3px;font-size:11px;padding:1px 6px}
+#debug .ctrl{gap:6px}
+#debug .ctrl button{min-height:34px;min-width:0;padding:6px 12px;font-size:13px;border-radius:8px}
+#debug .ray{gap:4px;margin-top:8px}
+#debug .ray button{min-width:30px;min-height:28px;padding:0 4px;font-size:11px;border-radius:6px}
+#debug .phase-head .goal{display:none}
+}
 .hk{background:#ECECEC;color:#111;border:1px solid #9A9A9A;border-radius:8px;font:13px/1.35 "Segoe UI",system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.25);overflow:hidden;min-width:0}
 .hk .tb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid #C8C8C8}
 .hk .tb select,.hk .tb .in{border:1px solid #A0A0A0;background:#fff;padding:3px 6px;border-radius:2px;font:inherit;min-width:0}
@@ -574,7 +604,7 @@ bozuk paket  0</div></fieldset></div></div></div>
   sLink:function(){hk.querySelector('[data-o=say]').textContent='alınan       (Linux ve PC yolu gösterilmiyor)\nSEQ boşluğu  0\nbozuk paket  0';}};
  function sec(id){sah.forEach(function(s){s.hidden=s.id!==id;});var s=document.getElementById(id);bas.textContent=s.getAttribute('data-baslik');
   window.dispatchEvent(new Event('resize'));s.querySelector('[data-a=ilk]').click();s.querySelector('[data-a=oynat]').click();
-  document.getElementById('debug').scrollIntoView({behavior:'smooth',block:'start'});}
+  s.scrollIntoView({behavior:'smooth',block:'start'});}
  hk.querySelectorAll('[data-sahne]').forEach(function(b){b.addEventListener('click',function(){hk.querySelector('[data-o=st]').textContent=b.textContent.trim()+': yol aşağıda oynuyor.';sec(b.getAttribute('data-sahne'));});});
  hk.querySelectorAll('.tab[data-p]').forEach(function(t){t.addEventListener('click',function(){hk.querySelectorAll('.tab[data-p]').forEach(function(x){x.setAttribute('aria-selected',x===t);});
   hk.querySelectorAll('.pane').forEach(function(p){p.classList.toggle('on',p.getAttribute('data-p')===t.getAttribute('data-p'));});});});
