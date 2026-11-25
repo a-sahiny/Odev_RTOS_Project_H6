@@ -1,0 +1,250 @@
+{
+ "nodes": [
+  {
+   "id": "n0",
+   "type": "file",
+   "file": "02 Donanım/IMU.md",
+   "x": 0,
+   "y": 0,
+   "width": 380,
+   "height": 320,
+   "color": "5"
+  },
+  {
+   "id": "n1",
+   "type": "file",
+   "file": "03 F746/meas task.md",
+   "x": 460,
+   "y": 0,
+   "width": 380,
+   "height": 320,
+   "color": "4"
+  },
+  {
+   "id": "n2",
+   "type": "file",
+   "file": "03 F746/Açı filtresi.md",
+   "x": 920,
+   "y": 0,
+   "width": 380,
+   "height": 320,
+   "color": "4"
+  },
+  {
+   "id": "n3",
+   "type": "file",
+   "file": "03 F746/raw_link.md",
+   "x": 1380,
+   "y": 0,
+   "width": 380,
+   "height": 320,
+   "color": "4"
+  },
+  {
+   "id": "n4",
+   "type": "file",
+   "file": "02 Donanım/USART6 hattı.md",
+   "x": 1840,
+   "y": 0,
+   "width": 380,
+   "height": 320,
+   "color": "5"
+  },
+  {
+   "id": "n5",
+   "type": "file",
+   "file": "05 Zephyr/uart_isr.md",
+   "x": 1840,
+   "y": 420,
+   "width": 380,
+   "height": 320,
+   "color": "6"
+  },
+  {
+   "id": "n6",
+   "type": "file",
+   "file": "05 Zephyr/k_msgq.md",
+   "x": 1380,
+   "y": 420,
+   "width": 380,
+   "height": 320,
+   "color": "6"
+  },
+  {
+   "id": "n7",
+   "type": "file",
+   "file": "05 Zephyr/main thread.md",
+   "x": 920,
+   "y": 420,
+   "width": 380,
+   "height": 320,
+   "color": "6"
+  },
+  {
+   "id": "n8",
+   "type": "file",
+   "file": "05 Zephyr/packet.c.md",
+   "x": 460,
+   "y": 420,
+   "width": 380,
+   "height": 320,
+   "color": "6"
+  },
+  {
+   "id": "n9",
+   "type": "file",
+   "file": "05 Zephyr/link_send.md",
+   "x": 0,
+   "y": 420,
+   "width": 380,
+   "height": 320,
+   "color": "6"
+  },
+  {
+   "id": "n10",
+   "type": "file",
+   "file": "06 Linux/RPMsg.md",
+   "x": 0,
+   "y": 840,
+   "width": 380,
+   "height": 320,
+   "color": "5"
+  },
+  {
+   "id": "n11",
+   "type": "file",
+   "file": "06 Linux/telem_udp.md",
+   "x": 460,
+   "y": 840,
+   "width": 380,
+   "height": 320,
+   "color": "5"
+  },
+  {
+   "id": "n12",
+   "type": "file",
+   "file": "02 Donanım/USB ağı.md",
+   "x": 920,
+   "y": 840,
+   "width": 380,
+   "height": 320,
+   "color": "5"
+  },
+  {
+   "id": "n13",
+   "type": "file",
+   "file": "07 Host/Host.md",
+   "x": 1380,
+   "y": 840,
+   "width": 380,
+   "height": 320,
+   "color": "3"
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNode": "n0",
+   "fromSide": "right",
+   "toNode": "n1",
+   "toSide": "left",
+   "label": ""
+  },
+  {
+   "id": "e2",
+   "fromNode": "n1",
+   "fromSide": "right",
+   "toNode": "n2",
+   "toSide": "left",
+   "label": ""
+  },
+  {
+   "id": "e3",
+   "fromNode": "n2",
+   "fromSide": "right",
+   "toNode": "n3",
+   "toSide": "left",
+   "label": ""
+  },
+  {
+   "id": "e4",
+   "fromNode": "n3",
+   "fromSide": "right",
+   "toNode": "n4",
+   "toSide": "left",
+   "label": ""
+  },
+  {
+   "id": "e5",
+   "fromNode": "n4",
+   "fromSide": "bottom",
+   "toNode": "n5",
+   "toSide": "top",
+   "label": "460800 baud"
+  },
+  {
+   "id": "e6",
+   "fromNode": "n5",
+   "fromSide": "left",
+   "toNode": "n6",
+   "toSide": "right",
+   "label": ""
+  },
+  {
+   "id": "e7",
+   "fromNode": "n6",
+   "fromSide": "left",
+   "toNode": "n7",
+   "toSide": "right",
+   "label": ""
+  },
+  {
+   "id": "e8",
+   "fromNode": "n7",
+   "fromSide": "left",
+   "toNode": "n8",
+   "toSide": "right",
+   "label": ""
+  },
+  {
+   "id": "e9",
+   "fromNode": "n8",
+   "fromSide": "left",
+   "toNode": "n9",
+   "toSide": "right",
+   "label": ""
+  },
+  {
+   "id": "e10",
+   "fromNode": "n9",
+   "fromSide": "bottom",
+   "toNode": "n10",
+   "toSide": "top",
+   "label": ""
+  },
+  {
+   "id": "e11",
+   "fromNode": "n10",
+   "fromSide": "right",
+   "toNode": "n11",
+   "toSide": "left",
+   "label": "/dev/rpmsg0"
+  },
+  {
+   "id": "e12",
+   "fromNode": "n11",
+   "fromSide": "right",
+   "toNode": "n12",
+   "toSide": "left",
+   "label": "UDP 5002"
+  },
+  {
+   "id": "e13",
+   "fromNode": "n12",
+   "fromSide": "right",
+   "toNode": "n13",
+   "toSide": "left",
+   "label": ""
+  }
+ ]
+}

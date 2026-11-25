@@ -1,0 +1,86 @@
+{
+ "collapse_filter": true,
+ "colorGroups": [
+  {
+   "query": "tag:#genel",
+   "color": {
+    "a": 1,
+    "rgb": 16761370
+   }
+  },
+  {
+   "query": "tag:#karar",
+   "color": {
+    "a": 1,
+    "rgb": 16747488
+   }
+  },
+  {
+   "query": "tag:#donan\u0131m",
+   "color": {
+    "a": 1,
+    "rgb": 2286847
+   }
+  },
+  {
+   "query": "tag:#F746",
+   "color": {
+    "a": 1,
+    "rgb": 11065418
+   }
+  },
+  {
+   "query": "tag:#paket",
+   "color": {
+    "a": 1,
+    "rgb": 16767370
+   }
+  },
+  {
+   "query": "tag:#Zephyr",
+   "color": {
+    "a": 1,
+    "rgb": 10193151
+   }
+  },
+  {
+   "query": "tag:#Linux",
+   "color": {
+    "a": 1,
+    "rgb": 5231008
+   }
+  },
+  {
+   "query": "tag:#Host",
+   "color": {
+    "a": 1,
+    "rgb": 8177663
+   }
+  },
+  {
+   "query": "tag:#\u00f6l\u00e7\u00fcm",
+   "color": {
+    "a": 1,
+    "rgb": 15921906
+   }
+  },
+  {
+   "query": "tag:#test",
+   "color": {
+    "a": 1,
+    "rgb": 13234811
+   }
+  },
+  {
+   "query": "tag:#hata",
+   "color": {
+    "a": 1,
+    "rgb": 16747157
+   }
+  }
+ ],
+ "showTags": false,
+ "nodeSizeMultiplier": 1.2,
+ "lineSizeMultiplier": 1,
+ "linkDistance": 180
+}

@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistem Raporu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* ---------- Tokens ---------- */
+:root{
+  --ink:#0B0F1A; --ink-2:#131B2C; --ink-line:#26324A;
+  --paper:#FAFAF7; --paper-2:#F0F1EA; --paper-line:#DFE2D8;
+  --text:#14171F; --muted:#565E6E; --text-d:#EEF2F8; --muted-d:#A6B1C4;
+  --lime:#A8D84A; --cyan:#22E4FF; --magenta:#FF3DCB; --amber:#FFC21A; --violet:#9B88FF; --mint:#4FD1A0; --red:#FF4D5E;
+  --lime-band:#D3E8A2; /* geniş zemin için yumuşatılmış yeşil; parlak neon geniş alanda göz yoruyor */
+  --lime-ink:#3D6900; --cyan-ink:#006B7A; --magenta-ink:#A3007F; --amber-ink:#7E5200; --violet-ink:#4B2FD1; --mint-ink:#00704A;
+  --code-bg:#070A12; --code-text:#E6EDF3;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",Consolas,"Cascadia Mono",monospace;
+  --r:14px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:72px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;font:16px/1.65 var(--sans);background:var(--paper);color:var(--text)}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+@media (min-width:760px){.wrap{padding:0 32px}}
+
+/* ---------- Bands (zemin ritmi) ---------- */
+.band{--bg:var(--paper);--fg:var(--text);--mu:var(--muted);--card:#fff;--card-line:var(--paper-line);--chip:var(--paper-2);
+  background:var(--bg);color:var(--fg);padding:56px 0;position:relative}
+.band.dark{--bg:var(--ink);--fg:var(--text-d);--mu:var(--muted-d);--card:var(--ink-2);--card-line:var(--ink-line);--chip:rgba(255,255,255,.08)}
+.band.dark::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:var(--acc,var(--lime))}
+.band.tint{--bg:#F6F2FF;--card:#fff;--card-line:#E3DBFA;--chip:#ECE6FD}
+.band.neon{--bg:var(--lime-band);--fg:#0B0F1A;--mu:#36421C;--card:rgba(255,255,255,.55);--card-line:rgba(11,15,26,.18);--chip:rgba(11,15,26,.08)}
+.band.amber{--bg:var(--amber);--fg:#0B0F1A;--mu:#4A3500;--card:rgba(255,255,255,.6);--card-line:rgba(11,15,26,.2);--chip:rgba(11,15,26,.08)}
+.band a{color:var(--acc-ink,var(--lime-ink))}
+.band.dark a{color:var(--acc,var(--lime))}
+.band.neon a,.band.amber a{color:#0B0F1A;text-decoration-thickness:2px}
+.mu{color:var(--mu)}
+
+/* ---------- Type ---------- */
+h1,h2,h3{line-height:1.2;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(30px,6vw,56px);font-weight:700}
+h2{font-size:clamp(24px,3.6vw,34px);font-weight:700}
+h3{font-size:18px;font-weight:600}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--acc-ink,var(--lime-ink));margin-bottom:12px}
+.dark .eyebrow{color:var(--acc,var(--lime))}
+.neon .eyebrow,.amber .eyebrow{color:#0B0F1A}
+p{margin:10px 0}
+code{font-family:var(--mono);font-size:.86em;background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}
+pre{background:var(--code-bg);color:var(--code-text);border-left:3px solid var(--acc,var(--lime));border-radius:8px;padding:12px 14px;margin:10px 0;overflow-x:auto;font:13.5px/1.6 var(--mono)}
+pre code{background:none;padding:0;font-size:inherit;overflow-wrap:anywhere}
+pre{white-space:pre-wrap;overflow-wrap:anywhere} /* uzun satırlar görsel olarak kayar; kopyalanan metin değişmez */
+.sw{font-family:var(--mono);font-weight:800;letter-spacing:.12em;background:var(--chip);padding:0 6px;border-radius:5px}
+
+/* ---------- Hero ---------- */
+.hero{--acc:var(--lime);padding:72px 0 56px;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:auto -10% -40% auto;width:620px;height:620px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(168,216,74,.16),rgba(34,228,255,.10) 55%,transparent);pointer-events:none}
+.hero .lead{font-size:18px;max-width:720px;color:var(--muted-d)}
+.hero h1 span{background:linear-gradient(90deg,var(--lime),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpis{display:grid;gap:12px;margin-top:28px;grid-template-columns:1fr}
+@media (min-width:760px){.kpis{grid-template-columns:repeat(3,1fr)}}
+.kpi{border:1px solid var(--ink-line);border-radius:var(--r);padding:16px 18px;background:rgba(255,255,255,.03);position:relative;z-index:1}
+.kpi b{display:block;font:800 26px/1.2 var(--mono);color:#fff}
+.kpi b em{font-style:normal;color:var(--lime)}
+.kpi span{color:var(--muted-d);font-size:14px}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:22px;font-size:14px;color:var(--muted-d);position:relative;z-index:1}
+
+/* ---------- Badges (her zeminde okunur: neon dolgu + siyah yazı) ---------- */
+.b{display:inline-block;font:700 11.5px/1.5 var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:999px;color:#0B0F1A;white-space:nowrap;vertical-align:1px}
+.b-st{background:var(--lime)} .b-yr{background:var(--cyan)} .b-ks{background:var(--amber)} .b-gn{background:#D5D9E0}
+.band.neon .b-st{background:#0B0F1A;color:var(--lime)}
+.band.amber .b-ks{background:#0B0F1A;color:var(--amber)}
+
+/* ---------- Sticky nav ---------- */
+.topnav{position:sticky;top:0;z-index:20;background:rgba(11,15,26,.92);backdrop-filter:saturate(1.4) blur(8px);-webkit-backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--ink-line)}
+.topnav .wrap{display:flex;align-items:center;gap:10px;min-height:56px;overflow-x:auto;scrollbar-width:none}
+.topnav .wrap::-webkit-scrollbar{display:none}
+.pill{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:40px;padding:6px 12px;border-radius:999px;border:1px solid var(--ink-line);color:var(--text-d);text-decoration:none;font:600 13px/1 var(--mono);transition:border-color .2s,background-color .2s}
+.pill:hover,.pill:focus-visible{border-color:var(--c);background:rgba(255,255,255,.05)}
+.pill i{width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+.pill small{color:var(--muted-d);font-weight:400}
+.overall{margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:10px;color:var(--text-d);font:700 13px/1 var(--mono)}
+.segs{display:flex;gap:3px;width:150px;height:8px}
+.segs span{flex:1;border-radius:99px;background:var(--ink-line);overflow:hidden}
+.segs span i{display:block;height:100%;width:0;background:var(--c);transition:width .3s ease-out}
+
+/* ---------- Cards / grids ---------- */
+.grid{display:grid;gap:16px;margin-top:24px}
+@media (min-width:860px){.grid.c2{grid-template-columns:1fr 1fr}}
+.card{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:20px 22px}
+.card.stripe{border-left:5px solid var(--sc,var(--lime))}
+.src{font-size:13.5px;color:var(--mu);margin-top:12px;line-height:1.7}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0;font:600 12.5px/1 var(--mono)}
+.flow span{padding:7px 9px;border-radius:7px;background:var(--ink);color:var(--text-d);border:1px solid var(--ink-line)}
+.flow span:last-child{background:var(--magenta);color:#0B0F1A;border-color:var(--magenta)}
+.flow b{color:var(--mu)}
+
+/* ---------- DIP switch görselleri ---------- */
+.dips{display:grid;gap:14px;margin-top:26px;grid-template-columns:1fr}
+@media (min-width:640px){.dips{grid-template-columns:1fr 1fr}}
+@media (min-width:1000px){.dips{grid-template-columns:repeat(4,1fr)}}
+.mode{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px}
+.mode.hl{background:#0B0F1A;color:var(--text-d);border-color:#0B0F1A}
+.mode h3{font-size:16px}
+.mode .use{font-size:13.5px;margin-top:6px;opacity:.85}
+.dip{display:flex;gap:8px;background:#1B1F2A;border-radius:8px;padding:10px 12px 8px;margin:12px 0 4px;width:max-content}
+.dip div{display:flex;flex-direction:column;align-items:center;gap:4px}
+.dip u{display:block;width:20px;height:34px;border-radius:4px;background:#2E3546;position:relative;text-decoration:none}
+.dip u::after{content:"";position:absolute;left:3px;right:3px;height:13px;border-radius:3px;bottom:3px;background:#E9ECF2}
+.dip u.on::after{top:3px;bottom:auto;background:var(--lime);box-shadow:0 0 6px var(--lime)}
+.dip small{font:600 10px/1 var(--mono);color:#A6B1C4}
+.code{font:800 22px/1 var(--mono);letter-spacing:.18em}
+
+/* ---------- Phase ---------- */
+.phase-head{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 20px;align-items:end}
+.num{font:800 clamp(64px,11vw,120px)/.8 var(--mono);color:transparent;-webkit-text-stroke:2px var(--acc-ink);letter-spacing:-.04em}
+.dark .num{-webkit-text-stroke-color:var(--acc);text-shadow:0 0 28px color-mix(in srgb,var(--acc) 35%,transparent)}
+.goal{grid-column:1/-1;margin-top:14px;padding:12px 16px;border-radius:10px;background:var(--chip);font-size:15px}
+.goal strong{color:var(--acc-ink)}
+.dark .goal strong{color:var(--acc)}
+.pbar{grid-column:1/-1;height:8px;border-radius:99px;background:var(--chip);overflow:hidden;margin-top:12px}
+.pbar i{display:block;height:100%;width:0;background:var(--acc);transition:width .3s ease-out}
+.dark .pbar i{box-shadow:0 0 12px var(--acc)}
+
+.steps{margin-top:24px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.grid>*,.dips>*,.step,.body{min-width:0}
+.step{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px 18px 16px 12px;transition:border-color .2s,box-shadow .2s}
+.step.done{border-color:var(--acc-ink);box-shadow:inset 5px 0 0 var(--acc)}
+.dark .step.done{border-color:var(--acc)}
+.step-h{display:flex;align-items:flex-start;gap:8px}
+.check{flex:0 0 auto;display:grid;place-items:center;width:44px;height:44px;margin:-10px 0 -10px -6px;cursor:pointer}
+.check input{appearance:none;-webkit-appearance:none;margin:0;width:22px;height:22px;border:2px solid var(--mu);border-radius:6px;cursor:pointer;display:grid;place-items:center;transition:background-color .15s,border-color .15s}
+.check input:checked{background:var(--acc);border-color:var(--acc)}
+.check input:checked::after{content:"";width:6px;height:11px;border:solid #0B0F1A;border-width:0 3px 3px 0;transform:translateY(-1px) rotate(45deg)}
+.check input:focus-visible{outline:3px solid var(--acc);outline-offset:3px}
+.sid{font:700 13px/1.4 var(--mono);color:var(--acc-ink);padding-top:2px;flex:0 0 auto}
+.dark .sid{color:var(--acc)}
+.step-h h3{flex:1;min-width:0;padding-top:1px;overflow-wrap:anywhere}
+.body{margin-left:42px}
+@media (max-width:600px){.body{margin-left:6px}.step{padding-right:14px}}
+.body ul,.body ol{margin:8px 0;padding-left:22px}
+.lbl{font:700 11.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mu);margin-top:14px}
+
+/* ---------- "Ne oluyor" açıklaması ---------- */
+.why{border-left:4px solid var(--acc);background:var(--chip);border-radius:0 10px 10px 0;padding:10px 14px;margin:10px 0}
+.why b:first-child{color:var(--acc-ink)}
+.dark .why b:first-child{color:var(--acc)}
+.path{display:block;font:600 13px/1.5 var(--mono);background:var(--chip);border:1px dashed var(--card-line);border-radius:8px;padding:8px 10px;margin:8px 0;overflow-wrap:anywhere}
+pre .c{color:#8B97AB}
+
+/* ---------- Callouts ---------- */
+.note{border-radius:10px;padding:12px 16px;margin:12px 0;border:1px solid}
+.note.warn{background:#FFF6D9;border-color:#F3D27A;color:#3E2C00}
+.note.danger{background:#FFE5E8;border-color:#FFB3BC;color:#5A0A14}
+.dark .note.warn{background:rgba(255,194,26,.1);border-color:rgba(255,194,26,.45);color:#FFE7A6}
+.dark .note.danger{background:rgba(255,77,94,.1);border-color:rgba(255,77,94,.5);color:#FFC7CD}
+
+/* ---------- Tables ---------- */
+.tbl{overflow-x:auto;margin-top:16px;border-radius:var(--r);border:1px solid var(--card-line);background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--card-line)}
+tr:last-child td{border-bottom:0}
+th{font:700 11.5px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+
+footer.band{padding:40px 0;font-size:14px}
+
+/* ---------- Reveal ---------- */
+.js .reveal{opacity:0;transform:translateY(14px);transition:opacity .5s ease-out,transform .5s ease-out}
+.js .reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.js .reveal{opacity:1;transform:none;transition:none}}
+
+/* ---------- Print ---------- */
+@media print{
+  .topnav,.hero::after{display:none}
+  .band,.band.dark,.band.neon,.band.amber,.band.tint{background:#fff!important;color:#000!important;padding:20px 0;--fg:#000;--mu:#333;--card:#fff;--card-line:#bbb;--chip:#eee}
+  .band.dark::before{display:none}
+  .num{-webkit-text-stroke-color:#000!important;text-shadow:none!important}
+  .js .reveal{opacity:1;transform:none}
+  .step,.mode{break-inside:avoid}
+  pre{border:1px solid #999}
+}
+.b-red{background:var(--red)}
+.pill{min-height:44px}
+.grid{grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.grid.c2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+
+/* ---------- Bu sayfaya özel ---------- */
+.qs{display:grid;gap:10px;margin-top:28px;grid-template-columns:minmax(0,1fr);position:relative;z-index:1}
+@media (min-width:760px){.qs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.band.dark .qs a{display:flex;align-items:center;gap:12px;min-height:48px;padding:10px 14px;border:1px solid var(--ink-line);border-radius:10px;background:rgba(255,255,255,.03);color:var(--text-d);text-decoration:none;font-size:15px;line-height:1.35;min-width:0;overflow-wrap:anywhere}
+.band.dark .qs a:hover,.band.dark .qs a:focus-visible{border-color:var(--lime)}
+.qs a b{flex:0 0 auto;font:800 13px/1 var(--mono);background:var(--lime);color:#0B0F1A;border-radius:6px;padding:6px 8px}
+.short{font-size:17px;font-weight:600;margin:10px 0}
+.chip-box{border:2px dashed rgba(11,15,26,.45);border-radius:18px;padding:16px;margin-top:20px}
+.chip-box>b{font:700 13px/1.4 var(--mono)}
+.cores{display:grid;gap:12px;margin-top:12px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.cores{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.core{background:#0B0F1A;color:#EEF2F8;border-radius:12px;padding:16px;border-top:6px solid var(--cc);min-width:0}
+.core h3{font:800 20px/1.2 var(--mono);color:var(--cc)}
+.core p{margin:6px 0;font-size:14.5px}
+.core code{background:rgba(255,255,255,.12)}
+.chain{display:grid;gap:10px;margin:16px 0;grid-template-columns:minmax(0,1fr);counter-reset:c}
+@media (min-width:860px){.chain{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.chain div{background:var(--card);border:1px solid var(--card-line);border-top:5px solid var(--acc);border-radius:10px;padding:12px;font-size:14px;min-width:0;overflow-wrap:anywhere}
+.chain div b{display:block;font:800 14px/1.3 var(--mono);margin-bottom:4px}
+.where{display:inline-block;font:700 12px/1.5 var(--mono);background:var(--acc);color:#0B0F1A;border-radius:6px;padding:2px 9px;margin-top:10px}
+.ok{border-left:4px solid var(--mint);background:var(--chip);border-radius:0 10px 10px 0;padding:8px 14px;margin:10px 0;font-size:15px}
+.ok p{margin:4px 0}
+.step .check input{flex:0 0 auto}
+.sid{white-space:nowrap}
+table.sm{min-width:0}
+td{overflow-wrap:anywhere}
+.term{display:grid;gap:14px;margin-top:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.term{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.overall{white-space:nowrap}
+@media (max-width:600px){.segs{width:90px}}
+
+/* ---------- M2 sayfası ---------- */
+p,li,h1,h2,h3,summary{overflow-wrap:anywhere}
+.cbox{margin:10px 0;border-radius:8px;overflow:hidden;background:var(--code-bg);border-left:3px solid var(--acc);min-width:0}
+.cf{font:600 12px/1.5 var(--mono);color:#A6B1C4;padding:8px 14px 0;overflow-wrap:anywhere}
+.cbox pre{margin:0;border-left:0;border-radius:0;padding:6px 0 10px;background:none}
+.cl{display:block;padding:0 14px 0 52px;position:relative;white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.6em}
+.cl i{position:absolute;left:0;width:42px;text-align:right;font-style:normal;color:#8B97AB;font-size:11.5px}
+.cl.hl{background:rgba(255,194,26,.16);box-shadow:inset 3px 0 0 var(--amber)}
+.player{margin-top:24px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+.stage{position:relative;display:grid;gap:14px;grid-template-columns:repeat(2,minmax(0,1fr));padding:16px;border:1px solid var(--card-line);border-radius:var(--r);background:var(--card)}
+@media (min-width:760px){.stage{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;padding:22px}}
+.node{border:2px solid var(--card-line);border-radius:12px;padding:12px;min-width:0;background:var(--bg);transition:border-color .3s,box-shadow .3s;overflow-wrap:anywhere;position:relative}
+.node b{display:block;font:800 14px/1.3 var(--mono)}
+.node small{color:var(--mu);font-size:12.5px;display:block}
+.node em{display:inline-block;margin-top:8px;font:700 12px/1.4 var(--mono);font-style:normal;background:var(--chip);border-radius:6px;padding:3px 8px;max-width:100%}
+.node.on{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 30%,transparent)}
+.node.on em{background:var(--acc);color:#0B0F1A}
+.lamp{position:absolute;right:12px;top:12px;width:18px;height:18px;border-radius:50%;background:#3A4152;border:2px solid #6B7488;transition:background-color .2s,box-shadow .2s}
+.lamp.on{background:#FF9A2E;border-color:#FFC27D;box-shadow:0 0 16px 4px rgba(255,154,46,.8)}
+.pkt{position:absolute;left:0;top:0;width:16px;height:16px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px var(--amber);opacity:0;pointer-events:none;z-index:3}
+.tline{display:flex;align-items:center;gap:10px;font:600 12px/1 var(--mono);color:var(--mu)}
+.tline div{flex:1;height:10px;border-radius:99px;background:var(--chip);overflow:hidden;min-width:0}
+.tline i{display:block;height:100%;width:0;background:var(--acc)}
+.pside{background:var(--card);border:1px solid var(--card-line);border-radius:var(--r);padding:16px 18px;min-width:0}
+@media (min-width:760px){.pside{min-height:400px}}
+.pnum{font:700 12px/1.4 var(--mono);color:var(--acc-ink)} .dark .pnum{color:var(--acc)}
+.ptitle{font-size:20px;margin-top:4px}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px}
+.ctrl button{min-height:46px;min-width:72px;padding:8px 16px;border-radius:10px;border:1px solid var(--card-line);background:var(--card);color:var(--fg);font:700 14px/1 var(--mono);cursor:pointer}
+.ctrl button.pri{background:var(--acc);color:#0B0F1A;border-color:var(--acc)}
+.ctrl button:focus-visible,.hepsi summary:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.hepsi summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font:600 14px/1.4 var(--mono);text-decoration:underline}
+.plist{padding-left:22px;margin:8px 0} .plist li{margin:14px 0} .plist p{margin:4px 0}
+@media (prefers-reduced-motion:reduce){.node,.lamp{transition:none}.pkt{display:none}}
+@media print{.stage,.pside,.ctrl,.tline{display:none}.cbox{background:#fff;border:1px solid #999}.cl,.cf,.cl i{color:#000}}
+.eyebrow,td,.goal{overflow-wrap:anywhere}#sorun .where{background:#A8D84A}.player.bad .pside{border-left:6px solid var(--red)}.player.good .pside{border-left:6px solid var(--mint)}
+.sahne{margin-top:24px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.sahne:focus-visible{outline:3px solid var(--acc);outline-offset:6px;border-radius:12px}
+.alan{position:relative;border:1px solid var(--card-line);border-radius:18px;background:var(--card);padding:14px;overflow:hidden}
+.seritler{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);position:relative;z-index:1}
+@media (min-width:860px){.seritler{grid-template-columns:repeat(3,minmax(0,1fr));gap:56px}.alan{padding:22px}}
+.serit{border:1px dashed color-mix(in srgb,var(--lc) 55%,transparent);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0;background:color-mix(in srgb,var(--lc) 6%,transparent)}
+.serit>h4{margin:0;font:800 13px/1.3 var(--mono);display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
+.serit>h4::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--lc);flex:0 0 auto}
+.nd{border:2px solid var(--card-line);border-radius:12px;padding:10px 12px;background:var(--bg);position:relative;min-width:0;transition:border-color .35s,box-shadow .35s,transform .35s;overflow-wrap:anywhere}
+.nd>b{display:block;font:800 13.5px/1.35 var(--mono);padding-right:34px}
+.nd>small{display:block;color:var(--mu);font-size:12.5px;line-height:1.4}
+.nd>em{display:inline-block;margin-top:7px;font:700 12px/1.45 var(--mono);font-style:normal;background:var(--chip);border-radius:6px;padding:3px 8px;max-width:100%;transition:background-color .3s,color .3s}
+.nd>em:empty{display:none}
+.nd.on{border-color:var(--lc);box-shadow:0 0 0 3px color-mix(in srgb,var(--lc) 35%,transparent)}
+.nd.on>em{background:var(--lc);color:#0B0F1A}
+.nd.ok{border-color:#4FD1A0}.nd.ok>em{background:#4FD1A0;color:#0B0F1A}
+.nd.kotu{border-color:#FF4D5E}.nd.kotu>em{background:#FF8A95;color:#0B0F1A}
+.nd .im{position:absolute;right:10px;top:9px;font:800 11px/1.5 var(--mono);color:var(--mu);white-space:nowrap}
+.nd.uyku{border-style:dashed}
+.nd.uyku .im::after{content:"z z z";animation:zz 2.4s ease-in-out infinite}
+.nd.calis{border-color:var(--lc)}
+.nd.calis .im::after{content:"";display:inline-block;width:13px;height:13px;border-radius:50%;border:3px solid color-mix(in srgb,var(--lc) 30%,transparent);border-top-color:var(--lc);animation:don 1s linear infinite}
+.nd.yeni{animation:yeni .8s ease-out}
+.yuva{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px;margin-top:8px}
+.yuva i{height:16px;border-radius:4px;border:1px solid var(--card-line);background:var(--chip);transition:background-color .4s,transform .4s}
+.yuva i.bos{background:color-mix(in srgb,#22E4FF 55%,transparent);border-color:#22E4FF}
+.yuva i.dolu{background:#FFC21A;border-color:#FFC21A;transform:scale(1.08)}
+.teller{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:hidden}
+.teller path{fill:none;stroke:var(--card-line);stroke-width:2}
+.teller path.ak{stroke:var(--tc,#FFC21A);stroke-width:3;stroke-dasharray:8 7;animation:ak 1s linear infinite}
+.jeton{position:absolute;left:0;top:0;z-index:3;pointer-events:none;font:800 11.5px/1 var(--mono);color:#0B0F1A;background:var(--tc,#FFC21A);border-radius:999px;padding:6px 10px;white-space:nowrap;box-shadow:0 2px 14px rgba(0,0,0,.35);opacity:0}
+.anlat{border:1px solid var(--card-line);border-radius:var(--r);background:var(--card);padding:14px 18px;min-width:0}
+.iki{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.anlat{min-height:196px}.iki{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.kumanda{display:flex;flex-wrap:wrap;gap:10px 18px;justify-content:space-between}}
+@media (max-width:859px){.anlat{min-height:300px}.serit{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:10px}.serit>h4{grid-column:1/-1}.nd{padding:8px 9px}.ray{margin-top:10px}}
+.sahne .kod{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}.sahne .kod .cbox{margin:0}.sahne .gunluk{margin:0}
+.anlat .no{font:700 12px/1.4 var(--mono);color:var(--acc-ink)}.dark .anlat .no{color:var(--acc)}
+.anlat h3{font-size:21px;margin-top:4px}
+.kutucuk{border-left:4px solid var(--acc);background:var(--chip);border-radius:0 10px 10px 0;padding:9px 13px;margin-top:10px}
+.kutucuk b{display:block;font:800 11.5px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--acc-ink)}.dark .kutucuk b{color:var(--acc)}
+.kutucuk.ned{border-left-color:#9B88FF}
+.gunluk{margin-top:10px;background:#070A12;color:#B9F5C9;border-radius:8px;padding:9px 12px;font:12.5px/1.6 var(--mono);overflow-wrap:anywhere;white-space:pre-wrap}
+.gunluk:empty{display:none}
+.sahne.bad .anlat{border-left:6px solid var(--red)}.sahne.good .anlat{border-left:6px solid var(--mint)}
+.sure{height:5px;border-radius:99px;background:var(--chip);overflow:hidden}.sure i{display:block;height:100%;width:0;background:var(--acc)}
+.ray{display:flex;flex-wrap:wrap;gap:6px}
+.ray button{min-width:44px;min-height:44px;border-radius:10px;border:1px solid var(--card-line);background:var(--card);color:var(--fg);font:700 13px/1 var(--mono);cursor:pointer}
+.ray button.gec{border-color:var(--acc)}
+.ray button.su{background:var(--acc);border-color:var(--acc);color:#0B0F1A}
+.ray button:focus-visible,.sim button:focus-visible,.sim input:focus-visible,.harita button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.sim{margin-top:20px;border:1px solid var(--card-line);border-radius:18px;background:var(--card);padding:18px;min-width:0}
+.sim h3{font-size:20px}
+.sim label{display:block;font:600 14px/1.5 var(--sans);margin-top:14px}
+.sim label output{font:800 14px/1 var(--mono);background:var(--chip);border-radius:6px;padding:3px 8px;margin-left:6px}
+.sim input[type=range]{width:100%;height:44px;accent-color:var(--acc);margin:0}
+.iz{margin-top:14px}
+.iz>div:first-child{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font:700 13px/1.5 var(--mono)}
+.cizgi{position:relative;height:46px;border-radius:10px;background:var(--chip);overflow:hidden;margin-top:6px}
+.cizgi u{position:absolute;top:8px;bottom:8px;width:3px;border-radius:3px;background:#FF8A95;text-decoration:none}
+.cizgi u.y{background:#4FD1A0;width:6px;top:3px;bottom:3px}
+.cizgi u.h{background:#22E4FF;width:2px;top:0;bottom:0}
+.cizgi s{position:absolute;top:0;bottom:0;width:2px;background:var(--fg);left:0;text-decoration:none}
+.cizgi span{position:absolute;top:50%;transform:translateY(-50%);font:700 11px/1.2 var(--mono);padding:3px 6px;border-radius:6px;background:var(--bg);color:var(--fg);white-space:nowrap}
+.sonuc{display:grid;gap:10px;grid-template-columns:minmax(0,1fr);margin-top:14px}
+@media (min-width:700px){.sonuc{grid-template-columns:1fr 1fr}}
+.sonuc>div{border-radius:12px;padding:12px 14px;border:2px solid var(--card-line);min-width:0;overflow-wrap:anywhere}
+.sonuc>div.iyi{border-color:#4FD1A0}.sonuc>div.kotu{border-color:#FF4D5E}
+.sonuc b{font:800 14px/1.4 var(--mono);display:block}
+.harita{display:flex;gap:4px;margin-top:16px;min-width:0}
+.harita button{min-width:0;min-height:84px;border:0;border-radius:10px;background:var(--hc);color:#0B0F1A;font:800 12px/1.3 var(--mono);cursor:pointer;padding:8px 6px;overflow-wrap:anywhere;opacity:.72;transition:opacity .2s,transform .2s}
+.harita button[aria-pressed=true]{opacity:1;transform:translateY(-4px)}
+.hbilgi{border:1px solid var(--card-line);border-radius:12px;background:var(--card);padding:14px 16px;margin-top:12px}
+@media (max-width:560px){.harita{flex-direction:column}.harita button{min-height:52px;flex:none!important}}
+.dolu-bar{height:26px;border-radius:8px;background:var(--chip);overflow:hidden;margin:6px 0 2px}.dolu-bar i{display:block;height:100%;background:var(--acc)}
+@keyframes zz{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes don{to{transform:rotate(360deg)}}
+@keyframes ak{to{stroke-dashoffset:-30}}
+@keyframes yeni{0%{transform:scale(1)}35%{transform:scale(1.04)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.nd,.yuva i{transition:none}.nd.yeni,.nd.uyku .im::after,.nd.calis .im::after,.teller path.ak{animation:none}.jeton{display:none}}
+@media print{.alan,.anlat,.ray,.sure,.sim input{display:none}}
+#kart .where,#ayar .where{background:var(--acc)}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;z-index:0;opacity:.9}
+.kart-g{border:1px solid var(--card-line);border-radius:18px;background:var(--card);padding:18px;min-width:0;margin-top:20px}
+.kart-g h3{font-size:20px}
+.tus{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tus button,.sim .tus button{min-height:46px;padding:8px 16px;border-radius:10px;border:1px solid var(--card-line);background:var(--card);color:var(--fg);font:700 14px/1.2 var(--mono);cursor:pointer}
+.tus button[aria-pressed=true],.tus button.pri{background:var(--acc);border-color:var(--acc);color:#0B0F1A}
+.tus button:focus-visible,.kart-g input:focus-visible,.kart-g canvas:focus-visible,.sinema:focus-visible,.harf:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.tus button:disabled{opacity:.55;cursor:default}
+.kart-g label{display:block;font:600 14px/1.5 var(--sans);margin-top:12px}
+.kart-g label output{font:800 14px/1 var(--mono);background:var(--chip);border-radius:6px;padding:3px 8px;margin-left:6px}
+.kart-g input[type=range]{width:100%;height:44px;accent-color:var(--acc);margin:0}
+.kart-g canvas{display:block;width:100%;border-radius:12px;background:#070A12;margin-top:12px;touch-action:pan-y}
+.bilgi{margin-top:12px;border-left:4px solid var(--acc);background:var(--chip);border-radius:0 10px 10px 0;padding:10px 14px;min-height:52px}
+.bilgi b{display:block}
+/* sinema */
+.sinema{margin-top:22px;border-radius:20px;overflow:hidden;border:1px solid var(--card-line);background:#05070D;position:relative}
+.sinema svg{display:block;width:100%;aspect-ratio:16/9;background:radial-gradient(circle at 50% 40%,#101A30,#05070D 75%)}
+@media (max-width:700px){.sinema svg{aspect-ratio:4/5}}
+.sinema .bolge{fill:rgba(255,255,255,.03);stroke-width:2;stroke-dasharray:10 8;rx:26}
+.sinema .bt{font:800 22px var(--mono)}
+.sinema .kt{stroke:#2A3650;stroke-width:3;fill:none}
+.sinema .kt.ak{stroke-width:4.5;stroke-dasharray:14 10;animation:skay 1s linear infinite}
+.sinema .ks{fill:#0E1628;stroke:#33415F;stroke-width:2.5;transition:fill .4s,stroke .4s}
+.sinema .kn.on .ks{fill:#16223D;stroke-width:4}
+.sinema .kn.uyku .ks{stroke-dasharray:7 6}
+.sinema .kn.yok .ks{stroke-dasharray:3 7;opacity:.6}
+.sinema .kn text{fill:#EEF2F8;font:800 16px var(--mono)}
+.sinema .kn .a{fill:#A6B1C4;font:500 13px var(--sans)}
+.sinema .kn .d{fill:#0B0F1A;font:800 13px var(--mono)}
+.sinema .par{filter:drop-shadow(0 0 8px currentColor)}
+.sinema .pl{font:800 14px var(--mono);fill:#0B0F1A}
+.hud{position:relative;padding:14px 18px 18px;background:linear-gradient(180deg,#0B0F1A,#0A101F);color:#EEF2F8}
+.hud .ust{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;justify-content:space-between}
+.hud .no{font:700 12px/1.4 var(--mono);color:#22E4FF}
+.hud .saat{font:800 20px/1.2 var(--mono);color:#FFC21A}
+.hud h3{font-size:23px;margin-top:2px;color:#fff}
+.hud .iki{margin-top:8px}
+.hud .kutucuk{background:rgba(255,255,255,.07);border-left-color:#22E4FF}.hud .kutucuk b{color:#22E4FF!important}
+.hud .kutucuk.ned{border-left-color:#9B88FF}.hud .kutucuk.ned b{color:#B9ABFF!important}
+@media (min-width:860px){.hud .metin{min-height:150px}}
+@media (max-width:859px){.hud .metin{min-height:300px}}
+.zc{display:flex;gap:2px;height:14px;margin-top:12px}
+.zc button{flex:1;border:0;padding:0;min-width:0;background:transparent;position:relative;cursor:pointer;height:44px;margin:-15px 0}
+.zc button::after{content:"";position:absolute;left:0;right:0;top:19px;height:6px;border-radius:4px;background:#26324A;transition:background-color .3s}
+.zc button.gec::after{background:#22E4FF}.zc button.su::after{background:#FFC21A;height:10px;top:17px}
+.zc button:focus-visible{outline:2px solid #FFC21A}
+.hud .tus{margin-top:22px}.hud .tus button{background:#131B2C;border-color:#26324A;color:#EEF2F8}.hud .tus button.pri{background:#22E4FF;color:#0B0F1A;border-color:#22E4FF}
+/* paket lab */
+.lab{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.lab{grid-template-columns:minmax(0,5fr) minmax(0,7fr)}}
+.baytlar{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
+.baytlar button{min-width:44px;min-height:44px;border:2px solid transparent;border-radius:8px;background:var(--bc);color:#0B0F1A;font:800 14px/1 var(--mono);cursor:pointer;padding:0 4px}
+.baytlar button.sec{border-color:#fff;box-shadow:0 0 0 3px #FF3DCB}
+.baytlar button.bozuk{background:#FF8A95}
+.bitler{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
+.bitler button{min-width:44px;min-height:44px;border-radius:8px;border:1px solid var(--card-line);background:var(--chip);color:var(--fg);font:800 16px/1 var(--mono);cursor:pointer}
+.karar{margin-top:14px;border-radius:12px;padding:12px 16px;border:2px solid #4FD1A0;overflow-wrap:anywhere}
+.karar.kotu{border-color:#FF4D5E}
+.karar b{font:800 17px/1.4 var(--mono);display:block}
+/* kuyruk */
+.kuyruk{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin-top:14px}
+.kuyruk i{min-height:56px;border-radius:10px;border:2px dashed var(--card-line);display:grid;place-items:center;font:800 12px/1.2 var(--mono);font-style:normal;text-align:center;overflow-wrap:anywhere;padding:2px}
+.kuyruk i.rz{border-color:#FFC21A}
+.kuyruk i.T{background:#22E4FF;border:2px solid #22E4FF;color:#0B0F1A}.kuyruk i.R{background:#9B88FF;border:2px solid #9B88FF;color:#0B0F1A}.kuyruk i.K{background:#FFC21A;border:2px solid #FFC21A;color:#0B0F1A}
+@media (max-width:520px){.kuyruk{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.gunce{margin-top:10px;background:#070A12;color:#B9F5C9;border-radius:8px;padding:9px 12px;font:12.5px/1.6 var(--mono);height:118px;overflow:auto;white-space:pre-wrap}
+/* ariza */
+.arz{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));margin-top:12px}
+.arz button{min-height:52px;text-align:left;border-radius:10px;border:1px solid var(--card-line);background:var(--card);color:var(--fg);font:600 14px/1.35 var(--sans);padding:8px 12px;cursor:pointer}
+.arz button[aria-pressed=true]{border:2px solid #FF4D5E;background:var(--chip)}
+.hat{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.hat span{flex:1 1 92px;min-width:0;border-radius:10px;border:2px solid var(--card-line);padding:10px 6px;text-align:center;font:700 12.5px/1.3 var(--mono);transition:border-color .3s,background-color .3s;overflow-wrap:anywhere}
+.hat span.g{border-color:#4FD1A0;background:color-mix(in srgb,#4FD1A0 18%,transparent)}
+.hat span.x{border-color:#FF4D5E;background:color-mix(in srgb,#FF4D5E 22%,transparent);animation:sars .4s 2}
+.hat span.s{border-color:#FFC21A;background:color-mix(in srgb,#FFC21A 22%,transparent)}
+/* yol haritasi */
+.yolh{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(250px,100%),1fr));margin-top:18px}
+.yolh>div{border:1px solid var(--card-line);border-top:6px solid var(--yc);border-radius:14px;padding:14px 16px;background:var(--card);min-width:0}
+.yolh b{font:800 18px/1.2 var(--mono)}
+/* ag */
+.ag{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:980px){.ag{grid-template-columns:minmax(0,7fr) minmax(0,4fr)}}
+.ag canvas{height:560px;touch-action:none;cursor:grab}
+@media (max-width:700px){.ag canvas{height:440px}}
+@media (pointer:coarse){.ag canvas{touch-action:pan-y}}
+.not{border:1px solid #26324A;border-radius:14px;background:#131B2C;color:#EEF2F8;padding:16px 18px;min-width:0;max-height:560px;overflow:auto}
+.not h3{color:#fff;font-size:22px}
+.not .et{display:inline-block;font:700 12px/1.5 var(--mono);color:#0B0F1A;border-radius:999px;padding:2px 10px;margin-top:6px}
+.not a{color:#8FE9FF;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.not .geri{margin-top:12px;border-top:1px solid #26324A;padding-top:10px;font-size:14.5px}
+.agust{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.agust input{flex:1 1 200px;min-width:0;min-height:46px;border-radius:10px;border:1px solid #26324A;background:#131B2C;color:#EEF2F8;font:600 15px/1 var(--sans);padding:0 14px}
+.agust input::placeholder{color:#A6B1C4}
+.tur-leg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tur-leg button{min-height:44px;border-radius:999px;border:1px solid #26324A;background:#131B2C;color:#EEF2F8;font:700 12.5px/1 var(--mono);padding:0 14px;display:flex;gap:8px;align-items:center;cursor:pointer}
+.tur-leg button::before{content:"";width:12px;height:12px;border-radius:50%;background:var(--tc)}
+.tur-leg button[aria-pressed=false]{opacity:.55;text-decoration:line-through}
+.tur-leg button:focus-visible,.agust input:focus-visible,.not a:focus-visible,.arz button:focus-visible,.baytlar button:focus-visible,.bitler button:focus-visible{outline:3px solid #22E4FF;outline-offset:2px}
+.bant2{display:flex;height:58px;border-radius:12px;overflow:hidden;margin-top:12px;gap:2px}
+.bant2 i{display:grid;place-items:center;background:var(--bc);color:#0B0F1A;font:800 12px/1.2 var(--mono);font-style:normal;overflow:hidden;white-space:nowrap;min-width:3px;transition:flex-grow .7s}
+@keyframes skay{to{stroke-dashoffset:-48}}
+@keyframes sars{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@media (prefers-reduced-motion:reduce){.sinema .kt.ak,.hat span.x{animation:none}.bant2 i,.sinema .ks{transition:none}}
+@media print{.sinema,.kart-g canvas,.tus,.zc{display:none}}
+</style>
+</head>
+<body>
+<header class="band dark hero"><canvas aria-hidden="true"></canvas><div class="wrap" style="position:relative;z-index:1">
+<div class="eyebrow">F746 · MP257 · Linux · PC · 25.11.2026</div>
+<h1>Bir sensörden ekrana:<br><span>sistemin tamamı.</span></h1>
+<p class="lead">Bir hareket ölçümünün iki karttan, üç işlemciden ve bir kablodan geçip PC’de doğrulanmasının hikâyesi. Her parça oynatılabilir, çoğu denenebilir.</p>
+<div class="kpis"><div class="kpi"><b>6003 / <em>6003</em></b><span>60 saniyede PC’ye ulaşan paket; CRC hatası 0, SEQ boşluğu 0</span></div><div class="kpi"><b>596 + <em>18,8 µs</em></b><span>F746’da DRDY → son bit, M33’te 23. bayt → Linux</span></div><div class="kpi"><b>%0,56 <em>/ %49</em></b><span>Linux programının işlemci payı / M33 kod belleği</span></div></div>
+<div class="legend"><span><span class="b b-st">KART</span> Gerçek kartta ölçüldü</span><span><span class="b b-yr">MODEL</span> Anlatım için hesap</span><span><span class="b b-ks">YAPILMADI</span> Henüz yok</span></div>
+<h2 style="margin-top:44px;font-size:22px">Bu raporda</h2>
+<div class="qs"><a href="#bakis"><b>1</b>Sistem bir bakışta ve yol haritası</a><a href="#sinema"><b>2</b>Bir örneğin yolculuğu (kameralı animasyon)</a><a href="#donanim"><b>3</b>Donanım, kablo ve bitler</a><a href="#f746"><b>4</b>F746: task’lar nasıl paylaşıyor?</a><a href="#cikis"><b>5</b>F746: sınırlı kuyruklar</a><a href="#lab"><b>6</b>Paket laboratuvarı</a><a href="#m33"><b>7</b>M33: sessizlikle mesaj ayırma</a><a href="#rpmsg"><b>8</b>RPMsg, Linux ve açılış</a><a href="#gecikme"><b>9</b>Gecikme: gerçek dağılımlar</a><a href="#ariza"><b>10</b>Arıza enjektörü</a><a href="#hatalar"><b>11</b>Yaşanan hatalar ve testler</a><a href="#agbol"><b>12</b>Bilgi ağı (Obsidian)</a></div>
+</div></header>
+<nav class="topnav" aria-label="Bölümler"><div class="wrap" id="navWrap"><div class="overall" aria-live="polite"><div class="segs" id="segs"></div><span id="overall">0/0</span></div></div></nav>
+<section class="band sec" id="bakis" data-name="Bakış" style="--acc:var(--lime);--acc-ink:var(--lime-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">01</div><div><div class="eyebrow">Sistem bir bakışta</div><h2>Kim ne yapıyor?</h2></div><div class="goal"><strong>Tek cümle:</strong> F746 ölçer, M33 paketler, Linux taşır, PC doğrular. Hiçbiri bir sonrakini beklemez.</div><div class="pbar"><i></i></div></div>
+<div class="steps">
+<article class="step" data-id="b1"><div class="step-h"><label class="check" aria-label="Okudum: Dört oyuncu"><input type="checkbox"></label><span class="sid">1</span><h3>Dört oyuncu</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Oyuncu</th><th>İşletim sistemi</th><th>Görevi</th><th>Dili ve dosyaları</th></tr></thead><tbody><tr><td><b>STM32F746G-DISCO</b></td><td>FreeRTOS V11.3.1 + FreeRTOS-Plus-TCP</td><td>IMU okur, açıları hesaplar, 23 baytlık mesaj yollar; PC’den komut alır</td><td>C, <code>App/Src</code> (21 dosya)</td></tr><tr><td><b>MP257 · Cortex-M33</b></td><td>Zephyr 4.5.0</td><td>Mesajı ayırır, paketler, süreleri ölçer, Linux’a verir</td><td>C, <code>MP257/zephyr</code></td></tr><tr><td><b>MP257 · Cortex-A35</b></td><td>OpenSTLinux, 6.18.37</td><td>Paketi UDP ile PC’ye yollar</td><td>C, <code>MP257/linux</code></td></tr><tr><td><b>PC</b></td><td>Windows, Python</td><td>Paketi çözer, komut yollar, testleri koşar</td><td>Python, <code>Host</code></td></tr></tbody></table></div></div></article>
+<article class="step" data-id="b2"><div class="step-h"><label class="check" aria-label="Okudum: Sözlük: günlük dille"><input type="checkbox"></label><span class="sid">2</span><h3>Sözlük: günlük dille</h3></div><div class="body"><div class="tbl"><table class="sm"><thead><tr><th>Terim</th><th>Karşılığı</th></tr></thead><tbody><tr><td>Task / thread</td><td>Kendi işini yapan çalışan</td></tr><tr><td>Kesme (ISR)</td><td>Kapı zili: çalışanı uyandırır</td></tr><tr><td>Öncelik</td><td>Aynı anda iki iş varsa kim önce</td></tr><tr><td>Kuyruk</td><td>Sıradaki işlerin durduğu raf; boyu sınırlı</td></tr><tr><td>Semafor</td><td>“Kaç tane hazır?” sayacı</td></tr><tr><td>DMA</td><td>İşlemciye sormadan veri taşıyan kurye</td></tr><tr><td>CRC</td><td>Paketin parmak izi; bir bit bozulsa tutmaz</td></tr><tr><td>SEQ</td><td>Sıra numarası; kaybolanı gösterir</td></tr><tr><td>RPMsg</td><td>Aynı çipteki iki işlemcinin mesajlaşma kuralları</td></tr><tr><td>Jitter</td><td>Sürenin oynaması: en çok eksi en az</td></tr></tbody></table></div></div></article>
+</div><h3 style="margin-top:30px">Yol haritası</h3><div class="yolh">
+<div style="--yc:#A8D84A"><b>M0–M1</b><p>OPEN imaj, Zephyr kurulumu</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>M2</b><p>Zephyr’de LED; bekleme yok</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>M3</b><p>USART6; FIFO ile taşma giderildi</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>M4</b><p>F746 bağlandı; 6004 mesaj, hata 0</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>SRAM2</b><p>Thread uyanması 126,5 → 3,0 µs</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>M5</b><p>TELEM paketi; 1000 / 1000 aynı</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>M6</b><p>RPMsg; kayıp 0</p><span class="b b-st">KART</span></div>
+<div style="--yc:#A8D84A"><b>M7</b><p>Linux UDP; PC’ye 6003 / 6003</p><span class="b b-st">KART</span></div>
+<div style="--yc:#FFC21A"><b>M8</b><p>Host’a UDP girişi, canlı ekran</p><span class="b b-ks">YAPILMADI</span></div>
+<div style="--yc:#FFC21A"><b>M9</b><p>Uçtan uca gecikme</p><span class="b b-ks">YAPILMADI</span></div>
+</div>
+</div></section>
+<section class="band dark sec" id="sinema" data-name="Yolculuk" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">02</div><div><div class="eyebrow">Kameralı animasyon · 22 adım</div><h2>Bir örneğin yolculuğu</h2></div><div class="goal"><strong>Nasıl izlenir:</strong> Oynat’a bas; kamera parçadan parçaya gider. Ok tuşları adım değiştirir, boşluk durdurur. “Genel” bütün haritaya döner.</div><div class="pbar"><i></i></div></div>
+<div class="sinema" tabindex="0" aria-label="Sistem haritasında kameralı animasyon; ok tuşlarıyla gezilir"><svg preserveAspectRatio="xMidYMid meet" viewBox="20 20 2380 1080" role="img" aria-label="Sistem haritası"></svg>
+<div class="hud"><div class="metin"><div class="ust"><span class="no"></span><span class="saat"></span></div><h3></h3><div class="iki"><div class="kutucuk"><b>Ne oluyor?</b><span class="ne" aria-live="polite"></span></div><div class="kutucuk ned"><b>Neden?</b><span class="nedm"></span></div></div></div>
+<div class="zc" aria-label="Adımlar"></div><div class="tus"><button type="button" data-a="oynat" class="pri">Oynat</button><button type="button" data-a="geri">Geri</button><button type="button" data-a="ileri">İleri</button><button type="button" data-a="ilk">Başa dön</button><button type="button" data-a="genel">Genel</button><button type="button" data-a="hiz">Hız 1×</button></div></div></div><div class="skod"></div>
+<details class="hepsi"><summary>Bütün adımları yazı olarak göster</summary><ol class="plist"><li><b>Bütün sistem</b><p>Üç işlemci, iki kart, bir PC. Soldan sağa: F746 ölçer, M33 paketler, Linux yollar, PC çözer. Her kutu gerçek bir task, kesme, kuyruk ya da donanımdır. İleri’ye bastıkça kamera o parçaya gider.</p></li><li><b>1 · IMU örneği hazır</b><p>IMU yeni bir ivme ve jiroskop örneği hazırladı, DRDY pinini oynattı. Kart IMU’ya “hazır mı?” diye sormaz; IMU haber verir. 100 Hz’de 10 ms’de bir.</p></li><li><b>2 · DRDY kesmesi</b><p>Kesme işlemcinin çevrim sayacını okur ve meas task’ına bir bildirim bırakır. Ölçümün sıfır noktası burası. Kesmede iş yapılmaz; asıl iş task’ta.</p></li><li><b>3 · SPI ile okuma</b><p>meas okumayı DMA’ya verir ve uyur; DMA bitince kesme onu yeniden uyandırır. İşlemci bayt beklemez. O sırada başka task’lar çalışabilir.</p></li><li><b>4 · Açı filtresi</b><p>Kalibrasyon çıkarılır, jiroskopla açılar ilerletilir, ivmeyle yavaşça düzeltilir. Jiroskop hızlı ama kayar; ivme kaymaz ama titrer. Filtre ikisinin iyi yanını alır.</p></li><li><b>5 · 23 baytlık ham mesaj</b><p>İvme, jiroskop, açılar, bayraklar ve bir önceki mesajın süresi yan yana yazılır. Bir mesaj kendi süresini taşıyamaz: süre ancak mesaj gidince belli olur. Bu yüzden bir sonrakinde gelir.</p></li><li><b>6 · USART6 DMA</b><p>Mesaj DMA’ya verilir, meas beklemeden uyumaya döner. Hat meşgulse mesaj düşer ve sayılır.</p></li><li><b>7 · Kabloda</b><p>460800 baud: bir bayt 21,7 µs. Başlık ve CRC yok, yalnız veri. Son bit çıkınca F746’nın TX bitti kesmesi süreyi kaydeder.</p></li><li><b>8 · M33: FIFO ve kesme</b><p>Kesme her baytı toplar; ilk baytta T1, 23. baytta T2 damgasını alır. Mesajın başını 2 ms’den uzun sessizlik gösterir.</p></li><li><b>9 · Kuyruk ve uyanma</b><p>Mesaj kuyruğa kopyalanır, main thread uyanır. Program DDR’deyken bu 126,5 µs sürüyordu; SRAM2’ye taşınınca 3,0 µs.</p></li><li><b>10 · Paket kurulur</b><p>Başlık, sıra numarası ve CRC-8 eklenir: 23 bayt 33 olur. PC’deki Host bu biçimi zaten tanıyor; tek satırı değişmedi.</p></li><li><b>11 · Linux’a verilir</b><p>Boş bir tampona kopyalanır. Tampon yoksa beklenmez: paket atılır ve sayılır. Telemetri hiçbir durumda Linux’u beklemez.</p></li><li><b>12 · Kapı zili</b><p>IPCC donanımı Linux’a kesme gönderir. İki işlemci birbirinin belleğini gözlemez; haber verir.</p></li><li><b>13 · Linux çekirdeği</b><p>Sürücü paketi /dev/rpmsg0 kuyruğuna alır, tamponu M33’e geri verir.</p></li><li><b>14 · telem_udp</b><p>poll içinde uyuyan program uyanır, tek okumada tam bir paket alır. İşlemci payı %0,56; saniyede 101 uyanma.</p></li><li><b>15 · USB üzerinden PC’ye</b><p>33 bayt tek bir UDP paketi olur.</p></li><li><b>16 · Host çözer</b><p>SOF, sürüm, uzunluk, CRC ve bayraklar denetlenir. Kartta 60 saniyede 6003 / 6003 paket geçti.</p></li><li><b>17 · Ekran (M8)</b><p>Paketlerin GUI’ye canlı gelmesi M8’in işi; henüz yok. Bu raporda yapılmayan hiçbir şey yapılmış gibi gösterilmiyor.</p></li><li><b>18 · Eski yol: PC’ye USART1</b><p>PC’den START gelirse aynı örnek ikinci yoldan da gider: gerçek bir UDP/IP yığını, Ethernet frame’i hex satırı olarak. MP257’ye giden mesaj önce yollanır; PC yolunun beklemesi onu geciktirmez.</p></li><li><b>19 · Komutlar geri gelir</b><p>Komut USART1’den girer, denetimlerden geçer, öncelikli şeritten ctrlTask’a ulaşır. critParser IP task’tan önceliklidir: komut geldiği an işlenir.</p></li><li><b>20 · Linux’un komutu</b><p>telem_udp saniyede bir “gönder” der. Her seferinde 3 saniyelik sayaç baştan başlar. Program çökerse sayaç dolar ve M33 kendiliğinden susar.</p></li><li><b>Baştan sona</b><p>Bir örnek: ölçüldü, filtrelendi, 23 bayt oldu, 33 bayt oldu, iki işlemciden geçti, PC’de doğrulandı. 10 ms sonra sıradaki başlıyor. Hiçbir halka bir sonrakini beklemez. Her kaybın bir sayacı var.</p></li></ol></details>
+<div class="steps"><article class="step" data-id="s1"><div class="step-h"><label class="check" aria-label="Okudum: Yolculuğu izledim"><input type="checkbox"></label><span class="sid">✓</span><h3>Yolculuğu izledim</h3></div><div class="body"><p>Zaman etiketleri: “ölçüldü” denmeyenler hesaptır. F746 ile M33’ün saatleri ayrıdır; süreler tam toplanamaz.</p></div></article></div>
+</div></section>
+<section class="band tint sec" id="donanim" data-name="Donanım" style="--acc:var(--violet);--acc-ink:var(--violet-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">03</div><div><div class="eyebrow">Donanım ve hat</div><h2>Kablo ve bitler</h2></div><div class="goal"><strong>Tek veri teli:</strong> F746 D1 → MP257 CN5 pin 10, bir de GND. Üzerinden gerçek kart kaydından bir mesaj geçiriyoruz.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" id="dalga"><h3>Osiloskop: gerçek bir mesajın bitleri</h3><p class="mu">Kartın 25.11.2026 kaydından 23 bayt. Her bayt: başlangıç biti (B), 8 veri biti (küçük bit önce), dur biti (D). Dalga, bayt değerlerinden çizildi; osiloskopla ölçülmedi.</p><label>Yakınlaştırma <output></output><input type="range" min="1" max="23" value="4" aria-label="Kaç bayt görünsün"></label><canvas height="210" role="img" aria-label="UART dalga biçimi"></canvas><div class="tus"><button type="button" data-a="oy" class="pri">Oynat</button><button type="button" data-a="ad">Sonraki bayt</button></div></div>
+<div class="steps">
+<article class="step" data-id="d1"><div class="step-h"><label class="check" aria-label="Okudum: Bağlantı"><input type="checkbox"></label><span class="sid">1</span><h3>Bağlantı</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>F746</th><th>MP257 CN5</th><th>Not</th></tr></thead><tbody><tr><td>D1 (PC6, TX)</td><td>pin 10 (PF14, RX)</td><td>veri</td></tr><tr><td>GND</td><td>pin 6</td><td>ortak toprak</td></tr><tr><td>D0 (PC7)</td><td>—</td><td>boş</td></tr><tr><td>—</td><td>pin 2 ve 4</td><td><b>5 V</b>, dokunma</td></tr></tbody></table></div><p>Takarken iki kart da kapalı. Açarken önce MP257; kapatırken önce F746. İki hat da 3,3 V (belgeden doğrulandı, multimetre yoktu).</p></div></article>
+<article class="step" data-id="d2"><div class="step-h"><label class="check" aria-label="Okudum: Hız hesabı"><input type="checkbox"></label><span class="sid">2</span><h3>Hız hesabı</h3></div><div class="body"><div class="tbl"><table class="sm"><thead><tr><th></th><th></th></tr></thead><tbody><tr><td>Baud</td><td>460.800 bit/s</td></tr><tr><td>Bir bit</td><td>2,17 µs</td></tr><tr><td>Bir bayt (10 bit)</td><td>21,7 µs</td></tr><tr><td>23 bayt</td><td>499 µs</td></tr><tr><td>Mesaj aralığı (100 Hz)</td><td>10.000 µs</td></tr><tr><td>Hattın doluluğu</td><td>%5</td></tr></tbody></table></div></div></article>
+<article class="step" data-id="d3"><div class="step-h"><label class="check" aria-label="Okudum: Bellek haritası (MP257)"><input type="checkbox"></label><span class="sid">3</span><h3>Bellek haritası (MP257)</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Alan</th><th>Adres</th><th>Ne var?</th></tr></thead><tbody><tr><td>SRAM2 kod</td><td><code>0x0A060000</code>, 64 KB</td><td>M33 programı, 32.388 B</td></tr><tr><td>SRAM2 veri</td><td><code>0x0A070000</code>, 64 KB</td><td>M33 verisi, 9.340 B</td></tr><tr><td>vring0 / vring1</td><td><code>0x812F8000</code>, <code>0x812F9000</code></td><td>Dolu ve boş listeleri</td></tr><tr><td>Tamponlar</td><td><code>0x812FA000</code>, 24 KB</td><td>RPMsg mesajları</td></tr></tbody></table></div></div></article>
+</div>
+</div></section>
+<section class="band dark sec" id="f746" data-name="F746" style="--acc:var(--amber);--acc-ink:var(--amber-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">04</div><div><div class="eyebrow">FreeRTOS · etkileşimli</div><h2>Sekiz task tek işlemciyi nasıl paylaşıyor?</h2></div><div class="goal"><strong>Kural:</strong> çalışmaya hazır olanlardan önceliği en yüksek olan çalışır. P6 en yüksek, P1 en düşük.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" id="plan"><h3>Zamanlayıcı <span class="b b-yr">MODEL</span></h3><p class="mu">30 milisaniyelik bir kesit. İş süreleri temsilîdir (kartta tek tek ölçülmedi); öncelikler ve sıra koddan alındı. BULK paketleri 5 ms arayla gelir, çünkü 1 Mbaud hatta biri yaklaşık bu kadar sürer. Aç, kapat, START’ı kaydır.</p><div class="tus"><button type="button" data-z="drdy" aria-pressed="true">DRDY (ölçüm)</button><button type="button" data-z="cmd" aria-pressed="true">START komutu</button><button type="button" data-z="bulk" aria-pressed="true">6 BULK paketi</button><button type="button" data-z="rap" aria-pressed="false">Rapor</button><button type="button" data-a="oy" class="pri">Zamanı oynat</button><button type="button" data-a="yak" aria-pressed="false">START anına yakınlaş</button></div><label>START hangi anda gelsin? <output></output><input type="range" min="100" max="28000" step="100" value="6300" aria-label="START komutunun geldiği an"></label><canvas height="360" role="img" aria-label="Task zaman çizelgesi"></canvas><div class="bilgi"></div></div>
+<div class="steps">
+<article class="step" data-id="f1"><div class="step-h"><label class="check" aria-label="Okudum: Task’lar"><input type="checkbox"></label><span class="sid">1</span><h3>Task’lar</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Task</th><th>Öncelik</th><th>Ne bekler?</th><th>İşi</th></tr></thead><tbody><tr><td>critParser</td><td>6</td><td>sbCrit (MessageBuffer)</td><td>Komut paketini çözer</td></tr><tr><td>ctrlTask</td><td>6</td><td>ctrlQueue</td><td>Komutu uygular, sağlık denetimi</td></tr><tr><td>IP task</td><td>5</td><td>ağ olayları</td><td>Ethernet, ARP, IPv4, UDP</td></tr><tr><td>uartTx</td><td>5</td><td>TX kuyruğu</td><td>USART1 çıkışının tek sahibi</td></tr><tr><td>vnetRx</td><td>4</td><td>sbUartRx</td><td>Satırı frame’e çevirir</td></tr><tr><td>meas</td><td>3</td><td>EventGroup, DRDY, SPI</td><td>Ölçer, hesaplar, yollar</td></tr><tr><td>lowParser, worker</td><td>1</td><td>sbLow, workQueue</td><td>Önemsiz veri ve raporlar</td></tr></tbody></table></div></div></article>
+<article class="step" data-id="f2"><div class="step-h"><label class="check" aria-label="Okudum: Neden komut IP task’tan öncelikli?"><input type="checkbox"></label><span class="sid">2</span><h3>Neden komut IP task’tan öncelikli?</h3></div><div class="body"><p>critParser P6, IP task P5. Komut geldiği an işlenir; IP task elindeki diğer paketleri sonra sürdürür. Önemsiz veri (ENV, BULK, CAL) P1’de birikse bile komutların havuzuna ve kuyruğuna dokunamaz.</p><div class="cbox"><div class="cf">App/Inc/app_config.h</div><pre><code><span class="cl"><i>43</i>#define APP_PRIO_CRIT_PARSER            ( configMAX_PRIORITIES - 1 )    /* 6 */</span><span class="cl"><i>44</i>#define APP_PRIO_CTRL                   ( configMAX_PRIORITIES - 1 )    /* 6 */</span><span class="cl"><i>45</i>#define APP_PRIO_VNET_RX                4</span><span class="cl"><i>46</i>#define APP_PRIO_UART_TX                5       /* TELEM line out at once (DRDY -&gt; TX done) */</span><span class="cl"><i>47</i>#define APP_PRIO_MEAS                   3</span><span class="cl"><i>48</i>#define APP_PRIO_LOW_PARSER             1</span><span class="cl"><i>49</i>#define APP_PRIO_WORKER                 1</span></code></pre></div></div></article>
+<article class="step" data-id="f3"><div class="step-h"><label class="check" aria-label="Okudum: Kilitsiz paylaşım"><input type="checkbox"></label><span class="sid">3</span><h3>Kilitsiz paylaşım</h3></div><div class="body"><p>Uygulama kodunda mutex yok. Çok alanlı veri, uzunluğu 1 olan kuyruktan (mailbox) geçer; sayaçlar atomik artar; kısa kritik bölge yalnız iki yerde.</p><div class="cbox"><div class="cf">App/Src/app_stats.c</div><pre><code><span class="cl"><i>115</i>( void ) __atomic_fetch_add( &amp;ulCounters[ eId ], ulValue, __ATOMIC_RELAXED );</span></code></pre></div></div></article>
+</div>
+</div></section>
+<section class="band sec" id="cikis" data-name="Kuyruklar" style="--acc:var(--magenta);--acc-ink:var(--magenta-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">05</div><div><div class="eyebrow">F746 · etkileşimli</div><h2>Sınırlı kuyruk: dolunca ne olur?</h2></div><div class="goal"><strong>Kural:</strong> 8 yer; son 2 yer yalnız komut cevaplarına. Yalnız TELEM öne girebilir, aynı anda bir tane.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" id="txq"><h3>TX kuyruğunu doldur</h3><p class="mu">Soldaki ilk yer, hatta çıkacak olandır. Kurallar <code>App/Src/uart_tx.c</code> dosyasındakilerle aynı.</p><div class="kuyruk" aria-label="Kuyruk"></div><div class="tus"><button type="button" data-k="T">TELEM ekle</button><button type="button" data-k="R">Rapor ekle</button><button type="button" data-k="K">Komut cevabı ekle</button><button type="button" data-k="G" class="pri">uartTx birini yollasın</button><button type="button" data-k="Z">12 öğelik patlama</button></div><div class="gunce" aria-live="polite" aria-label="Günlük"></div></div>
+<div class="steps">
+<article class="step" data-id="q1"><div class="step-h"><label class="check" aria-label="Okudum: Kabul kuralı"><input type="checkbox"></label><span class="sid">1</span><h3>Kabul kuralı</h3></div><div class="body"><div class="cbox"><div class="cf">App/Src/uart_tx.c</div><pre><code><span class="cl"><i>311</i>if( uxSpaces == 0U )</span><span class="cl"><i>312</i>{</span><span class="cl"><i>313</i>    eOutcome = eStatTxqFull;</span><span class="cl"><i>314</i>}</span><span class="cl"><i>315</i>else if( ( xMayUseReserve == pdFALSE ) &amp;&amp; ( uxSpaces &lt;= APP_TXQ_RESERVE ) )</span><span class="cl"><i>316</i>{</span><span class="cl"><i>317</i>    eOutcome = eStatTxqReserve;</span><span class="cl"><i>318</i>}</span></code></pre></div><p>Kuyruk dolsa bile komut cevabı için yer kalır: kullanıcı STOP’un cevabını her zaman görür.</p></div></article>
+<article class="step" data-id="q2"><div class="step-h"><label class="check" aria-label="Okudum: Her kayıp sayılır"><input type="checkbox"></label><span class="sid">2</span><h3>Her kayıp sayılır</h3></div><div class="body"><p>F746’da 127 sayaç var. Her katmanda eşitlik: <b>giren = çıkan + nedeni bilinen düşen</b>. Host 19 eşitliği denetler. “Kayıp kabul edilebilir; açıklanamayan kayıp kabul edilmez.”</p></div></article>
+</div>
+</div></section>
+<section class="band dark sec" id="lab" data-name="Laboratuvar" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">06</div><div><div class="eyebrow">Etkileşimli</div><h2>Paket laboratuvarı</h2></div><div class="goal"><strong>Dene:</strong> uçağı eğ, paketin baytları değişsin. Bir bite dokunup boz; CRC’nin yakalayıp yakalamadığına bak. Çözücü, Host’un <code>decode</code> sırasıyla aynı.</div><div class="pbar"><i></i></div></div>
+<div class="lab"><div class="kart-g" style="margin-top:0"><canvas height="300" role="img" aria-label="Üç boyutlu uçak"></canvas><label>Roll <output data-o="r"></output><input type="range" name="r" min="-180" max="180" aria-label="Roll"></label><label>Pitch <output data-o="p"></output><input type="range" name="p" min="-90" max="90" aria-label="Pitch"></label><label>Yaw <output data-o="y"></output><input type="range" name="y" min="-180" max="180" aria-label="Yaw"></label><div class="tus"><button type="button" data-a="canli" aria-pressed="false"></button></div></div>
+<div class="kart-g" style="margin-top:0"><h3>33 bayt</h3><div class="baytlar"></div><div class="bilgi"></div><div class="bitler"></div><div class="tus"><button type="button" data-a="rast" class="pri">Rastgele bir bit boz</button><button type="button" data-a="onar">Onar</button></div><div class="karar" aria-live="polite"></div></div></div>
+<div class="steps"><article class="step" data-id="l1"><div class="step-h"><label class="check" aria-label="Okudum: Aynı paket C’de ve Python’da"><input type="checkbox"></label><span class="sid">1</span><h3>Aynı paket C’de ve Python’da</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/zephyr/src/packet.c</div><pre><code><span class="cl"><i>23</i>/* 23 baytlık ham mesajı 33 baytlık pakete çevirir. */</span><span class="cl"><i>24</i>void packet_build(uint8_t *out, const uint8_t *raw)</span><span class="cl"><i>25</i>{</span><span class="cl"><i>26</i>    out[0] = PKT_SOF;</span><span class="cl"><i>27</i>    out[1] = PKT_VER;</span><span class="cl"><i>28</i>    out[2] = PKT_TELEM;</span><span class="cl"><i>29</i>    out[3] = 0;                                       // bayrak yok: veri paketi</span><span class="cl"><i>30</i>    sys_put_be16(packet_seq(raw), &amp;out[4]);</span><span class="cl"><i>31</i>    out[6] = 0;                                       // REQ_ID: veride 0</span><span class="cl"><i>32</i>    out[7] = 0;</span><span class="cl"><i>33</i>    out[8] = MSG_SIZE;</span><span class="cl"><i>34</i>    memcpy(&amp;out[PKT_HEADER_SIZE], raw, MSG_SIZE);</span><span class="cl"><i>35</i>    out[PKT_SIZE - 1U] = crc8(out, PKT_SIZE - 1U, TELEM_CRC8_POLY, 0x00, false);</span><span class="cl"><i>36</i>}</span></code></pre></div><p>M33’ün C kodu ile Host’un Python kodu 1000 rastgele mesajda bayt bayt aynı paketi verdi. Uçak gösterimi Host’un Uçuş sekmesinden esinlendi; kart sabit durduğu için gerçek kayıtta açılar az oynar.</p></div></article></div>
+</div></section>
+<section class="band tint sec" id="m33" data-name="M33" style="--acc:var(--violet);--acc-ink:var(--violet-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">07</div><div><div class="eyebrow">Zephyr · etkileşimli</div><h2>Başlıksız mesaj nasıl ayrılıyor?</h2></div><div class="goal"><strong>Fikir:</strong> mesajın başını işaret değil, sessizlik gösterir.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" id="sess"><h3>Sessizlik deneyi <span class="b b-yr">MODEL</span></h3><label>Kaybolan bayt (2. mesajda) <output data-o="kayip"></output><input type="range" name="kayip" min="0" max="23" value="0" aria-label="Kaybolan bayt"></label><label>Sessizlik eşiği <output data-o="esik"></output><input type="range" name="esik" min="0" max="120" value="20" aria-label="Sessizlik eşiği, onda bir milisaniye"></label><canvas height="200" role="img" aria-label="Mesaj zaman çizgisi"></canvas><div class="bilgi"></div></div>
+<div class="steps">
+<article class="step" data-id="m1"><div class="step-h"><label class="check" aria-label="Okudum: Kod"><input type="checkbox"></label><span class="sid">1</span><h3>Kod</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/zephyr/src/app_isr.c</div><pre><code><span class="cl"><i>16</i>    // Başlık yok: mesaj sınırını sessizlik gösterir; yarım kalan mesaj atılır</span><span class="cl"><i>17</i>    if (msg_len &gt; 0 &amp;&amp; now - last_byte_cycles &gt; k_us_to_cyc_floor32(MSG_GAP_US))</span><span class="cl"><i>18</i>    {</span><span class="cl"><i>19</i>        ++bad_len;</span><span class="cl"><i>20</i>        msg_len = 0;</span><span class="cl"><i>21</i>    }</span></code></pre></div><p>Kesme beklemez; yalnız son baytın anına bakar.</p></div></article>
+<article class="step" data-id="m2"><div class="step-h"><label class="check" aria-label="Okudum: Zephyr araçları: hangisi nerede?"><input type="checkbox"></label><span class="sid">2</span><h3>Zephyr araçları: hangisi nerede?</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Araç</th><th>Nerede</th><th>Ne sağlar?</th></tr></thead><tbody><tr><td><code>k_msgq</code></td><td>kesme → main</td><td>Mesaj gelene kadar uyuma</td></tr><tr><td><code>k_sem</code></td><td>IPCC kesmesi → link_task</td><td>Linux’un haberi</td></tr><tr><td><code>k_timer</code></td><td>3 saniyelik süre</td><td>Bekleyen thread olmadan zaman</td></tr><tr><td>Öncelik 0 / 5</td><td>main / link_task</td><td>Telemetri her zaman önce</td></tr></tbody></table></div><p>Kullanılmayanlar: <code>k_msleep</code>, <code>k_busy_wait</code>, yoklama.</p></div></article>
+<article class="step" data-id="m3"><div class="step-h"><label class="check" aria-label="Okudum: SRAM2: en büyük kazanç"><input type="checkbox"></label><span class="sid">3</span><h3>SRAM2: en büyük kazanç</h3></div><div class="body"><p>Aynı C kodu, yalnız bellek değişti.</p><div class="tbl"><table><thead><tr><th></th><th>DDR</th><th>SRAM2</th></tr></thead><tbody><tr><td>Thread uyanması, ortalama</td><td>126,5 µs</td><td><b>3,0 µs</b></td></tr><tr><td>T2−T1 jitter</td><td>23,5 µs</td><td><b>1,1 µs</b></td></tr></tbody></table></div></div></article>
+</div>
+</div></section>
+<section class="band dark sec" id="rpmsg" data-name="RPMsg" style="--acc:var(--amber);--acc-ink:var(--amber-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">08</div><div><div class="eyebrow">İki işlemci · etkileşimli</div><h2>Ortak bellek halkası ve açılış</h2></div><div class="goal"><strong>Halka:</strong> M33 boş kutuya yazar, Linux dolu kutuyu boşaltır. Gerçekte 10 ms’de bir paket vardır; burada yavaşlatıldı.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" id="halka"><h3>8 tamponluk halka <span class="b b-yr">MODEL</span></h3><canvas height="320" role="img" aria-label="Tampon halkası"></canvas><label>Linux’un hızı (M33’e göre) <output></output><input type="range" name="lh" min="120" max="1400" value="300" aria-label="Linux okuma süresi; sağ yavaş"></label><div class="tus"><button type="button" data-a="tak" aria-pressed="false">Linux’u takılt</button><button type="button" data-a="bir">M33 bir paket versin</button></div><p class="mu">Kartta tampon hiç dolmadı; dolu tampon davranışı QEMU’da sınandı (8 gitti, 63 atıldı, telemetri sürdü).</p></div>
+<h3 style="margin-top:36px">Sistem nasıl açılıyor?</h3><div class="sahne" id="sA" tabindex="0" aria-label="Adım adım animasyon; sağ ve sol ok tuşlarıyla gezilir">
+<div class="anlat"><div class="no"></div><h3></h3><div class="iki"><div class="kutucuk"><b>Ne oluyor?</b><span class="ne" aria-live="polite"></span></div><div class="kutucuk ned"><b>Neden?</b><span class="nedm"></span></div></div></div>
+<div class="alan"><svg class="teller" aria-hidden="true"></svg><div class="seritler"><div class="serit" style="--lc:#A8D84A"><h4>F746 ve PC</h4><div class="nd" data-n="f"><span class="im" aria-hidden="true"></span><b>F746</b><small>ölçüm</small><em></em></div><div class="nd" data-n="p"><span class="im" aria-hidden="true"></span><b>PC</b><small>Host</small><em></em></div></div><div class="serit" style="--lc:#FFC21A"><h4>M33 ve kanal</h4><div class="nd" data-n="m"><span class="im" aria-hidden="true"></span><b>M33</b><small>Zephyr</small><em></em></div><div class="nd" data-n="r"><span class="im" aria-hidden="true"></span><b>remoteproc / RPMsg</b><small>ELF ve kanal</small><em></em></div></div><div class="serit" style="--lc:#22E4FF"><h4>Linux</h4><div class="nd" data-n="l"><span class="im" aria-hidden="true"></span><b>Linux A35</b><small>çekirdek</small><em></em></div><div class="nd" data-n="u"><span class="im" aria-hidden="true"></span><b>telem_udp</b><small>C programı</small><em></em></div></div></div></div>
+<div class="sure" aria-hidden="true"><i></i></div>
+<div class="kumanda"><div class="ctrl"><button type="button" data-a="oynat" class="pri">Oynat</button><button type="button" data-a="geri">Geri</button><button type="button" data-a="ileri">İleri</button><button type="button" data-a="ilk">Başa dön</button><button type="button" data-a="hiz">Hız 1×</button></div><div class="ray" aria-label="Adımlar"></div></div>
+<div class="gunluk" aria-label="Çıktı"></div><div class="kod"></div>
+<details class="hepsi"><summary>Bütün adımları yazı olarak göster</summary><ol class="plist"><li><b>Güç gelir</b><p>Önce MP257 açılır, sonra F746. Kablo iki kart da kapalıyken takılmıştır.</p><p><b>Neden?</b> Enerjisiz bir kartın pinine sinyal vermek onu pinden beslemeye çalışır.</p></li><li><b>Linux açılır</b><p>OpenSTLinux başlar. USB ağı kurulur: 192.168.7.1.</p></li><li><b>M33 yüklenir</b><p>remoteproc ELF dosyasını SRAM2’ye yazar, resource table’ı okur, M33’ü başlatır.</p><p><b>Neden?</b> Bu adım elle yapılıyor; açılışta kendiliğinden başlamaz.</p></li><li><b>Kanal açılır</b><p>M33 uç noktasını duyurur, Linux /dev/rpmsg0’ı oluşturur.</p></li><li><b>F746 açılır</b><p>MP257 derlemesinde START beklenmez; ilk 1 saniye jiroskop sapması ölçülür.</p><p><b>Neden?</b> Bu sırada kart kıpırdamamalı.</p></li><li><b>telem_udp başlar</b><p>Program eskileri atar, “gönder” der ve saniyede bir yeniler.</p></li><li><b>PC almaya başlar</b><p>Artık her 10 ms’de bir paket.</p></li></ol></details></div>
+<div class="steps">
+<article class="step" data-id="r1"><div class="step-h"><label class="check" aria-label="Okudum: Linux programı"><input type="checkbox"></label><span class="sid">1</span><h3>Linux programı</h3></div><div class="body"><p>Üç olay, tek <code>poll</code>: paket geldi, 1 saniye doldu, kapanma istendi.</p><div class="cbox"><div class="cf">MP257/linux/telem_udp.c</div><pre><code><span class="cl"><i>265</i>struct pollfd fds[FD_COUNT] = {</span><span class="cl"><i>266</i>    [FD_DEV] = { .fd = dev, .events = POLLIN },</span><span class="cl"><i>267</i>    [FD_SIGNAL] = { .fd = signals, .events = POLLIN },</span><span class="cl"><i>268</i>    [FD_TIMER] = { .fd = timer, .events = POLLIN },</span><span class="cl"><i>269</i>};</span></code></pre></div></div></article>
+<article class="step" data-id="r2"><div class="step-h"><label class="check" aria-label="Okudum: Çökmeye karşı"><input type="checkbox"></label><span class="sid">2</span><h3>Çökmeye karşı</h3></div><div class="body"><div class="cbox"><div class="cf">MP257/zephyr/src/app_isr.c</div><pre><code><span class="cl"><i>79</i>/* Linux&#x27;un &#x27;1&#x27; komutu yenilenmedi: göndermeyi kapatır. */</span><span class="cl"><i>80</i>void lease_isr(struct k_timer *timer)</span><span class="cl"><i>81</i>{</span><span class="cl"><i>82</i>    (void)timer;</span><span class="cl"><i>83</i>    link_on = 0;</span><span class="cl"><i>84</i>    ++link_expired;</span><span class="cl"><i>85</i>}</span></code></pre></div><p>Kartta <code>kill -9</code> sonrası M33 2,01 s’de sustu; birikmiş 200 paket sonraki açılışta atıldı.</p></div></article>
+</div>
+</div></section>
+<section class="band sec" id="gecikme" data-name="Gecikme" style="--acc:var(--lime);--acc-ink:var(--lime-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">09</div><div><div class="eyebrow">Ölçüm</div><h2>Süre nereye gidiyor?</h2></div><div class="goal"><strong>İstek:</strong> Zephyr’in işleme süresi ile Linux’a verme süresi ayrı tutulsun.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" id="selale"><h3>Gecikme cetveli <span class="b b-st">KART</span></h3><div class="tus"><button type="button" data-m="hep" aria-pressed="true">DRDY’den Linux’a</button><button type="button" data-m="hat" aria-pressed="false">Hattan Linux’a</button><button type="button" data-m="m33" aria-pressed="false">Yalnız M33</button></div><div class="bant2" aria-hidden="true"></div><div class="bilgi"></div><h3 style="margin-top:26px">F746’nın süresi: 12.006 paketin dağılımı</h3><canvas class="h1" height="230" role="img" aria-label="F746 süre dağılımı"></canvas><p class="mu">En az 595, ortalama 596,2, en çok 724 µs, standart sapma 2,5. Bunun 499 µs’si hatta geçiyor.</p><h3 style="margin-top:26px">PC’de paketler arası süre</h3><canvas class="h2" height="230" role="img" aria-label="PC paket aralığı dağılımı"></canvas><p class="mu">En az 5,25, ortalama 9,99, en çok 14,47 ms; standart sapma 0,41. İlk ölçümde “32 ms” görünmüştü: Python’un <code>time.monotonic</code> saati Windows’ta 15,6 ms adımlıydı. Paketler değil, saat kabaydı; <code>perf_counter</code> ile yeniden ölçüldü.</p></div>
+<div class="steps">
+<article class="step" data-id="g1"><div class="step-h"><label class="check" aria-label="Okudum: Sayılar"><input type="checkbox"></label><span class="sid">1</span><h3>Sayılar</h3></div><div class="body"><div class="tbl"><table><thead><tr><th>Süre</th><th>En az</th><th>Ortalama</th><th>En çok</th><th>Kaynak</th></tr></thead><tbody><tr><td>DRDY → son bit (F746)</td><td>595</td><td>596,2</td><td>724 µs</td><td><span class="b b-st">KART</span> 12.006 paket</td></tr><tr><td>T2−T1, 23 baytın gelişi</td><td>475,7</td><td>476,0</td><td>476,9 µs</td><td><span class="b b-st">KART</span></td></tr><tr><td>T3−T2, thread uyanması</td><td>2,5</td><td>3,0</td><td>3,0 µs</td><td><span class="b b-st">KART</span></td></tr><tr><td>T4−T3, paketleme</td><td>8,2</td><td>8,2</td><td>9,4 µs</td><td><span class="b b-st">KART</span></td></tr><tr><td>T5−T4, Linux’a verme</td><td>7,6</td><td>7,6</td><td>10,2 µs</td><td><span class="b b-st">KART</span></td></tr><tr><td>PC’de paket aralığı</td><td>5.250</td><td>9.990</td><td>14.470 µs</td><td><span class="b b-st">KART</span> 12.005 aralık</td></tr><tr><td>F746 hazırlık (97 µs)</td><td>—</td><td>596 − 499</td><td>—</td><td><span class="b b-yr">MODEL</span></td></tr><tr><td>Linux → PC</td><td>—</td><td>—</td><td>—</td><td><span class="b b-ks">YAPILMADI</span> M9</td></tr><tr><td>PC yolu, DRDY → TX bitti</td><td>—</td><td>1,94 ms</td><td>≈ 4,3 ms</td><td>Sunum; 22.11.2026 T08</td></tr></tbody></table></div></div></article>
+</div>
+</div></section>
+<section class="band dark sec" id="ariza" data-name="Arıza" style="--acc:var(--magenta);--acc-ink:var(--magenta-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">10</div><div><div class="eyebrow">Etkileşimli</div><h2>Arıza enjektörü</h2></div><div class="goal"><strong>Bir arıza seç:</strong> nerede durduğunu, hangi sayacın arttığını ve bunun nasıl kanıtlandığını gör.</div><div class="pbar"><i></i></div></div>
+<div class="kart-g" style="margin-top:20px"><div class="arz"></div><div class="hat" aria-hidden="true"></div><div class="bilgi" aria-live="polite" style="margin-top:16px"></div></div>
+<div class="steps"><article class="step" data-id="a1"><div class="step-h"><label class="check" aria-label="Okudum: Bilinen zayıf nokta"><input type="checkbox"></label><span class="sid">!</span><h3>Bilinen zayıf nokta</h3></div><div class="body"><p>F746 ile M33 arasındaki 23 baytta CRC yok. Kabloda bozulan tek bir bit fark edilmez: M33 bozuk veriye doğru CRC ekler. Çözüm, ham mesaja F746’da CRC eklemek olur; istenmedi ve yapılmadı.</p></div></article></div>
+</div></section>
+<section class="band neon sec" id="hatalar" data-name="Hatalar ve testler" style="--acc:#3D6900;--acc-ink:var(--lime-ink)"><div class="wrap reveal">
+<div class="eyebrow">M0–M7</div><h2>11 · Yaşanan hatalar ve testler</h2><div class="pbar"><i></i></div>
+<div class="tbl"><table><thead><tr><th>Adım</th><th>Ne oldu?</th><th>Neden?</th><th>Nasıl çözüldü?</th></tr></thead><tbody><tr><td>M2</td><td><code>west: unknown command "build"</code></td><td>Yanlış klasör</td><td><code>C:\zephyrproject</code> içinde çalıştır</td></tr><tr><td>M3</td><td>Yeni overlay sessizce uygulanmadı</td><td>Yeni dosyalar normal derlemede görülmez</td><td>Bir kez <code>-p always</code></td></tr><tr><td>M3</td><td>M33 yerine M0+ seçildi (<code>bad phdr</code>)</td><td>Aygıt numarası her açılışta değişir</td><td>Sabit <code>0.m33</code> yolu</td></tr><tr><td>M3</td><td>İkinci bayt kayboldu</td><td>UART taşması</td><td>64 baytlık FIFO</td></tr><tr><td>M4</td><td>F746 derlenmedi</td><td>Derleme listesi eski</td><td>CubeIDE: Refresh, Clean, Build</td></tr><tr><td>M4</td><td>Thread 126,5 µs’de uyanıyor</td><td>Program DDR’den çalışıyor</td><td>SRAM2: 3,0 µs</td></tr><tr><td>M5</td><td><code>CRC8_POLY</code> uyarısı</td><td>Ad Zephyr’de de var</td><td>Kendi adı</td></tr><tr><td>M6</td><td>Hazır örnekte üç bekleme</td><td>OpenAMP ve sürücü yokluyor</td><td>Semafor, trysend, bir kez bak</td></tr><tr><td>M6</td><td>QEMU testleri rastgele kaldı</td><td>Sanal saat PC gecikmesini taşıyor</td><td>Kontrol deneyi ve <code>-icount</code></td></tr><tr><td>M6</td><td>Okuyan yokken paketler birikiyor</td><td>rpmsg_char kuyruğu sınırsız</td><td>Gönder / dur ve 3 saniyelik süre</td></tr><tr><td>M7</td><td>Program kartta <code>Aborted</code></td><td>TLS hizası</td><td>android29 hedefi</td></tr><tr><td>M7</td><td>PC’de 32 ms aralık göründü</td><td>Windows’ta <code>time.monotonic</code> 15,6 ms adımlı</td><td><code>perf_counter</code>: en çok 14,5 ms</td></tr></tbody></table></div>
+<h3 style="margin-top:28px">Testler</h3>
+<div class="tbl"><table><thead><tr><th>Katman</th><th>Nasıl sınandı?</th><th>Sonuç</th></tr></thead><tbody><tr><td>F746</td><td>T01–T08 kabul testleri (kart ve simülatör)</td><td>T08 kartta geçti (22.11.2026 kaydı). Simülatörde T08 kaldı (PC zamanlaması); T07 koşulmadı</td></tr><tr><td>M33 mantığı</td><td>QEMU: gerçek <code>main.c</code>, sahte F746 ve Linux</td><td><span class="b b-st">GEÇTİ</span> kalan 0 (-icount ile)</td></tr><tr><td>Paket</td><td>1000 rastgele mesaj, C ↔ Python</td><td><span class="b b-st">GEÇTİ</span> 1000 / 1000</td></tr><tr><td>M33 + F746</td><td>Kart, 60 s</td><td><span class="b b-st">GEÇTİ</span> 6004 mesaj, hata 0</td></tr><tr><td>RPMsg</td><td>Kart, 60 s × 2, dur/başlat</td><td><span class="b b-st">GEÇTİ</span> kayıp 0</td></tr><tr><td>Uçtan uca</td><td>Kart ve PC, 60 s; TERM, INT, HUP, kill -9</td><td><span class="b b-st">GEÇTİ</span> 6003 / 6003</td></tr><tr><td>Bu rapor için</td><td>Kart, 120 s kayıt × 2</td><td><span class="b b-st">GEÇTİ</span> 12.006 + 12.006 paket, SEQ boşluğu 0</td></tr><tr><td>Sınanmayan</td><td>Saatlerce çalışma, gerilim ölçümü, kabloda bozulma, M8, M9</td><td>—</td></tr></tbody></table></div>
+<div class="steps"><article class="step" data-id="h1"><div class="step-h"><label class="check" aria-label="Okudum: Hataları ve testleri okudum"><input type="checkbox"></label><span class="sid">✓</span><h3>Hataları ve testleri okudum</h3></div><div class="body"><p>Her hatanın ayrıntısı ve animasyonu <code>MP257\docs</code> klasöründeki 02–09 numaralı sayfalarda.</p></div></article></div></div></section>
+<section class="band dark sec" id="agbol" data-name="Bilgi ağı" style="--acc:var(--cyan);--acc-ink:var(--cyan-ink)"><div class="wrap reveal">
+<div class="phase-head"><div class="num">12</div><div><div class="eyebrow">Obsidian</div><h2>Her şeyin birbirine bağlandığı ağ</h2></div><div class="goal"><strong>73 not, 133 bağ.</strong> Bir noktaya dokun, notu oku, bağlarda gezin. Fareyle sürükle; düğmelerle yakınlaştır.</div><div class="pbar"><i></i></div></div>
+<div id="ag"><div class="agust"><input type="search" placeholder="Notlarda ara (Enter: git)" aria-label="Notlarda ara"><div class="tus" style="margin:0"><button type="button" data-a="buyut">Yakınlaş</button><button type="button" data-a="kucult">Uzaklaş</button><button type="button" data-a="ortala">Ortala</button></div></div><div class="tur-leg" aria-label="Türler"></div><div class="ag kart-g" style="padding:12px"><canvas role="img" aria-label="Bilgi ağı; notlar yandaki panelde"></canvas><div class="not" tabindex="0" aria-live="polite"></div></div></div>
+<div class="steps"><article class="step" data-id="o1"><div class="step-h"><label class="check" aria-label="Okudum: Aynı notlar Obsidian’da"><input type="checkbox"></label><span class="sid">1</span><h3>Aynı notlar Obsidian’da</h3></div><div class="body"><p>Bu ağın aynısı gerçek bir Obsidian kasası olarak da hazır: <code>C:\Users\Asus\Documents\GitHub\Odev_RTOS_Project_H6\Rapor\Obsidian_Kasasi</code></p><div class="tbl"><table class="sm"><thead><tr><th>Sıra</th><th>Ne yap?</th></tr></thead><tbody><tr><td>1</td><td>Obsidian’ı aç, “Open folder as vault” (klasörü kasa olarak aç) seç</td></tr><tr><td>2</td><td>Yukarıdaki klasörü göster</td></tr><tr><td>3</td><td><code>00 Başlangıç</code> notundan başla; sol menüdeki ağ simgesi bütün bağları gösterir</td></tr><tr><td>4</td><td><code>Sistem haritası.canvas</code> dosyası zinciri tahta üzerinde gösterir</td></tr></tbody></table></div><p class="mu">Obsidian bu bilgisayarda açılıp denenmedi; dosyalar biçim olarak denetlendi.</p></div></article></div>
+</div></section>
+<section class="band amber" id="rapor"><div class="wrap reveal"><div class="eyebrow">Dürüst özet</div><h2>Ne hazır, ne değil?</h2><div class="grid c2">
+<div class="card"><h3>Hazır</h3><p>F746 → M33 → Linux → PC zinciri; kartta kayıp 0. Bütün süreler ayrı ayrı ölçülüyor.</p></div>
+<div class="card"><h3>Yapılmadı</h3><p>M8 (ekrana canlı veri) ve M9 (uçtan uca gecikme).</p></div>
+<div class="card"><h3>Zayıf nokta</h3><p>Ham mesajda CRC yok; yaw manyetometresiz kayar.</p></div>
+<div class="card"><h3>Elle yapılanlar</h3><p>M33’ü başlatma ve telem_udp açılışta kendiliğinden çalışmaz.</p></div>
+<div class="card"><h3>Sınanmayan</h3><p>Uzun çalışma (saatler), gerilim ölçümü, Ethernet ya da Wi-Fi yolu.</p></div>
+<div class="card"><h3>Bu rapordaki modeller</h3><p>Zamanlayıcı, halka ve sessizlik deneyleri anlatım içindir; kart ölçümü değildir.</p></div>
+</div></div></section>
+<footer class="band dark" id="dikkat" style="--acc:var(--lime)"><div class="wrap"><p>Kaynaklar: depodaki kod (App, MP257, Host), Sunum.html, MP257\docs 01–09, Host\logs T08 kaydı, 25.11.2026 kart kaydı. İşaretler yalnız bu tarayıcıda saklanır.</p></div></footer>
+<script id="veri" type="application/json">{}</script>
+<script id="sahneveri" type="application/json">{"sA":{"tel":[["l","r"],["r","m"],["f","m"],["u","r"],["u","p"]],"adim":[{"t":"Güç gelir","v":{"f":"kapalı","m":"kapalı","l":"kapalı","r":"—","u":"—","p":"—"},"on":["l"],"x":"Önce MP257 açılır, sonra F746. Kablo iki kart da kapalıyken takılmıştır.","n":"Enerjisiz bir kartın pinine sinyal vermek onu pinden beslemeye çalışır."},{"t":"Linux açılır","v":{"l":"6.18.37"},"st":{"l":"calis"},"on":["l"],"x":"OpenSTLinux başlar. USB ağı kurulur: 192.168.7.1."},{"t":"M33 yüklenir","v":{"r":"ELF, SRAM2","m":"başladı"},"st":{"m":"calis","r":"ok"},"mv":[["l","r","remoteproc","#22E4FF"],["r","m","reset","#A8D84A"]],"x":"remoteproc ELF dosyasını SRAM2’ye yazar, resource table’ı okur, M33’ü başlatır.","n":"Bu adım elle yapılıyor; açılışta kendiliğinden başlamaz."},{"t":"Kanal açılır","v":{"r":"/dev/rpmsg0","m":"LINK_OPEN"},"mv":[["m","r","rpmsg-raw","#A8D84A"]],"x":"M33 uç noktasını duyurur, Linux /dev/rpmsg0’ı oluşturur."},{"t":"F746 açılır","v":{"f":"bias ölçümü"},"st":{"f":"calis"},"mv":[["f","m","100 Hz","#A8D84A"]],"x":"MP257 derlemesinde START beklenmez; ilk 1 saniye jiroskop sapması ölçülür.","n":"Bu sırada kart kıpırdamamalı."},{"t":"telem_udp başlar","v":{"u":"'1' yolladı","m":"gönderiyor","f":"100 Hz"},"st":{"u":"ok","f":"ok","m":"ok"},"mv":[["u","r","'1'","#22E4FF"],["r","m","'1'","#FFC21A"]],"x":"Program eskileri atar, “gönder” der ve saniyede bir yeniler."},{"t":"PC almaya başlar","v":{"p":"6003 / 6003"},"st":{"p":"ok"},"mv":[["u","p","UDP","#FF8BE0"]],"x":"Artık her 10 ms’de bir paket."}]}}</script>
+<script id="sistemveri" type="application/json">{"sin":{"bolge":[[40,60,740,1000,"F746 · FreeRTOS","#A8D84A"],[800,640,210,220,"Kablo","#A6B1C4"],[1030,60,460,1000,"MP257 · M33 · Zephyr","#9B88FF"],[1520,460,240,600,"Ortak bellek","#FFC21A"],[1790,270,240,790,"Linux A35","#22E4FF"],[2070,270,300,790,"PC","#FF8BE0"]],"node":[["imu",70,120,"IMU","6 eksen, SPI2","#A8D84A"],["exti",70,310,"DRDY kesmesi","EXTI9_5","#A8D84A"],["ctrl",70,500,"ctrlTask","P6, komutlar","#A8D84A"],["crit",70,690,"critParser","P6, önemli veri","#A8D84A"],["vrx",70,880,"vnetRx","P4, satır → frame","#A8D84A"],["spi",310,120,"SPI2 + DMA","3,375 MHz","#A8D84A"],["meas",310,310,"meas","P3, ölçüm","#A8D84A"],["cal",310,500,"CAL mailbox","uzunluk 1 kuyruk","#A8D84A"],["ip",310,690,"IP task","P5, UDP/IP","#A8D84A"],["utx",310,880,"uartTx","P5, tek TX sahibi","#A8D84A"],["filt",560,310,"Açı filtresi","roll, pitch, yaw","#A8D84A"],["raw",560,500,"raw_link","23 bayt","#A8D84A"],["u6",560,690,"USART6 + DMA","460800 baud","#A8D84A"],["u1",560,880,"USART1 + DMA","1 Mbaud","#A8D84A"],["kab",810,720,"D1 → pin 10","3,3 V, tek tel","#C9D2E3"],["fifo",1060,720,"USART6 FIFO","64 bayt","#9B88FF"],["isr",1060,520,"uart_isr","T1, T2","#9B88FF"],["mq",1060,320,"raw_queue","k_msgq, 8 mesaj","#9B88FF"],["lease",1060,920,"lease_timer","k_timer, 3 s","#9B88FF"],["main",1280,320,"main thread","P0, T3–T5","#9B88FF"],["pkt",1280,520,"packet_build","SEQ, CRC-8","#9B88FF"],["lnk",1280,720,"link_send","rpmsg_trysend","#9B88FF"],["lt",1280,920,"link_task","P5, kanal","#9B88FF"],["vr",1545,530,"vring0 / vring1","dolu-boş listesi","#FFC21A"],["buf",1545,720,"Tamponlar","8 + 8, 512 bayt","#FFC21A"],["ipcc",1545,920,"IPCC1","kapı zili","#FFC21A"],["usb",1815,340,"usb0","192.168.7.1","#22E4FF"],["tel",1815,530,"telem_udp","C, poll()","#22E4FF"],["rch",1815,720,"rpmsg_char","/dev/rpmsg0","#22E4FF"],["vio",1815,920,"virtio_rpmsg","çekirdek sürücüsü","#22E4FF"],["soc",2125,340,"UDP 5002","192.168.7.66","#FF8BE0"],["host",2125,530,"Host decode","proto.py","#FF8BE0"],["ekr",2125,720,"Ekran","M8, yapılmadı","#FF8BE0","yok"],["gui",2125,920,"Host GUI","USART1 yolu","#FF8BE0"]],"kenar":[["imu","exti"],["exti","meas"],["spi","meas"],["imu","spi"],["meas","filt"],["filt","raw"],["raw","u6"],["u6","kab"],["kab","fifo"],["fifo","isr"],["isr","mq"],["mq","main"],["main","pkt"],["pkt","lnk"],["lnk","buf"],["buf","vr"],["lnk","ipcc"],["ipcc","vio"],["buf","rch"],["vio","rch"],["rch","tel"],["tel","usb"],["usb","soc"],["soc","host"],["host","ekr"],["meas","ip"],["ip","utx"],["utx","u1"],["u1","gui",1035],["gui","vrx",1075],["vrx","ip"],["ip","crit"],["crit","ctrl"],["ctrl","ip"],["ipcc","lt"],["lt","lease"],["lease","lnk"],["lt","lnk"],["cal","meas"]],"adim":[{"t":"Bütün sistem","x":"Üç işlemci, iki kart, bir PC. Soldan sağa: F746 ölçer, M33 paketler, Linux yollar, PC çözer.","n":"Her kutu gerçek bir task, kesme, kuyruk ya da donanımdır. İleri’ye bastıkça kamera o parçaya gider.","s":"100 örnek / saniye","v":{"meas":"uyuyor","main":"uyuyor","tel":"uyuyor"},"st":{"meas":"uyku","main":"uyku","tel":"uyku"}},{"t":"1 · IMU örneği hazır","kam":[20,60,560,360],"mv":[["imu","exti","DRDY","#A8D84A"]],"v":{"imu":"yeni örnek"},"x":"IMU yeni bir ivme ve jiroskop örneği hazırladı, DRDY pinini oynattı.","n":"Kart IMU’ya “hazır mı?” diye sormaz; IMU haber verir. 100 Hz’de 10 ms’de bir.","s":"t = 0 µs"},{"t":"2 · DRDY kesmesi","kam":[20,180,560,360],"mv":[["exti","meas","notify","#A8D84A"]],"v":{"exti":"çevrim okundu","meas":"uyandı"},"st":{"meas":""},"c":[{"f":"App/Src/imu_spi.c","l":[[398,"ulDrdyCycles = DWT->CYCCNT;                 /* TELEM latency starts here */",0],[399,"xDrdyTick = xTaskGetTickCountFromISR();     /* K6 */",0],[400,"( void ) xTaskNotifyFromISR( xMeasTask, IMU_BIT_DRDY, eSetBits, &xWoken );",0],[401,"portYIELD_FROM_ISR( xWoken );",0]]}],"x":"Kesme işlemcinin çevrim sayacını okur ve meas task’ına bir bildirim bırakır.","n":"Ölçümün sıfır noktası burası. Kesmede iş yapılmaz; asıl iş task’ta.","s":"t = 0 µs"},{"t":"3 · SPI ile okuma","kam":[40,60,520,380],"mv":[["meas","spi","başlat","#A8D84A"],["spi","meas","bitti","#A8D84A"]],"v":{"meas":"SPI bekliyor","spi":"DMA"},"st":{"meas":"uyku"},"x":"meas okumayı DMA’ya verir ve uyur; DMA bitince kesme onu yeniden uyandırır.","n":"İşlemci bayt beklemez. O sırada başka task’lar çalışabilir.","s":""},{"t":"4 · Açı filtresi","kam":[280,180,540,440],"mv":[["cal","meas","CAL","#A8D84A"],["meas","filt","örnek","#A8D84A"]],"v":{"meas":"hesaplıyor","filt":"tamamlayıcı"},"st":{"meas":""},"c":[{"f":"App/Src/meas_task.c","l":[[768,"/* Towards the accelerometer, roll by the shorter way round. */",0],[769,"xAtt.fAngle[ 0 ] += ( 1.0f - xAtt.fAlpha ) * prvWrapPi( fAccRoll - xAtt.fAngle[ 0 ] );",0],[770,"xAtt.fAngle[ 1 ] += ( 1.0f - xAtt.fAlpha ) * ( fAccPitch - xAtt.fAngle[ 1 ] );",0],[771,"ucFlags = ( uint8_t ) APP_ATT_FLAG_ACC_USED;",0]]}],"x":"Kalibrasyon çıkarılır, jiroskopla açılar ilerletilir, ivmeyle yavaşça düzeltilir.","n":"Jiroskop hızlı ama kayar; ivme kaymaz ama titrer. Filtre ikisinin iyi yanını alır.","s":""},{"t":"5 · 23 baytlık ham mesaj","kam":[400,260,520,380],"mv":[["filt","raw","23 bayt","#A8D84A"]],"v":{"raw":"23 bayt hazır"},"c":[{"f":"App/Src/meas_task.c","l":[[571,"ucPayload[ APP_TELEM_FLAGS_OFFSET ] = ucFlags;",0],[572,"Pkt_WriteU16( &ucPayload[ APP_TELEM_PREV_OFFSET ], ( uint16_t ) ( ulPrev >> 16 ) );",0],[573,"Pkt_WriteU16( &ucPayload[ APP_TELEM_PREV_OFFSET + 2U ], ( uint16_t ) ulPrev );",0],[574,"",0],[575,"xHdr.ucType = APP_TYPE_TELEM;",0]]}],"x":"İvme, jiroskop, açılar, bayraklar ve bir önceki mesajın süresi yan yana yazılır.","n":"Bir mesaj kendi süresini taşıyamaz: süre ancak mesaj gidince belli olur. Bu yüzden bir sonrakinde gelir.","s":""},{"t":"6 · USART6 DMA","kam":[440,440,520,380],"mv":[["raw","u6","DMA","#A8D84A"]],"v":{"u6":"yolluyor","meas":"uyuyor"},"st":{"meas":"uyku"},"c":[{"f":"App/Src/raw_link.c","l":[[31,"if (huart6.gState != HAL_UART_STATE_READY)",0],[32,"{",0],[33,"    ++tx_drops;                     // DMA hâlâ tx_buf'ı okuyor, üstüne yazılmaz",0],[34,"    return;",0],[35,"}",0]]}],"x":"Mesaj DMA’ya verilir, meas beklemeden uyumaya döner. Hat meşgulse mesaj düşer ve sayılır.","s":"t ≈ 97 µs (hesap)"},{"t":"7 · Kabloda","kam":[520,580,800,340],"mv":[["u6","kab","bayt bayt","#C9D2E3"],["kab","fifo","bayt bayt","#C9D2E3"]],"v":{"kab":"0,5 ms"},"x":"460800 baud: bir bayt 21,7 µs. Başlık ve CRC yok, yalnız veri.","n":"Son bit çıkınca F746’nın TX bitti kesmesi süreyi kaydeder.","s":"t = 596 µs (12.006 paketin ortalaması)"},{"t":"8 · M33: FIFO ve kesme","kam":[1020,440,520,420],"mv":[["fifo","isr","bayt","#9B88FF"]],"v":{"fifo":"64 bayt pay","isr":"T1 … T2"},"c":[{"f":"MP257/zephyr/src/app_isr.c","l":[[25,"    if (msg_len == 0)",0],[26,"    {",0],[27,"        msg.first_cycles = now;                      // T1",0],[28,"    }",0]]}],"x":"Kesme her baytı toplar; ilk baytta T1, 23. baytta T2 damgasını alır.","n":"Mesajın başını 2 ms’den uzun sessizlik gösterir.","s":"T2 − T1 = 476,0 µs"},{"t":"9 · Kuyruk ve uyanma","kam":[1020,220,520,420],"mv":[["isr","mq","23 bayt","#9B88FF"],["mq","main","T3","#9B88FF"]],"v":{"mq":"1 mesaj","main":"uyandı"},"st":{"main":""},"c":[{"f":"MP257/zephyr/src/main.c","l":[[107,"        k_msgq_get(&raw_queue, &msg, K_FOREVER);     // thread mesaj gelene kadar uyur",0],[108,"        uint32_t woken = k_cycle_get_32();           // T3",0]]}],"x":"Mesaj kuyruğa kopyalanır, main thread uyanır.","n":"Program DDR’deyken bu 126,5 µs sürüyordu; SRAM2’ye taşınınca 3,0 µs.","s":"T3 − T2 = 3,0 µs"},{"t":"10 · Paket kurulur","kam":[1180,260,480,420],"mv":[["main","pkt","23 → 33","#9B88FF"]],"v":{"pkt":"33 bayt","mq":"boş"},"c":[{"f":"MP257/zephyr/src/packet.c","l":[[26,"    out[0] = PKT_SOF;",0],[27,"    out[1] = PKT_VER;",0],[28,"    out[2] = PKT_TELEM;",0],[29,"    out[3] = 0;                                       // bayrak yok: veri paketi",0]]}],"x":"Başlık, sıra numarası ve CRC-8 eklenir: 23 bayt 33 olur.","n":"PC’deki Host bu biçimi zaten tanıyor; tek satırı değişmedi.","s":"T4 − T3 = 8,2 µs"},{"t":"11 · Linux’a verilir","kam":[1240,440,560,420],"mv":[["pkt","lnk","33 bayt","#9B88FF"],["lnk","buf","33 bayt","#FFC21A"]],"v":{"lnk":"trysend","buf":"1 dolu"},"c":[{"f":"MP257/zephyr/src/rpmsg_link.c","l":[[79,"    if (rpmsg_trysend(&endpoint, data, size) < 0)",0],[80,"    {",0],[81,"        ++link_drops;",0],[82,"        return 0;",0],[83,"    }",0]]}],"x":"Boş bir tampona kopyalanır. Tampon yoksa beklenmez: paket atılır ve sayılır.","n":"Telemetri hiçbir durumda Linux’u beklemez.","s":"T5 − T4 = 7,6 µs"},{"t":"12 · Kapı zili","kam":[1250,620,800,420],"mv":[["lnk","ipcc","haber","#FFC21A"],["ipcc","vio","kesme","#22E4FF"]],"v":{"ipcc":"kanal 0","vio":"uyandı","main":"uyuyor"},"st":{"main":"uyku"},"x":"IPCC donanımı Linux’a kesme gönderir.","n":"İki işlemci birbirinin belleğini gözlemez; haber verir.","s":"23. bayttan buraya 18,8 µs"},{"t":"13 · Linux çekirdeği","kam":[1500,600,620,440],"mv":[["buf","rch","33 bayt","#22E4FF"]],"v":{"rch":"1 paket","buf":"geri verildi","ipcc":""},"x":"Sürücü paketi /dev/rpmsg0 kuyruğuna alır, tamponu M33’e geri verir.","s":""},{"t":"14 · telem_udp","kam":[1700,440,520,420],"mv":[["rch","tel","read","#22E4FF"]],"v":{"tel":"okudu","rch":"boş"},"st":{"tel":""},"c":[{"f":"MP257/linux/telem_udp.c","l":[[177,"if (poll(fds, FD_COUNT, -1) < 0)",0]]}],"x":"poll içinde uyuyan program uyanır, tek okumada tam bir paket alır.","n":"İşlemci payı %0,56; saniyede 101 uyanma.","s":""},{"t":"15 · USB üzerinden PC’ye","kam":[1740,260,660,360],"mv":[["tel","usb","UDP","#22E4FF"],["usb","soc","UDP 5002","#FF8BE0"]],"v":{"usb":"yolladı","tel":"uyuyor","soc":"aldı"},"st":{"tel":"uyku"},"x":"33 bayt tek bir UDP paketi olur.","s":""},{"t":"16 · Host çözer","kam":[2000,300,400,420],"mv":[["soc","host","33 bayt","#FF8BE0"]],"v":{"host":"CRC doğru"},"x":"SOF, sürüm, uzunluk, CRC ve bayraklar denetlenir.","n":"Kartta 60 saniyede 6003 / 6003 paket geçti.","s":"PC’de aralık ort. 9,99 ms"},{"t":"17 · Ekran (M8)","kam":[2000,480,400,420],"mv":[["host","ekr","yapılmadı","#FF8A95"]],"v":{"ekr":"yapılmadı"},"x":"Paketlerin GUI’ye canlı gelmesi M8’in işi; henüz yok.","n":"Bu raporda yapılmayan hiçbir şey yapılmış gibi gösterilmiyor.","s":""},{"t":"18 · Eski yol: PC’ye USART1","kam":[260,280,560,740],"mv":[["meas","ip","sendto","#A8D84A"],["ip","utx","frame","#A8D84A"],["utx","u1","satır","#A8D84A"]],"v":{"ip":"UDP/IP","utx":"TX kuyruğu","u1":"1 Mbaud"},"x":"PC’den START gelirse aynı örnek ikinci yoldan da gider: gerçek bir UDP/IP yığını, Ethernet frame’i hex satırı olarak.","n":"MP257’ye giden mesaj önce yollanır; PC yolunun beklemesi onu geciktirmez.","s":"DRDY → TX bitti: ort. 1,94 ms"},{"t":"19 · Komutlar geri gelir","kam":[20,440,560,640],"mv":[["gui","vrx","START","#FF8BE0"],["vrx","ip","frame","#A8D84A"],["ip","crit","UDP 5000","#A8D84A"],["crit","ctrl","komut","#A8D84A"]],"v":{"vrx":"satır","crit":"çözdü","ctrl":"uyguladı","gui":"START"},"x":"Komut USART1’den girer, denetimlerden geçer, öncelikli şeritten ctrlTask’a ulaşır.","n":"critParser IP task’tan önceliklidir: komut geldiği an işlenir.","s":""},{"t":"20 · Linux’un komutu","kam":[1020,600,1040,480],"mv":[["vio","ipcc","'1'","#22E4FF"],["ipcc","lt","kesme","#FFC21A"],["lt","lease","3 s","#9B88FF"],["lt","lnk","aç","#9B88FF"]],"v":{"lt":"komut 1","lease":"3,0 s","lnk":"açık"},"x":"telem_udp saniyede bir “gönder” der. Her seferinde 3 saniyelik sayaç baştan başlar.","n":"Program çökerse sayaç dolar ve M33 kendiliğinden susar.","s":"kill -9 sonrası 2,01 s"},{"t":"Baştan sona","x":"Bir örnek: ölçüldü, filtrelendi, 23 bayt oldu, 33 bayt oldu, iki işlemciden geçti, PC’de doğrulandı. 10 ms sonra sıradaki başlıyor.","n":"Hiçbir halka bir sonrakini beklemez. Her kaybın bir sayacı var.","s":"kayıp 0 / 6003","mv":[["exti","meas","","#A8D84A"],["raw","u6","","#A8D84A"],["isr","mq","","#9B88FF"],["lnk","buf","","#FFC21A"],["rch","tel","","#22E4FF"],["soc","host","","#FF8BE0"]]}]},"ham":[[165,1,48,0,11,96,0,0,23,255,189,252,180,30,248,255,217,0,33,0,10,253,169,0,36,14,41,7,11,95,2,84,59],[165,1,48,0,11,98,0,0,23,255,211,252,180,31,10,255,217,0,35,0,8,253,169,0,36,14,41,7,11,97,2,84,184],[165,1,48,0,11,100,0,0,23,255,209,252,189,31,3,255,218,0,37,0,13,253,169,0,36,14,41,7,11,99,2,84,0],[165,1,48,0,11,102,0,0,23,255,211,252,193,30,255,255,213,0,34,0,11,253,169,0,36,14,41,7,11,101,2,83,96],[165,1,48,0,11,104,0,0,23,255,204,252,167,31,11,255,216,0,35,0,12,253,168,0,36,14,41,7,11,103,2,84,219],[165,1,48,0,11,106,0,0,23,255,201,252,180,31,22,255,215,0,37,0,9,253,168,0,36,14,41,7,11,105,2,84,55],[165,1,48,0,11,108,0,0,23,255,210,252,185,30,247,255,217,0,37,0,10,253,168,0,36,14,41,7,11,107,2,84,76],[165,1,48,0,11,110,0,0,23,255,202,252,182,30,246,255,219,0,37,0,10,253,168,0,36,14,41,7,11,109,2,84,101],[165,1,48,0,11,112,0,0,23,255,202,252,189,31,14,255,216,0,40,0,8,253,168,0,36,14,41,7,11,111,2,84,106],[165,1,48,0,11,114,0,0,23,255,206,252,185,31,7,255,217,0,36,0,12,253,169,0,36,14,41,7,11,113,2,84,163],[165,1,48,0,11,116,0,0,23,255,198,252,187,31,21,255,214,0,37,0,10,253,168,0,37,14,41,7,11,115,2,84,132],[165,1,48,0,11,118,0,0,23,255,206,252,172,31,14,255,217,0,38,0,10,253,168,0,36,14,41,7,11,117,2,84,179],[165,1,48,0,11,120,0,0,23,255,201,252,161,30,253,255,214,0,36,0,9,253,168,0,37,14,41,7,11,119,2,84,243],[165,1,48,0,11,122,0,0,23,255,219,252,178,31,18,255,215,0,36,0,10,253,168,0,36,14,41,7,11,121,2,86,175],[165,1,48,0,11,124,0,0,23,255,200,252,180,31,25,255,219,0,35,0,9,253,168,0,36,14,41,7,11,123,2,86,187],[165,1,48,0,11,126,0,0,23,255,207,252,193,31,5,255,215,0,37,0,8,253,168,0,36,14,41,7,11,125,2,84,177],[165,1,48,0,11,128,0,0,23,255,198,252,188,30,243,255,215,0,38,0,12,253,168,0,36,14,41,7,11,127,2,84,210],[165,1,48,0,11,130,0,0,23,255,194,252,186,31,15,255,213,0,36,0,9,253,168,0,36,14,41,7,11,129,2,84,175],[165,1,48,0,11,132,0,0,23,255,198,252,199,30,254,255,214,0,36,0,10,253,168,0,37,14,41,7,11,131,2,85,12],[165,1,48,0,11,134,0,0,23,255,199,252,192,31,15,255,216,0,39,0,8,253,168,0,37,14,41,7,11,133,2,86,200],[165,1,48,0,11,136,0,0,23,255,203,252,189,31,23,255,215,0,36,0,10,253,168,0,37,14,41,7,11,135,2,86,86],[165,1,48,0,11,138,0,0,23,255,200,252,171,31,5,255,215,0,38,0,11,253,168,0,37,14,41,7,11,137,2,87,187],[165,1,48,0,11,140,0,0,23,255,201,252,176,31,3,255,218,0,36,0,9,253,168,0,37,14,41,7,11,139,2,87,247],[165,1,48,0,11,142,0,0,23,255,204,252,183,31,6,255,215,0,37,0,11,253,168,0,37,14,41,7,11,141,2,83,244],[165,1,48,0,11,144,0,0,23,255,214,252,193,30,244,255,217,0,34,0,9,253,168,0,37,14,41,7,11,143,2,84,153],[165,1,48,0,11,146,0,0,23,255,207,252,193,31,5,255,219,0,38,0,10,253,168,0,37,14,41,7,11,145,2,84,54],[165,1,48,0,11,148,0,0,23,255,202,252,198,30,245,255,215,0,35,0,10,253,168,0,37,14,41,7,11,147,2,83,54],[165,1,48,0,11,150,0,0,23,255,202,252,176,31,34,255,216,0,36,0,13,253,168,0,37,14,41,7,11,149,2,84,226],[165,1,48,0,11,152,0,0,23,255,206,252,182,30,251,255,214,0,38,0,8,253,169,0,38,14,41,7,11,151,2,84,154],[165,1,48,0,11,154,0,0,23,255,199,252,180,31,8,255,216,0,36,0,11,253,169,0,38,14,41,7,11,153,2,84,232],[165,1,48,0,11,156,0,0,23,255,206,252,177,31,18,255,217,0,39,0,12,253,169,0,37,14,41,7,11,155,2,84,204],[165,1,48,0,11,158,0,0,23,255,223,252,193,30,239,255,217,0,37,0,10,253,169,0,37,14,41,7,11,157,2,84,239],[165,1,48,0,11,160,0,0,23,255,205,252,191,31,16,255,218,0,38,0,11,253,169,0,37,14,41,7,11,159,2,84,14],[165,1,48,0,11,162,0,0,23,255,211,252,173,30,249,255,213,0,37,0,8,253,169,0,37,14,41,7,11,161,2,84,155],[165,1,48,0,11,164,0,0,23,255,197,252,200,30,250,255,216,0,38,0,10,253,169,0,38,14,40,7,11,163,2,84,197],[165,1,48,0,11,166,0,0,23,255,198,252,198,31,25,255,217,0,36,0,10,253,169,0,37,14,41,7,11,165,2,84,64],[165,1,48,0,11,168,0,0,23,255,205,252,201,31,7,255,215,0,37,0,11,253,169,0,37,14,41,7,11,167,2,83,154],[165,1,48,0,11,170,0,0,23,255,205,252,197,31,1,255,217,0,40,0,9,253,169,0,37,14,40,7,11,169,2,84,62],[165,1,48,0,11,172,0,0,23,255,197,252,174,31,14,255,217,0,37,0,12,253,169,0,37,14,41,7,11,171,2,84,136],[165,1,48,0,11,174,0,0,23,255,210,252,183,31,13,255,217,0,37,0,11,253,169,0,37,14,41,7,11,173,2,83,113],[165,1,48,0,11,176,0,0,23,255,203,252,192,30,251,255,216,0,37,0,10,253,169,0,37,14,41,7,11,175,2,83,55],[165,1,48,0,11,178,0,0,23,255,204,252,194,31,10,255,217,0,35,0,12,253,169,0,37,14,41,7,11,177,2,84,126],[165,1,48,0,11,180,0,0,23,255,205,252,185,30,250,255,216,0,40,0,10,253,169,0,37,14,41,7,11,179,2,84,41],[165,1,48,0,11,182,0,0,23,255,207,252,185,31,20,255,215,0,37,0,12,253,169,0,37,14,41,7,11,181,2,84,229],[165,1,48,0,11,184,0,0,23,255,216,252,197,31,35,255,216,0,38,0,9,253,169,0,37,14,41,7,11,183,2,84,74],[165,1,48,0,11,186,0,0,23,255,206,252,179,31,22,255,218,0,36,0,10,253,169,0,37,14,41,7,11,185,2,83,10],[165,1,48,0,11,188,0,0,23,255,205,252,203,31,5,255,214,0,36,0,8,253,169,0,36,14,41,7,11,187,2,84,217],[165,1,48,0,11,190,0,0,23,255,211,252,191,31,26,255,218,0,36,0,12,253,169,0,36,14,41,7,11,189,2,83,19],[165,1,48,0,11,192,0,0,23,255,201,252,181,30,244,255,215,0,38,0,9,253,169,0,36,14,41,7,11,191,2,84,14],[165,1,48,0,11,194,0,0,23,255,209,252,182,31,9,255,214,0,38,0,10,253,169,0,36,14,41,7,11,193,2,84,38],[165,1,48,0,11,196,0,0,23,255,201,252,180,31,34,255,217,0,36,0,12,253,169,0,36,14,41,7,11,195,2,84,225],[165,1,48,0,11,198,0,0,23,255,202,252,190,30,251,255,216,0,40,0,10,253,169,0,36,14,41,7,11,197,2,86,148],[165,1,48,0,11,200,0,0,23,255,208,252,191,31,3,255,214,0,36,0,9,253,169,0,36,14,41,7,11,199,2,86,238],[165,1,48,0,11,202,0,0,23,255,211,252,199,30,252,255,217,0,35,0,12,253,169,0,36,14,41,7,11,201,2,84,191],[165,1,48,0,11,204,0,0,23,255,213,252,193,31,11,255,216,0,38,0,6,253,169,0,35,14,41,7,11,203,2,84,153],[165,1,48,0,11,206,0,0,23,255,204,252,185,31,7,255,217,0,37,0,13,253,169,0,35,14,41,7,11,205,2,84,184],[165,1,48,0,11,208,0,0,23,255,216,252,194,30,253,255,214,0,37,0,11,253,169,0,35,14,41,7,11,207,2,85,218],[165,1,48,0,11,210,0,0,23,255,210,252,193,31,9,255,217,0,34,0,11,253,169,0,35,14,41,7,11,209,2,86,146],[165,1,48,0,11,212,0,0,23,255,183,252,191,31,10,255,215,0,35,0,11,253,169,0,35,14,41,7,11,211,2,85,34],[165,1,48,0,11,214,0,0,23,255,214,252,183,31,37,255,217,0,38,0,8,253,169,0,35,14,41,7,11,213,2,86,220],[165,1,48,0,11,216,0,0,23,255,215,252,189,31,7,255,213,0,37,0,10,253,169,0,35,14,41,7,11,215,2,86,145],[165,1,48,0,11,218,0,0,23,255,198,252,179,31,8,255,213,0,37,0,12,253,169,0,35,14,41,7,11,217,2,83,116],[165,1,48,0,11,220,0,0,23,255,211,252,181,31,3,255,214,0,38,0,12,253,169,0,36,14,41,7,11,219,2,84,131],[165,1,48,0,11,222,0,0,23,255,194,252,197,30,242,255,217,0,37,0,10,253,168,0,36,14,41,7,11,221,2,84,204],[165,1,48,0,11,224,0,0,23,255,217,252,183,31,28,255,215,0,38,0,11,253,169,0,36,14,41,7,11,223,2,84,192],[165,1,48,0,11,226,0,0,23,255,207,252,202,31,4,255,215,0,37,0,10,253,169,0,36,14,41,7,11,225,2,84,178],[165,1,48,0,11,228,0,0,23,255,216,252,187,31,12,255,219,0,37,0,9,253,169,0,35,14,41,7,11,227,2,84,251],[165,1,48,0,11,230,0,0,23,255,200,252,197,31,0,255,215,0,38,0,12,253,169,0,36,14,41,7,11,229,2,84,178],[165,1,48,0,11,232,0,0,23,255,204,252,190,31,35,255,218,0,37,0,9,253,169,0,36,14,41,7,11,231,2,84,22],[165,1,48,0,11,234,0,0,23,255,211,252,173,31,4,255,216,0,37,0,9,253,169,0,36,14,41,7,11,233,2,84,105],[165,1,48,0,11,236,0,0,23,255,192,252,186,31,22,255,215,0,34,0,11,253,169,0,36,14,41,7,11,235,2,84,23],[165,1,48,0,11,238,0,0,23,255,201,252,194,31,19,255,215,0,38,0,11,253,169,0,36,14,41,7,11,237,2,84,198],[165,1,48,0,11,240,0,0,23,255,215,252,188,31,2,255,215,0,36,0,8,253,169,0,36,14,41,7,11,239,2,84,129],[165,1,48,0,11,242,0,0,23,255,191,252,185,31,36,255,216,0,37,0,10,253,169,0,36,14,41,7,11,241,2,84,13],[165,1,48,0,11,244,0,0,23,255,207,252,209,31,17,255,214,0,37,0,9,253,169,0,36,14,41,7,11,243,2,84,191],[165,1,48,0,11,246,0,0,23,255,202,252,175,31,13,255,215,0,37,0,9,253,169,0,36,14,41,7,11,245,2,84,27],[165,1,48,0,11,248,0,0,23,255,196,252,197,31,7,255,215,0,36,0,9,253,169,0,36,14,41,7,11,247,2,84,184],[165,1,48,0,11,250,0,0,23,255,197,252,178,31,3,255,215,0,37,0,8,253,169,0,36,14,41,7,11,249,2,84,10],[165,1,48,0,11,252,0,0,23,255,200,252,176,31,50,255,217,0,40,0,10,253,169,0,37,14,41,7,11,251,2,84,172],[165,1,48,0,11,254,0,0,23,255,211,252,192,30,253,255,215,0,35,0,8,253,169,0,36,14,41,7,11,253,2,84,176],[165,1,48,0,12,0,0,0,23,255,208,252,187,31,6,255,213,0,37,0,10,253,168,0,36,14,41,7,11,255,2,84,38],[165,1,48,0,12,2,0,0,23,255,204,252,184,31,31,255,216,0,39,0,9,253,169,0,36,14,41,7,12,1,2,83,120],[165,1,48,0,12,4,0,0,23,255,213,252,186,31,2,255,217,0,37,0,9,253,169,0,36,14,41,7,12,3,2,84,36],[165,1,48,0,12,6,0,0,23,255,190,252,186,31,1,255,216,0,36,0,11,253,169,0,36,14,41,7,12,5,2,84,244],[165,1,48,0,12,8,0,0,23,255,194,252,195,31,0,255,214,0,37,0,11,253,169,0,37,14,41,7,12,7,2,83,219],[165,1,48,0,12,10,0,0,23,255,209,252,171,30,250,255,216,0,36,0,11,253,168,0,37,14,41,7,12,9,2,84,242],[165,1,48,0,12,12,0,0,23,255,211,252,184,30,250,255,214,0,35,0,10,253,168,0,37,14,41,7,12,11,2,84,74],[165,1,48,0,12,14,0,0,23,255,210,252,174,30,253,255,217,0,35,0,11,253,168,0,36,14,41,7,12,13,2,84,185],[165,1,48,0,12,16,0,0,23,255,212,252,185,31,0,255,216,0,36,0,8,253,168,0,36,14,41,7,12,15,2,84,111],[165,1,48,0,12,18,0,0,23,255,215,252,182,31,3,255,216,0,38,0,12,253,168,0,36,14,41,7,12,17,2,84,8],[165,1,48,0,12,20,0,0,23,255,193,252,188,31,15,255,216,0,39,0,12,253,168,0,37,14,41,7,12,19,2,84,188],[165,1,48,0,12,22,0,0,23,255,210,252,192,31,34,255,216,0,39,0,11,253,168,0,37,14,41,7,12,21,2,84,217],[165,1,48,0,12,24,0,0,23,255,204,252,202,31,1,255,215,0,36,0,11,253,168,0,36,14,41,7,12,23,2,84,13],[165,1,48,0,12,26,0,0,23,255,223,252,180,31,7,255,217,0,39,0,8,253,168,0,36,14,41,7,12,25,2,84,84],[165,1,48,0,12,28,0,0,23,255,212,252,185,31,39,255,218,0,39,0,12,253,169,0,36,14,41,7,12,27,2,84,211],[165,1,48,0,12,30,0,0,23,255,207,252,198,30,246,255,216,0,37,0,11,253,169,0,36,14,41,7,12,29,2,83,129],[165,1,48,0,12,32,0,0,23,255,218,252,192,31,0,255,215,0,35,0,9,253,169,0,36,14,41,7,12,31,2,84,53],[165,1,48,0,12,34,0,0,23,255,202,252,179,31,1,255,216,0,37,0,12,253,169,0,36,14,41,7,12,33,2,83,240],[165,1,48,0,12,36,0,0,23,255,196,252,210,31,33,255,216,0,39,0,9,253,169,0,36,14,41,7,12,35,2,84,252],[165,1,48,0,12,38,0,0,23,255,219,252,192,30,244,255,216,0,37,0,11,253,169,0,36,14,41,7,12,37,2,84,39],[165,1,48,0,12,40,0,0,23,255,213,252,195,30,254,255,216,0,39,0,10,253,170,0,36,14,41,7,12,39,2,84,168],[165,1,48,0,12,42,0,0,23,255,194,252,196,31,2,255,215,0,38,0,10,253,170,0,36,14,41,7,12,41,2,84,68],[165,1,48,0,12,44,0,0,23,255,211,252,186,31,15,255,217,0,37,0,9,253,169,0,36,14,41,7,12,43,2,83,63],[165,1,48,0,12,46,0,0,23,255,214,252,189,30,232,255,214,0,36,0,12,253,170,0,36,14,41,7,12,45,2,84,25],[165,1,48,0,12,48,0,0,23,255,188,252,193,31,45,255,215,0,35,0,11,253,170,0,36,14,41,7,12,47,2,84,236],[165,1,48,0,12,50,0,0,23,255,199,252,179,31,9,255,217,0,37,0,13,253,170,0,37,14,41,7,12,49,2,84,142],[165,1,48,0,12,52,0,0,23,255,190,252,209,30,244,255,217,0,40,0,9,253,170,0,37,14,41,7,12,51,2,84,94],[165,1,48,0,12,54,0,0,23,255,211,252,180,31,4,255,215,0,39,0,9,253,170,0,36,14,41,7,12,53,2,84,9],[165,1,48,0,12,56,0,0,23,255,218,252,189,30,252,255,217,0,39,0,8,253,170,0,36,14,41,7,12,55,2,84,195],[165,1,48,0,12,58,0,0,23,255,203,252,184,31,33,255,216,0,36,0,10,253,170,0,36,14,41,7,12,57,2,86,136],[165,1,48,0,12,60,0,0,23,255,209,252,188,30,248,255,217,0,37,0,11,253,170,0,36,14,41,7,12,59,2,84,7],[165,1,48,0,12,62,0,0,23,255,208,252,189,30,254,255,216,0,39,0,10,253,170,0,36,14,41,7,12,61,2,84,22],[165,1,48,0,12,64,0,0,23,255,211,252,192,31,11,255,215,0,36,0,10,253,170,0,36,14,42,7,12,63,2,83,111],[165,1,48,0,12,66,0,0,23,255,209,252,185,31,7,255,215,0,36,0,12,253,170,0,36,14,42,7,12,65,2,84,240],[165,1,48,0,12,68,0,0,23,255,198,252,203,31,40,255,215,0,35,0,11,253,170,0,36,14,42,7,12,67,2,87,238],[165,1,48,0,12,70,0,0,23,255,203,252,193,30,252,255,215,0,37,0,12,253,170,0,36,14,42,7,12,69,2,86,157],[165,1,48,0,12,72,0,0,23,255,215,252,175,31,17,255,214,0,36,0,7,253,170,0,35,14,42,7,12,71,2,87,234],[165,1,48,0,12,74,0,0,23,255,197,252,173,31,7,255,216,0,34,0,11,253,170,0,36,14,42,7,12,73,2,87,143],[165,1,48,0,12,76,0,0,23,255,216,252,183,31,11,255,218,0,38,0,8,253,170,0,35,14,42,7,12,75,2,84,101],[165,1,48,0,12,78,0,0,23,255,202,252,194,31,32,255,214,0,37,0,10,253,170,0,35,14,42,7,12,77,2,84,251],[165,1,48,0,12,80,0,0,23,255,213,252,186,31,33,255,216,0,38,0,12,253,170,0,35,14,42,7,12,79,2,84,127],[165,1,48,0,12,82,0,0,23,255,212,252,182,31,40,255,217,0,38,0,9,253,170,0,35,14,42,7,12,81,2,84,89],[165,1,48,0,12,84,0,0,23,255,210,252,191,30,249,255,213,0,37,0,11,253,170,0,35,14,42,7,12,83,2,84,174],[165,1,48,0,12,86,0,0,23,255,204,252,195,30,246,255,217,0,38,0,10,253,170,0,35,14,42,7,12,85,2,84,190],[165,1,48,0,12,88,0,0,23,255,200,252,192,30,246,255,216,0,38,0,11,253,170,0,35,14,42,7,12,87,2,84,127],[165,1,48,0,12,90,0,0,23,255,220,252,194,31,18,255,216,0,38,0,9,253,170,0,35,14,42,7,12,89,2,84,65],[165,1,48,0,12,92,0,0,23,255,208,252,177,31,14,255,217,0,37,0,11,253,170,0,35,14,42,7,12,91,2,84,19],[165,1,48,0,12,94,0,0,23,255,221,252,182,31,0,255,215,0,37,0,10,253,170,0,35,14,42,7,12,93,2,84,191],[165,1,48,0,12,96,0,0,23,255,203,252,186,31,27,255,216,0,36,0,11,253,170,0,35,14,42,7,12,95,2,84,0],[165,1,48,0,12,98,0,0,23,255,202,252,194,31,16,255,214,0,38,0,9,253,170,0,35,14,42,7,12,97,2,84,162],[165,1,48,0,12,100,0,0,23,255,218,252,202,31,16,255,215,0,36,0,10,253,170,0,35,14,42,7,12,99,2,84,132],[165,1,48,0,12,102,0,0,23,255,199,252,194,30,253,255,215,0,37,0,11,253,170,0,35,14,42,7,12,101,2,84,103],[165,1,48,0,12,104,0,0,23,255,219,252,202,31,3,255,212,0,39,0,10,253,170,0,35,14,42,7,12,103,2,84,140],[165,1,48,0,12,106,0,0,23,255,211,252,189,31,1,255,216,0,37,0,11,253,170,0,35,14,42,7,12,105,2,84,62],[165,1,48,0,12,108,0,0,23,255,225,252,192,31,8,255,216,0,35,0,8,253,170,0,35,14,42,7,12,107,2,84,208],[165,1,48,0,12,110,0,0,23,255,208,252,188,30,250,255,215,0,39,0,9,253,170,0,35,14,42,7,12,109,2,84,9],[165,1,48,0,12,112,0,0,23,255,197,252,190,31,30,255,215,0,37,0,9,253,170,0,35,14,42,7,12,111,2,84,14],[165,1,48,0,12,114,0,0,23,255,189,252,189,31,19,255,214,0,37,0,9,253,169,0,36,14,41,7,12,113,2,84,218],[165,1,48,0,12,116,0,0,23,255,195,252,206,31,26,255,219,0,37,0,11,253,170,0,36,14,41,7,12,115,2,84,41],[165,1,48,0,12,118,0,0,23,255,206,252,183,31,1,255,216,0,36,0,8,253,170,0,36,14,41,7,12,117,2,84,7],[165,1,48,0,12,120,0,0,23,255,204,252,188,31,31,255,214,0,37,0,10,253,170,0,36,14,41,7,12,119,2,84,83],[165,1,48,0,12,122,0,0,23,255,211,252,198,30,250,255,215,0,39,0,10,253,170,0,36,14,41,7,12,121,2,83,76],[165,1,48,0,12,124,0,0,23,255,190,252,177,31,17,255,217,0,36,0,11,253,170,0,36,14,41,7,12,123,2,83,183],[165,1,48,0,12,126,0,0,23,255,198,252,189,31,13,255,215,0,37,0,7,253,170,0,36,14,41,7,12,125,2,84,118],[165,1,48,0,12,128,0,0,23,255,205,252,178,30,247,255,217,0,37,0,9,253,170,0,36,14,41,7,12,127,2,84,26],[165,1,48,0,12,130,0,0,23,255,203,252,184,31,23,255,216,0,38,0,12,253,170,0,36,14,41,7,12,129,2,84,166],[165,1,48,0,12,132,0,0,23,255,220,252,165,30,244,255,217,0,36,0,9,253,169,0,36,14,41,7,12,131,2,84,52],[165,1,48,0,12,134,0,0,23,255,196,252,195,31,22,255,215,0,39,0,12,253,170,0,36,14,41,7,12,133,2,85,115],[165,1,48,0,12,136,0,0,23,255,192,252,181,31,3,255,219,0,38,0,11,253,170,0,36,14,41,7,12,135,2,84,87],[165,1,48,0,12,138,0,0,23,255,209,252,201,31,14,255,215,0,38,0,10,253,170,0,36,14,41,7,12,137,2,84,77],[165,1,48,0,12,140,0,0,23,255,200,252,196,30,255,255,216,0,35,0,14,253,170,0,36,14,41,7,12,139,2,83,199],[165,1,48,0,12,142,0,0,23,255,201,252,169,31,38,255,215,0,37,0,9,253,170,0,37,14,41,7,12,141,2,84,193],[165,1,48,0,12,144,0,0,23,255,216,252,180,30,241,255,216,0,37,0,11,253,170,0,36,14,41,7,12,143,2,86,27],[165,1,48,0,12,146,0,0,23,255,208,252,195,30,245,255,216,0,41,0,11,253,170,0,36,14,41,7,12,145,2,86,223],[165,1,48,0,12,148,0,0,23,255,205,252,175,31,3,255,216,0,35,0,10,253,169,0,36,14,41,7,12,147,2,86,95],[165,1,48,0,12,150,0,0,23,255,207,252,184,31,17,255,216,0,37,0,9,253,170,0,36,14,41,7,12,149,2,86,5],[165,1,48,0,12,152,0,0,23,255,193,252,182,31,25,255,215,0,37,0,9,253,170,0,36,14,41,7,12,151,2,84,29],[165,1,48,0,12,154,0,0,23,255,217,252,185,31,21,255,218,0,36,0,11,253,170,0,36,14,41,7,12,153,2,83,228],[165,1,48,0,12,156,0,0,23,255,214,252,176,31,27,255,215,0,37,0,9,253,170,0,36,14,41,7,12,155,2,84,33],[165,1,48,0,12,158,0,0,23,255,215,252,201,30,255,255,217,0,38,0,11,253,170,0,36,14,41,7,12,157,2,84,43]],"hist":{"prev":[["595",11945],["600",7],["605",5],["610",6],["615",27],["620",0],["625",1],["630",2],["635",1],["640",2],["645",1],["650",6],["655",1],["660",0],["665",1],["670",0],["675",0],["680",0],["685",0],["690",0],["695",0],["700",0],["705",0],["710",0],["715",0],["720",1],["725",0]],"ara":[["5",4],["5,5",0],["6",5],["6,5",1],["7",4],["7,5",3],["8",7],["8,5",53],["9",1087],["9,5",5022],["10",4666],["10,5",1071],["11",59],["11,5",5],["12",7],["12,5",0],["13",1],["13,5",8],["14",2],["14,5",0]]},"sure":[["F746 hazırlık",97.0,"#A8D84A"],["hat",499.1,"#22E4FF"],["T3−T2",3.0,"#9B88FF"],["T4−T3",8.2,"#FFC21A"],["T5−T4",7.6,"#FF8BE0"]],"ariza":[{"ad":"Kabloda bir bayt kaybolur","d":4,"s":"M33 yarım mesajı atar","x":"Sessizlik eşiği yarım mesajı ayırır; sonraki mesaj etkilenmez.","c":"bad_len, seq_gaps","k":"QEMU E4","tur":"x","surer":0},{"ad":"Kabloda bir bit bozulur","d":10,"s":"Bilinen zayıf nokta: fark edilmez","x":"Ham mesajda CRC yok. M33 bozuk veriye doğru CRC ekler; paket Host’tan geçer. Yalnız değerler tuhaf görünür.","c":"yok","k":"Tasarım sınırı (01 raporu)","tur":"s","surer":0},{"ad":"F746 yeniden başlar","d":4,"s":"Sıra baştan kabul edilir","x":"prev bayrağı yoksa M33 sıra denetimini sıfırlar; kayıp sayılmaz.","c":"seq_gaps artmaz","k":"Kart, M4-d","tur":"s","surer":1},{"ad":"F746 hattı meşgul","d":2,"s":"Mesaj F746’da düşer","x":"DMA hâlâ yolluyorsa üstüne yazılmaz. M33 bunu prev_seq boşluğundan görür.","c":"tx_drops, seq_gaps","k":"PC’de birim testi","tur":"x","surer":0},{"ad":"M33 thread’i yetişemez","d":5,"s":"Kuyruk dolunca mesaj düşer","x":"8 mesaj = 80 ms pay. Kesme beklemez, sayar.","c":"queue_drops","k":"QEMU N6","tur":"x","surer":0},{"ad":"Linux tamponları geri vermez","d":7,"s":"Paket atılır, telemetri sürer","x":"8 paket bekler, sonrası atılır; Linux dönünce kendiliğinden düzelir.","c":"link_drops","k":"QEMU G4","tur":"x","surer":0},{"ad":"Linux hiç hazır değil","d":7,"s":"Paketler atılır","x":"Kanal açılmadıysa link_task uyur, main thread ölçmeye devam eder.","c":"link_skipped","k":"QEMU V2","tur":"x","surer":0},{"ad":"telem_udp çöker","d":8,"s":"En geç 3 saniyede M33 susar","x":"Süre sayacı dolar. Birikenler sonraki açılışta atılır.","c":"link_expired","k":"Kart, kill -9: 2,01 s","tur":"x","surer":0},{"ad":"M33 durdurulur","d":8,"s":"telem_udp çıkış 2 ile kapanır","x":"Aygıt kaybolur, program 0,01 s’de biter; asılı kalmaz.","c":"çıkış kodu 2","k":"Kart, L8","tur":"x","surer":0},{"ad":"PC dinlemiyor","d":9,"s":"Yollama hatası sayılır, program sürer","x":"Karşı taraf “port kapalı” der; program durmaz.","c":"udp_hatasi","k":"Kart, 127.0.0.1 kapalı port","tur":"s","surer":0},{"ad":"UDP paketi bozulur","d":10,"s":"Host CRC ile reddeder","x":"İlk 32 baytın CRC’si tutmaz; ekrana ulaşmaz.","c":"decode hatası","k":"Host testleri","tur":"x","surer":0},{"ad":"PC’den bozuk komut","d":1,"s":"F746 reddeder, yan etki yok","x":"FCS, checksum, CRC, uzunluk ve tür denetimleri. 19 bozuk girdi sınandı.","c":"rx_err, cmd_invalid","k":"T02","tur":"x","surer":0}],"halka":["IMU","meas","USART6","Kablo","uart_isr","raw_queue","paket","RPMsg","telem_udp","UDP","Host"],"not":{"Sistem":["genel","Bir IMU örneğini F746'dan PC'ye taşıyan zincir.\nYol: [[IMU]] → [[F746]] → [[Ham mesaj]] → [[USART6 hattı]] → [[M33]] → [[TELEM paketi]] → [[RPMsg]] → [[Linux A35]] → [[telem_udp]] → [[USB ağı]] → [[Host]].\nHız 100 Hz. Kartta uçtan uca 60 saniyede 6003 / 6003 paket, kayıp 0 ([[Test M7]]).\nİkinci, daha eski yol: [[PC yolu (USART1)]].",["IMU","F746","Ham mesaj","USART6 hattı","M33","TELEM paketi","RPMsg","Linux A35","telem_udp","USB ağı","Host","Test M7","PC yolu (USART1)"]],"Yol haritası":["genel","M0 imaj · M1 Zephyr kurulumu · M2 LED ve thread · M3 [[USART6 hattı]] · M4 F746 bağlantısı · M5 [[TELEM paketi]] · M6 [[RPMsg]] · M7 [[telem_udp]]: **bitti**.\nM8 (Host'a UDP girişi, ekran) ve M9 (uçtan uca gecikme): **başlanmadı**.\nİlgili: [[Sistem]].",["USART6 hattı","TELEM paketi","RPMsg","telem_udp","Sistem"]],"Bekleme yok kuralı":["karar","Kullanıcı kuralı: amatör bekleme (delay, sleep, yoklama) kullanılmaz.\n[[M33]]: [[k_msgq]], [[k_sem]], [[k_timer]], kesmeler. [[Linux A35]]: [[telem_udp]] içinde poll, signalfd, timerfd.\nBu kural yüzünden Zephyr'in hazır RPMsg örneği kopyalanmadı ([[Hata: OpenAMP beklemeleri]]).",["M33","k_msgq","k_sem","k_timer","Linux A35","telem_udp","Hata: OpenAMP beklemeleri"]],"Her kayıp sayılır":["karar","Hiçbir hata sessizce yutulmaz; her kaybın bir sayacı vardır.\nF746: 127 sayaç ve eşitlikler ([[Muhasebe]]). [[M33]]: rx_errors, bad_len, queue_drops, seq_gaps, link_sent, link_skipped, link_drops. [[telem_udp]]: bitişte tek satır özet.\nİlgili: [[Sistem]].",["Muhasebe","M33","telem_udp","Sistem"]],"IMU":["donanım","6 eksen (ivme, jiroskop), WHO_AM_I 0x74, SPI2 ile bağlı. Örnek hazır olunca DRDY pini kesme üretir ([[DRDY kesmesi]]).\nAyar: ±4 g, ±1000 °/s. Manyetometre yok, bu yüzden yaw kayar.",["DRDY kesmesi"]],"F746":["donanım","STM32F746G-DISCO, Cortex-M7, 216 MHz. [[FreeRTOS]] V11.3.1 ve FreeRTOS-Plus-TCP V4.4.1.\nGörevi: [[IMU]] okumak, [[Açı filtresi]] ile açıları bulmak, [[Ham mesaj]] yollamak. Aynı anda [[PC yolu (USART1)]] da çalışabilir.",["FreeRTOS","IMU","Açı filtresi","Ham mesaj","PC yolu (USART1)"]],"MP257":["donanım","STM32MP257F-DK. Aynı çipte [[M33]] (gerçek zamanlı) ve 2 çekirdekli [[Linux A35]]. Aralarında [[Paylaşılan bellek]] ve [[IPCC]].",["M33","Linux A35","Paylaşılan bellek","IPCC"]],"Kablo":["donanım","F746 D1 (PC6, TX) → MP257 CN5 pin 10 (PF14, RX). GND → CN5 pin 6.\nCN5 pin 2 ve 4 5 V'tur: önce iki kart da kapalıyken takılır. Açarken önce MP257, sonra F746.\nİki hat da 3,3 V (belgeden; multimetre yoktu).\nİlgili: [[USART6 hattı]] · [[F746]] · [[MP257]].",["USART6 hattı","F746","MP257"]],"USART6 hattı":["donanım","460800 baud, 8N1. Bir bayt 21,7 µs, [[Ham mesaj]] 23 bayt = 0,5 ms. Mesajlar arası yaklaşık 9,5 ms sessizlik.\nM33 tarafında 64 baytlık FIFO açık ([[Hata: UART taşması]]).",["Ham mesaj","Hata: UART taşması"]],"SRAM2":["donanım","M33'e yakın 128 KB iç bellek, 0x0A060000. Program DDR'den buraya taşındı: thread uyanması 126,5 → 3,0 µs ([[Hata: DDR yavaşlığı]]).\nİlgili: [[M33]].",["Hata: DDR yavaşlığı","M33"]],"Paylaşılan bellek":["donanım","0x81200000–0x81300000, 1 MB DDR. İçinde [[vring]] listeleri ve tamponlar. Kartta m6_kontrol.py ile doğrulandı.",["vring"]],"IPCC":["donanım","İşlemciler arası kesme donanımı (\"kapı zili\"). [[ipcc.c]] kanal doluysa beklemez, sayar. Linux'un haberi [[k_sem]] verir.",["ipcc.c","k_sem"]],"USB ağı":["donanım","Kartın USB kablosu üzerindeki ağ. Kart 192.168.7.1, PC 192.168.7.66, UDP port 5002.",[]],"FreeRTOS":["F746","7 uygulama task'ı + IP task. Öncelik 1–6, tick 1 ms, önleyici zamanlama.\nP6 [[critParser]] ve [[ctrlTask]] · P5 [[IP task]] ve [[uartTx]] · P4 [[vnetRx]] · P3 [[meas task]] · P1 lowParser ve worker.",["critParser","ctrlTask","IP task","uartTx","vnetRx","meas task"]],"DRDY kesmesi":["F746","EXTI9_5. DWT çevrim sayacını okur (ölçümün başlangıcı), [[meas task]]'a task notification yollar. Dosya: App/Src/imu_spi.c.",["meas task"]],"meas task":["F746","Öncelik 3. [[DRDY kesmesi]] ile uyanır, SPI2 DMA ile [[IMU]]'yu okur, [[CAL mailbox]]'a bakar, [[Açı filtresi]]'ni çalıştırır, [[Ham mesaj]]'ı [[raw_link]] ile yollar. START verilmişse ardından [[PC yolu (USART1)]] için paket yollar.",["DRDY kesmesi","IMU","CAL mailbox","Açı filtresi","Ham mesaj","raw_link","PC yolu (USART1)"]],"CAL mailbox":["F746","Uzunluğu 1 olan kuyruk: xQueueOverwrite / xQueuePeek. Okuyan ya eski ya yeni değeri bütün görür; mutex gerekmez.",[]],"Açı filtresi":["F746","Tamamlayıcı filtre ve Euler kinematiği. Jiroskop hızlı, ivme uzun vadede doğru. İlk 1 saniyede jiroskop sapması ölçülür (kart sabit durmalı).\n±90° pitch yakınında roll yalnız p ile ilerler (bilinen sınır).",[]],"raw_link":["F746","App/Src/raw_link.c. [[Ham mesaj]]'ı USART6 DMA ile yollar, beklemez; hat meşgulse düşürüp sayar. TX bitti kesmesinde DRDY → son bit süresini ölçer ([[Ölçüm: F746]]).",["Ham mesaj","Ölçüm: F746"]],"PC yolu (USART1)":["F746","İlk tasarım: Ethernet frame'leri hex satırı olarak USART1'den (1 Mbaud). [[IP task]], [[uartTx]], [[vnetRx]]. Komutlar buradan gelir. GUI bunu kullanır.",["IP task","uartTx","vnetRx"]],"IP task":["F746","FreeRTOS-Plus-TCP'nin task'ı, öncelik 5. Çıkışta UART'ı beklemez: frame'i [[TX kuyruğu]]na koyar.",["TX kuyruğu"]],"uartTx":["F746","Öncelik 5, UART çıkışının tek sahibi. [[TX kuyruğu]]ndan alır, DMA ile yollar, bitişi notification ile bekler.",["TX kuyruğu"]],"TX kuyruğu":["F746","8 yer. Son 2 yer yalnız komut cevaplarına. TELEM öne girebilir, aynı anda bir tane. Dosya: App/Src/uart_tx.c.",[]],"vnetRx":["F746","Öncelik 4. Satırı frame'e çevirir; FCS, MAC, IP ve UDP denetimlerinden sonra yığına verir.",[]],"critParser":["F746","Öncelik 6, IP task'tan yüksek: komut geldiği an işlenir. [[ctrlTask]]'a kuyrukla verir.",["ctrlTask"]],"ctrlTask":["F746","Öncelik 6. START, STOP, SET_RATE, GET_STATS; sağlık kontrolü; [[EventGroup]] bitleri.",["EventGroup"]],"EventGroup":["F746","NET_READY, MEAS_EN, FAULT. Her bitin tek yazarı var; bitler durumdur, sayaç değil.",[]],"Havuz":["F746","fixed_pool.c: sayan semafor \"kaç boş\", liste \"hangisi boş\". Çift bırakma yakalanır. Çalışırken malloc yok.\nİlgili: [[FreeRTOS]] · [[Muhasebe]].",["FreeRTOS","Muhasebe"]],"Muhasebe":["F746","127 sayaç, katman başına eşitlik: giren = çıkan + nedeni bilinen düşen. Host iki görüntü arasında 19 eşitliği denetler.",[]],"Ham mesaj":["paket","23 bayt: ivme 6, jiroskop 6, roll/pitch/yaw 6, flags 1, prev_seq 2, prev_us 2. Başlık ve CRC yok.\nSınırını [[Sessizlik çerçevesi]] belirler.",["Sessizlik çerçevesi"]],"TELEM paketi":["paket","33 bayt: A5 01 30 00, SEQ 2, REQ_ID 2, LEN 1, [[Ham mesaj]] 23, [[CRC-8]] 1. [[packet.c]] kurar, [[Host]] çözer.",["Ham mesaj","CRC-8","packet.c","Host"]],"SEQ":["paket","Paketin sırası = ham mesajdaki prev_seq + 1; önceki mesaj yoksa 0. 65535'ten sonra 0. Kayıp buradan görülür.\nİlgili: [[TELEM paketi]] · [[Ham mesaj]].",["TELEM paketi","Ham mesaj"]],"CRC-8":["paket","CRC-8/SMBUS, çokterimli 0x07, başlangıç 0. \"123456789\" → F4. İlk 32 baytı kapsar.",[]],"Sessizlik çerçevesi":["paket","Başlık olmadığı için mesaj sınırı 2 ms'den uzun sessizliktir. Yarım mesaj atılır, bad_len sayılır.",[]],"M33":["Zephyr","Cortex-M33, 400 MHz, Zephyr 4.5.0, program [[SRAM2]]'de. [[uart_isr]] → [[k_msgq]] → [[main thread]] → [[packet.c]] → [[rpmsg_link.c]].\nBellek: FLASH 32.388 B (%49), RAM 9.340 B (%14).",["SRAM2","uart_isr","k_msgq","main thread","packet.c","rpmsg_link.c"]],"uart_isr":["Zephyr","Baytları toplar, T1 (ilk bayt) ve T2 (23. bayt) damgalarını alır, mesajı [[k_msgq]]'ya koyar. Dosya: app_isr.c.",["k_msgq"]],"k_msgq":["Zephyr","raw_queue: 8 mesajlık kuyruk. Doluysa queue_drops. Bekleyen thread varsa mesaj doğrudan verilir.",[]],"main thread":["Zephyr","Öncelik 0. Mesaj gelene kadar uyur (T3), paketi kurar (T4), [[link_send]] ile verir (T5), süreleri özetler.",["link_send"]],"packet.c":["Zephyr","[[TELEM paketi]]'ni kurar. 1000 rastgele mesajda Host'la bayt bayt aynı.",["TELEM paketi"]],"rpmsg_link.c":["Zephyr","[[link_task]] kanalı açar, [[link_send]] paketi verir, komutları uygular.",["link_task","link_send"]],"link_task":["Zephyr","Öncelik 5. Önce Linux'un durumuna bir kez bakar, hazır değilse [[k_sem]]'de uyur. rpmsg-raw uç noktasını açar.",["k_sem"]],"link_send":["Zephyr","rpmsg_trysend: beklemez. Linux istemiyorsa link_skipped, tampon yoksa link_drops.",[]],"ipcc.c":["Zephyr","[[IPCC]] sarmalayıcısı. Kanal doluysa haberi atlar ve sayar; sürücünün boş dönen döngüsüne girmez.",["IPCC"]],"k_sem":["Zephyr","ipcc_sem, en çok 1. Linux'un haberi kesmede verilir, [[link_task]] alır.",["link_task"]],"k_timer":["Zephyr","lease_timer, 3 s. Linux '1' komutunu yenilemezse göndermeyi kapatır ([[3 saniyelik süre]]).",["3 saniyelik süre"]],"3 saniyelik süre":["karar","Okuyan program çökerse M33 göndermeye devam etmesin diye. Program '1'i saniyede bir yeniler. Kartta kill -9 sonrası 2,01 s'de durdu.",[]],"RPMsg":["Linux","[[Paylaşılan bellek]], [[vring]] ve [[IPCC]] üzerindeki mesaj katmanı (OpenAMP ↔ Linux virtio). Her yönde 8 tampon, 512 bayt.",["Paylaşılan bellek","vring","IPCC"]],"vring":["Linux","Hangi tamponun dolu, hangisinin boş olduğunu tutan halka liste. vring0 M33→Linux, vring1 Linux→M33.",[]],"Resource table":["Linux","ELF içindeki 88 bayt: \"1 RPMsg aygıtı, 2 vring, 8 tampon\". Linux M33'ü başlatırken okur, adresleri yazar.\nİlgili: [[remoteproc]] · [[RPMsg]].",["remoteproc","RPMsg"]],"remoteproc":["Linux","Linux'ta M33'ü yükleyip başlatan sürücü. Numarası her açılışta değişir; sabit yol 0.m33.",[]],"Linux A35":["Linux","OpenSTLinux, çekirdek 6.18.37. [[remoteproc]], virtio_rpmsg_bus, rpmsg_char (/dev/rpmsg0).",["remoteproc"]],"telem_udp":["Linux","MP257/linux/telem_udp.c. poll ile üç olay: aygıt, 1 s zamanlayıcı, sinyal. İşlemci payı %0,56. Çıkış kodları 0, 1, 2.",[]],"Host":["Host","Python: proto.py (paket), hoststack.py, GUI, simülatör, T01–T08 testleri. TELEM'i değişmeden çözer.\nUDP girişi ve ekran M8'de; henüz yok.",[]],"Host GUI":["Host","tkinter arayüz: Kontrol, Uçuş, Telemetri, Kaynaklar, Sayaçlar, Testler. [[PC yolu (USART1)]] ile çalışır.\nİlgili: [[Host]].",["PC yolu (USART1)","Host"]],"T01–T08":["test","F746'nın kabul testleri: parçalı giriş, bozuk giriş, yavaş tüketici, patlama, tekrar, TX tıkanması, uzun çalışma, IMU hızları.\nT08 kartta 22.11.2026'da geçti (Host/logs).\nİlgili: [[Host]] · [[Muhasebe]].",["Host","Muhasebe"]],"Ölçüm: F746":["ölçüm","DRDY → son bit, 12.006 paket (25.11.2026, kart): en az 595, ortalama 596,2, en çok 724 µs, std 2,5. Bunun 499 µs'si hat süresi.",[]],"Ölçüm: M33":["ölçüm","T2−T1 476,0 · T3−T2 3,0 · T4−T3 8,2 · T5−T4 7,6 µs (ortalama). 23. bayttan Linux'a vermeye 18,8 µs.\nİlgili: [[M33]] · [[Ölçüm: F746]].",["M33","Ölçüm: F746"]],"Ölçüm: PC":["ölçüm","PC'de paketler arası en az 5,3, ortalama 9,99, en çok 14,5 ms, std 0,41. Kayıp 0. İlk ölçümde 32 ms göründü: [[Hata: kaba saat]]. Uçtan uca gecikme M9'da ölçülecek.\nİlgili: [[Host]] · [[telem_udp]] · [[Ölçüm: M33]].",["Hata: kaba saat","Host","telem_udp","Ölçüm: M33"]],"Test M4":["test","60 s, 6004 mesaj, hata 0; F746 reset'inde kayıp sayılmadı.\nİlgili: [[USART6 hattı]] · [[Ölçüm: M33]].",["USART6 hattı","Ölçüm: M33"]],"Test M5":["test","1000/1000 paket Host'la aynı; kartta 20/20.\nİlgili: [[TELEM paketi]] · [[Host]].",["TELEM paketi","Host"]],"Test M6":["test","6003/6003 ve 6004/6004; \"dur\" ve dolu tampon davranışı.\nİlgili: [[RPMsg]] · [[link_send]].",["RPMsg","link_send"]],"Test M7":["test","Uçtan uca 6003/6003; SIGTERM, SIGINT, SIGHUP, kill -9; M33 durdurma.\nİlgili: [[telem_udp]] · [[3 saniyelik süre]].",["telem_udp","3 saniyelik süre"]],"QEMU testleri":["test","Gerçek main.c ve app_isr.c, sahte F746 ve sahte Linux ile. -icount ile tekrarlanabilir ([[Hata: QEMU saati]]).\nİlgili: [[M33]].",["Hata: QEMU saati","M33"]],"Hata: UART taşması":["hata","M3: 2. bayt kayboluyordu. Çözüm: FIFO (64 bayt). Asıl neden sonradan [[Hata: DDR yavaşlığı]].",["Hata: DDR yavaşlığı"]],"Hata: overlay sessizce uygulanmadı":["hata","Yeni overlay dosyası normal derlemede görülmedi. Çözüm: bir kez -p always.\nİlgili: [[USART6 hattı]] · [[Test M4]].",["USART6 hattı","Test M4"]],"Hata: yanlış remoteproc":["hata","Yeniden açılışta numara değişti, M0+ seçildi (bad phdr). Çözüm: 0.m33 yolu ([[remoteproc]]).",["remoteproc"]],"Hata: DDR yavaşlığı":["hata","Thread uyanması 126,5 µs. Program DDR'den çalışıyordu. Çözüm: [[SRAM2]] → 3,0 µs.",["SRAM2"]],"Hata: CRC8_POLY":["hata","Ad Zephyr'de de vardı, derleme uyarısı. Çözüm: TELEM_CRC8_POLY.\nİlgili: [[packet.c]] · [[CRC-8]].",["packet.c","CRC-8"]],"Hata: QEMU saati":["hata","Testler rastgele kaldı; QEMU saati PC gecikmesini taşıyordu. Kontrol deneyi ve -icount ile çözüldü.",[]],"Hata: OpenAMP beklemeleri":["hata","Hazır örnekte 1 ms'lik yoklama, 15 s'lik deneme ve dolu kanalda boş dönme. [[Bekleme yok kuralı]]na uymuyordu; yerine semafor, trysend ve bir kez bakma.",["Bekleme yok kuralı"]],"Hata: sınırsız kuyruk":["hata","/dev/rpmsg0 kapalıyken paketler çekirdekte birikiyor. Çözüm: gönder/dur komutu ve [[3 saniyelik süre]].",["3 saniyelik süre"]],"Hata: TLS hizası":["hata","telem_udp kartta Aborted. android21 statik programının TLS hizası 8. Çözüm: android29.\nİlgili: [[telem_udp]].",["telem_udp"]],"Hata: kaba saat":["hata","PC aralığı 32 ms göründü. Windows'ta time.monotonic 15,6 ms adımlı; paketler gecikmiyordu. perf_counter ile en çok 14,5 ms ([[Ölçüm: PC]]).",["Ölçüm: PC"]]},"tur":{"genel":"#FFC21A","karar":"#FF8BE0","donanım":"#22E4FF","F746":"#A8D84A","paket":"#FFD98A","Zephyr":"#9B88FF","Linux":"#4FD1A0","Host":"#7CC7FF","ölçüm":"#F2F2F2","test":"#C9F27B","hata":"#FF8A95"}}</script>
+<script>
+(function(){
+  document.documentElement.classList.add('js');
+  var az=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var V=JSON.parse(document.getElementById('veri').textContent);
+  function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+  function kutu(c){var b=el('div','cbox');b.appendChild(el('div','cf',c.f));var p=el('pre'),k=el('code');c.l.forEach(function(r){var s=el('span','cl'+(r[2]?' hl':''));s.appendChild(el('i','',r[0]||''));s.appendChild(document.createTextNode(r[1]||' '));k.appendChild(s);});p.appendChild(k);b.appendChild(p);return b;}
+  document.querySelectorAll('.player').forEach(function(pl){
+    var S=V[pl.id],i=-1,zam=null,gorev=null,q=function(s){return pl.querySelector(s);};
+    var stage=q('.stage'),pkt=q('.pkt'),oy=q('[data-a=oynat]'),tl=q('.tline i');
+    function nd(n){return stage.querySelector('[data-n="'+n+'"]');}
+    function ciz(k,hareket){
+      i=k;var d={},led=0,s=S[k];
+      for(var j=0;j<=k;j++){Object.keys(S[j].s||{}).forEach(function(n){d[n]=S[j].s[n];});if(S[j].led!=null)led=S[j].led;}
+      stage.querySelectorAll('.node').forEach(function(x){var n=x.getAttribute('data-n');x.querySelector('em').textContent=d[n]||'—';x.classList.toggle('on',n===s.a||n===s.b);var l=x.querySelector('.lamp');if(l)l.classList.toggle('on',!!led);});
+      q('.pnum').textContent='Adım '+(k+1)+' / '+S.length;q('.ptitle').textContent=s.t;pl.classList.toggle('bad',s.t.indexOf('HATA')===0);pl.classList.toggle('good',s.t.indexOf('ŞİMDİ')===0);q('.ptext').textContent=s.x;
+      var pc=q('.pcode');pc.textContent='';s.c.forEach(function(c){pc.appendChild(kutu(c));});
+      if(tl){tl.style.transition=(!az&&hareket&&s.w===100)?'width 4s linear':'none';tl.style.width=(s.w||0)+'%';}
+      if(gorev){gorev.cancel();gorev=null;}
+      if(!az&&hareket&&pkt.animate&&s.a!==s.b){
+        var r=stage.getBoundingClientRect(),m=function(n){var b=nd(n).getBoundingClientRect();return[b.left-r.left+b.width/2-8,b.top-r.top+b.height/2-8];},u=m(s.a),v=m(s.b);
+        gorev=pkt.animate([{transform:'translate('+u[0]+'px,'+u[1]+'px)',opacity:1},{transform:'translate('+v[0]+'px,'+v[1]+'px)',opacity:1}],{duration:1400,easing:'ease-in-out',iterations:Infinity});
+      }
+      q('[data-a=geri]').disabled=k===0;q('[data-a=ileri]').disabled=k===S.length-1;
+    }
+    function dur(){if(zam){clearInterval(zam);zam=null;}oy.textContent='Oynat';}
+    function oyna(){if(i===S.length-1)ciz(0,true);else ciz(i,true);oy.textContent='Duraklat';zam=setInterval(function(){if(i<S.length-1)ciz(i+1,true);if(i===S.length-1)dur();},7000);}
+    pl.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var a=b.getAttribute('data-a');
+      if(a==='oynat'){zam?dur():oyna();}else{dur();if(a==='ilk')ciz(0,true);if(a==='geri'&&i>0)ciz(i-1,true);if(a==='ileri'&&i<S.length-1)ciz(i+1,true);}});
+    ciz(0,false);
+    if(!az&&'IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){io.disconnect();if(!zam&&i===0)oyna();}});},{threshold:.35});io.observe(stage);}
+  });
+  var KEY='sistem-v1',state={};try{state=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){state={};}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  var secs=[].slice.call(document.querySelectorAll('section.sec')),all=[].slice.call(document.querySelectorAll('.step')),nav=document.getElementById('navWrap'),box=nav.querySelector('.overall'),segs=document.getElementById('segs');
+  var renk={bakis:'#A8D84A',sinema:'#22E4FF',donanim:'#9B88FF',f746:'#FFC21A',cikis:'#FF3DCB',lab:'#22E4FF',m33:'#9B88FF',rpmsg:'#FFC21A',gecikme:'#A8D84A',ariza:'#FF3DCB',hatalar:'#4FD1A0',agbol:'#22E4FF'};
+  secs.forEach(function(p){var a=el('a','pill');a.href='#'+p.id;a.style.setProperty('--c',renk[p.id]);a.appendChild(el('i'));a.appendChild(document.createTextNode(p.getAttribute('data-name')+' '));p._c=el('small');a.appendChild(p._c);nav.insertBefore(a,box);var s=el('span');s.style.setProperty('--c',renk[p.id]);p._s=el('i');s.appendChild(p._s);segs.appendChild(s);});
+  [['rapor','Özet','#FFC21A']].forEach(function(x){var a=el('a','pill');a.href='#'+x[0];a.style.setProperty('--c',x[2]);a.appendChild(el('i'));a.appendChild(document.createTextNode(x[1]));nav.insertBefore(a,box);});
+  function yenile(){var t=0;secs.forEach(function(p){var st=p.querySelectorAll('.step'),d=0;st.forEach(function(s){var c=s.querySelector('input').checked;s.classList.toggle('done',c);if(c)d++;});t+=d;var y=Math.round(d*100/st.length);p.querySelector('.pbar i').style.width=y+'%';p._s.style.width=y+'%';p._c.textContent=d+'/'+st.length;});document.getElementById('overall').textContent=t+'/'+all.length;}
+  all.forEach(function(s){var id=s.getAttribute('data-id'),cb=s.querySelector('input');cb.checked=!!state[id];cb.addEventListener('change',function(){state[id]=cb.checked;save();yenile();});});
+  yenile();
+  var rv=[].slice.call(document.querySelectorAll('.reveal'));function hep(){rv.forEach(function(x){x.classList.add('in');});}
+  if('IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{rootMargin:'0px 0px -4% 0px'});rv.forEach(function(x){io.observe(x);});}else hep();
+  window.addEventListener('beforeprint',function(){hep();document.querySelectorAll('.hepsi').forEach(function(d){d.open=true;});});
+})();
+</script>
+<script>
+(function(){
+  var az=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
+  var V=JSON.parse(document.getElementById('sahneveri').textContent);
+  var NS='http://www.w3.org/2000/svg';
+  function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+  function kutu(c){var b=el('div','cbox');b.appendChild(el('div','cf',c.f));var p=el('pre'),k=el('code');c.l.forEach(function(r){var s=el('span','cl'+(r[2]?' hl':''));s.appendChild(el('i','',r[0]||''));s.appendChild(document.createTextNode(r[1]||' '));k.appendChild(s);});p.appendChild(k);b.appendChild(p);return b;}
+  document.querySelectorAll('.sahne').forEach(function(sh){
+    var D=V[sh.id],S=D.adim,i=0,hiz=1,oynuyor=false,bas=0,kalan=0,raf=0,jet=[],anim=[];
+    var alan=sh.querySelector('.alan'),svg=sh.querySelector('.teller'),q=function(s){return sh.querySelector(s);};
+    var oy=q('[data-a=oynat]'),cub=q('.sure i'),ray=q('.ray'),tel={};
+    function nd(n){return alan.querySelector('[data-n="'+n+'"]');}
+    D.tel.forEach(function(w){var p=document.createElementNS(NS,'path');svg.appendChild(p);tel[w[0]+'>'+w[1]]=p;});
+    S.forEach(function(s,k){var b=el('button','',k+1);b.type='button';b.title=s.t;b.setAttribute('aria-label','Adım '+(k+1)+': '+s.t);b.addEventListener('click',function(){dur();git(k,true);});ray.appendChild(b);});
+    function yol(a,b){
+      var R=alan.getBoundingClientRect(),A=nd(a).getBoundingClientRect(),B=nd(b).getBoundingClientRect();
+      function m(r){return{x:r.left-R.left+r.width/2,y:r.top-R.top+r.height/2,w:r.width/2,h:r.height/2};}
+      var p=m(A),r=m(B),dx=r.x-p.x,dy=r.y-p.y;
+      if(Math.abs(dx)>p.w+r.w){var sx=dx>0?1:-1,x1=p.x+sx*p.w,x2=r.x-sx*r.w,o=(x2-x1)/2;return 'M'+x1+' '+p.y+' C'+(x1+o)+' '+p.y+' '+(x2-o)+' '+r.y+' '+x2+' '+r.y;}
+      var sy=dy>0?1:-1,y1=p.y+sy*p.h,y2=r.y-sy*r.h;
+      if(Math.abs(y2-y1)<40)return 'M'+p.x+' '+y1+' L'+r.x+' '+y2;
+      var k=p.x+p.w-14;return 'M'+k+' '+y1+' L'+k+' '+y2;
+    }
+    function teller(){D.tel.forEach(function(w){tel[w[0]+'>'+w[1]].setAttribute('d',yol(w[0],w[1]));});}
+    function temizle(){anim.forEach(function(a){a.cancel();});anim=[];jet.forEach(function(j){j.remove();});jet=[];}
+    function ciz(k,hareket){
+      i=k;var s=S[k],v={},st={},yv={};
+      for(var j=0;j<=k;j++){var u=S[j];Object.keys(u.v||{}).forEach(function(n){v[n]=u.v[n];});Object.keys(u.st||{}).forEach(function(n){st[n]=u.st[n];});Object.keys(u.yv||{}).forEach(function(n){yv[n]=u.yv[n];});}
+      var ak={};(s.mv||[]).forEach(function(m){ak[m[0]]=1;ak[m[1]]=1;});(s.on||[]).forEach(function(n){ak[n]=1;});
+      alan.querySelectorAll('.nd').forEach(function(x){
+        var n=x.getAttribute('data-n'),yeni=(s.v&&s.v[n]!=null)||(s.st&&s.st[n]);
+        x.className='nd'+(ak[n]?' on':'')+(st[n]?' '+st[n]:'');
+        x.querySelector('em').textContent=v[n]||'';
+        if(yeni&&hareket&&!az){void x.offsetWidth;x.classList.add('yeni');}
+        var y=x.querySelectorAll('.yuva i');if(y.length)y.forEach(function(c,z){c.className=(yv[n]||'--------').charAt(z)==='b'?'bos':(yv[n]||'--------').charAt(z)==='d'?'dolu':'';});
+      });
+      sh.classList.toggle('bad',s.t.indexOf('HATA')===0);sh.classList.toggle('good',s.t.indexOf('ŞİMDİ')===0);
+      q('.no').textContent='Adım '+(k+1)+' / '+S.length;q('.anlat h3').textContent=s.t;q('.ne').textContent=s.x;
+      q('.ned').style.display=s.n?'':'none';q('.nedm').textContent=s.n||'';q('.gunluk').textContent=s.g||'';
+      var sag=q('.kod');sag.textContent='';(s.c||[]).forEach(function(c){sag.appendChild(kutu(c));});
+      [].slice.call(ray.children).forEach(function(b,z){b.className=z===k?'su':z<k?'gec':'';if(z===k)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+      q('[data-a=geri]').disabled=k===0;q('[data-a=ileri]').disabled=k===S.length-1;
+      temizle();Object.keys(tel).forEach(function(t){tel[t].setAttribute('class','');});
+      teller();
+      (s.mv||[]).forEach(function(m,z){
+        var d=yol(m[0],m[1]),p=tel[m[0]+'>'+m[1]]||tel[m[1]+'>'+m[0]],renk=m[3]||'#FFC21A';
+        if(p){p.setAttribute('class','ak');p.style.setProperty('--tc',renk);if(tel[m[1]+'>'+m[0]]===p)p.setAttribute('d',d);}
+        if(az||!alan.animate)return;
+        var y=document.createElementNS(NS,'path');y.setAttribute('d',d);var L=y.getTotalLength(),t=el('div','jeton',m[2]);t.style.setProperty('--tc',renk);alan.appendChild(t);jet.push(t);
+        var w=t.offsetWidth/2,h=t.offsetHeight/2,W=alan.clientWidth,kf=[],N=24,n=(s.mv||[]).length,dl=1500;
+        for(var a=0;a<=N;a++){var P=y.getPointAtLength(L*a/N),X=Math.max(2,Math.min(W-2*w-2,P.x-w));kf.push({transform:'translate('+X+'px,'+(P.y-h)+'px)',opacity:a===0||a===N?0:1,offset:(z+a/N)/n*.92});}
+        if(z>0)kf.unshift({transform:kf[0].transform,opacity:0,offset:0});
+        kf.push({transform:kf[kf.length-1].transform,opacity:0,offset:1});
+        anim.push(t.animate(kf,{duration:(n*dl+500)/hiz,iterations:Infinity,easing:'linear'}));
+      });
+    }
+    function uzun(k){var s=S[k];return (2600+36*((s.x||'').length+(s.n||'').length))/hiz;}
+    function tik(z){if(!oynuyor)return;var g=(z-bas)/kalan;cub.style.width=Math.min(100,g*100)+'%';if(g>=1){if(i<S.length-1){git(i+1,true);bas=z;kalan=uzun(i);}else{dur();return;}}raf=requestAnimationFrame(tik);}
+    function git(k,h){ciz(k,h);}
+    function dur(){oynuyor=false;cancelAnimationFrame(raf);oy.textContent='Oynat';cub.style.width='0';}
+    function oyna(){if(i===S.length-1)git(0,true);else git(i,true);oynuyor=true;oy.textContent='Duraklat';bas=performance.now();kalan=uzun(i);raf=requestAnimationFrame(tik);}
+    sh.querySelector('.ctrl').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var a=b.getAttribute('data-a');
+      if(a==='oynat'){oynuyor?dur():oyna();}
+      else if(a==='hiz'){hiz=hiz===1?2:hiz===2?0.5:1;b.textContent='Hız '+String(hiz).replace('.',',')+'×';var p=oynuyor;ciz(i,false);if(p){bas=performance.now();kalan=uzun(i);}}
+      else{dur();if(a==='ilk')git(0,true);if(a==='geri'&&i>0)git(i-1,true);if(a==='ileri'&&i<S.length-1)git(i+1,true);}});
+    sh.addEventListener('keydown',function(e){if(e.target!==sh)return;if(e.key==='ArrowRight'&&i<S.length-1){dur();git(i+1,true);e.preventDefault();}if(e.key==='ArrowLeft'&&i>0){dur();git(i-1,true);e.preventDefault();}if(e.key===' '){oynuyor?dur():oyna();e.preventDefault();}});
+    ciz(0,false);
+    window.addEventListener('resize',function(){ciz(i,false);});
+    if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){ciz(i,false);});
+    if(!az&&'IntersectionObserver' in window){var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){io.disconnect();if(!oynuyor&&i===0)oyna();}});},{threshold:.4});io.observe(alan);}
+  });
+
+  // Bellek haritası
+  document.querySelectorAll('.harita').forEach(function(h){var bl=h.parentNode.querySelector('.hbilgi');
+    h.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){h.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed',x===b);});bl.innerHTML=b.querySelector('template').innerHTML;});});
+    h.querySelector('button').click();});
+
+  // Deneme 1: yoklama mi, kesme mi
+  (function(){var s=document.getElementById('sim1');if(!s)return;var r=s.querySelector('input'),o=s.querySelector('output'),a=s.querySelector('.ya'),b=s.querySelector('.yb'),za=0;
+    function ciz(){var t=+r.value,x=function(v){return 1+v/100*97;};o.textContent=t+' ms';a.textContent='';b.textContent='';
+      function u(y,v,c){var e=el('u',c);e.style.left=x(v)+'%';y.appendChild(e);}
+      u(a,t,'h');u(b,t,'h');for(var k=0;k<t;k++)u(a,k,'');u(a,t,'y');u(b,0,'');u(b,t,'y');
+      s.querySelector('.ka').textContent='yaklaşık '+(t+1)+' kez bakar';s.querySelector('.kb').textContent=t===0?'1 kez bakar, hiç uyumaz':'1 kez bakar, 1 kez uyanır';
+      s.querySelector('.sa').textContent=t===0?'Linux hazırdı: ilk bakışta çıkar.':t+' kez boşuna bakar. Linux hiç gelmezse sonsuza kadar saniyede yaklaşık 1000 kez uyanmaya devam eder.';
+      s.querySelector('.sb').textContent=t===0?'Linux hazırdı: ilk bakışta çıkar, uyumaz.':t+' ms boyunca işlemciyi hiç kullanmaz. Linux hiç gelmezse uyur, telemetri etkilenmez (QEMU’da sınandı).';
+      [a,b].forEach(function(y){y.appendChild(el('s'));});}
+    function oynat(){cancelAnimationFrame(za);var b0=performance.now(),t=+r.value;(function f(z){var g=Math.min(1,(z-b0)/3000);[a,b].forEach(function(y){y.querySelector('s').style.left=(1+g*97)+'%';});if(g<1)za=requestAnimationFrame(f);})(b0);}
+    r.addEventListener('input',ciz);s.querySelector('button').addEventListener('click',function(){if(az){ciz();return;}oynat();});ciz();})();
+
+  // Deneme 2: kacan haber
+  (function(){var s=document.getElementById('sim2');if(!s)return;var m=s.querySelector('.rm'),l=s.querySelector('.rl'),y=s.querySelector('.yz');
+    function ciz(){var a=+m.value,b=+l.value,x=function(v){return 2+v/20*84;};s.querySelector('.om').textContent=a+' ms';s.querySelector('.ol').textContent=b+' ms';
+      y.textContent='';var e=el('u','y');e.style.left=x(a)+'%';y.appendChild(e);e=el('u','h');e.style.left=x(b)+'%';y.appendChild(e);
+      var kac=b<a,A=s.querySelector('.ra'),B=s.querySelector('.rb');
+      A.className='ra '+(kac?'kotu':'iyi');B.className='rb iyi';
+      A.querySelector('b').textContent=kac?'Asılı kalır':b+'. ms’de açılır';
+      A.querySelector('p').textContent=kac?'Haber, sürücü bayrakları silmeden önce geldi ve kayboldu. Thread bir daha gelmeyecek haberi sonsuza kadar bekler.':'Haber sürücü hazırken geldi, semafor verildi, thread uyandı.';
+      B.querySelector('b').textContent=(kac?a:b)+'. ms’de açılır';
+      B.querySelector('p').textContent=kac?'Haber kaybolsa da Linux’un durumu tabloda yazılı. Uyumadan önce okur, DRIVER_OK görür, hiç uyumaz.':'İlk bakışta durum 0, uyur. Haber gelince uyanır, tekrar bakar, DRIVER_OK görür.';}
+    m.addEventListener('input',ciz);l.addEventListener('input',ciz);ciz();})();
+
+  // Deneme 3: dolu kanal
+  (function(){var s=document.getElementById('sim3');if(!s)return;var bt=s.querySelectorAll('.sec button');
+    function ciz(d){bt.forEach(function(b){b.setAttribute('aria-pressed',b.getAttribute('data-d')===d);});
+      var A=s.querySelector('.ra'),B=s.querySelector('.rb'),x=d==='dolu';
+      A.className='ra '+(x?'kotu':'iyi');B.className='rb iyi';
+      A.querySelector('b').textContent=x?'while (dolu) { ; }':'Haber gönderilir';A.querySelector('p').textContent=x?'M33 burada döner, ta ki Linux bayrağı silene kadar. Linux durursa hiç çıkamaz.':'Kanal boş, bayrak kurulur, Linux kesme alır.';
+      B.querySelector('b').textContent=x?'ipcc_busy bir artar, hemen döner':'Haber gönderilir';B.querySelector('p').textContent=x?'Linux’un önünde zaten bir haber var; uyandığında vring’de bekleyen her şeyi alır. En kötü durumda yeni mesaj bir sonraki haberle görülür.':'Kanal boş, bayrak kurulur, Linux kesme alır.';}
+    bt.forEach(function(b){b.addEventListener('click',function(){ciz(b.getAttribute('data-d'));});});ciz('bos');})();
+})();
+</script>
+<script>
+(function(){
+'use strict';
+var az=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
+var D=JSON.parse(document.getElementById('sistemveri').textContent);
+var $=function(s,k){return (k||document).querySelector(s);},$$=function(s,k){return [].slice.call((k||document).querySelectorAll(s));};
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+function gor(e,f){var g=false;if('IntersectionObserver' in window){new IntersectionObserver(function(a){a.forEach(function(x){g=x.isIntersecting;f(g);});},{threshold:.05}).observe(e);}else f(true);}
+function tuval(c,h){var r=Math.min(2,window.devicePixelRatio||1),w=c.clientWidth||300;if(h)c.style.height=h+'px';var H=h||c.clientHeight;c.width=Math.round(w*r);c.height=Math.round(H*r);var x=c.getContext('2d');x.setTransform(r,0,0,r,0,0);x.w=w;x.h=H;return x;}
+var MONO='"JetBrains Mono",Consolas,monospace',tr=function(v,n){return v.toFixed(n==null?1:n).replace('.',',');};
+function kod(c){var b=el('div','cbox');b.appendChild(el('div','cf',c.f));var p=el('pre'),k=el('code');c.l.forEach(function(r){var s=el('span','cl'+(r[2]?' hl':''));s.appendChild(el('i','',r[0]||''));s.appendChild(document.createTextNode(r[1]||' '));k.appendChild(s);});p.appendChild(k);b.appendChild(p);return b;}
+
+/* ---------- kahraman tuvali ---------- */
+(function(){var c=$('.hero canvas');if(!c)return;var x,P=[],gr=false;
+  function kur(){x=tuval(c);P=[];for(var i=0;i<70;i++)P.push({t:Math.random(),s:.0006+Math.random()*.0012,y:Math.random(),r:1+Math.random()*2.2});}
+  function yol(t,y){var w=x.w,h=x.h,a=h*(.25+.6*y),k=Math.sin(t*Math.PI*4+y*6)*h*.06*Math.sin(t*Math.PI);return[w*t,a+k];}
+  function ciz(){if(!x)return;x.clearRect(0,0,x.w,x.h);P.forEach(function(p){if(!az)p.t+=p.s*3;if(p.t>1)p.t=0;var a=yol(p.t,p.y),b=yol(Math.max(0,p.t-.05),p.y),g=p.t<.3?'168,216,74':p.t<.55?'255,194,26':p.t<.8?'34,228,255':'255,61,203';x.strokeStyle='rgba('+g+',.22)';x.lineWidth=p.r;x.beginPath();x.moveTo(b[0],b[1]);x.lineTo(a[0],a[1]);x.stroke();x.fillStyle='rgba('+g+',.8)';x.beginPath();x.arc(a[0],a[1],p.r,0,7);x.fill();});if(gr&&!az)requestAnimationFrame(ciz);}
+  kur();addEventListener('resize',function(){kur();ciz();});gor(c,function(g){var e=gr;gr=g;if(g&&!e)ciz();});ciz();})();
+
+/* ---------- sinema ---------- */
+(function(){var S=$('.sinema');if(!S)return;var svg=$('svg',S),NS='http://www.w3.org/2000/svg',M=D.sin,i=0,oyn=false,kam=null,raf=0,bas=0,sure=0,par=[],hiz=1,gr=true,saat0=0;
+  var W=190,H=86;
+  function s(t,a,k){var e=document.createElementNS(NS,t);Object.keys(a||{}).forEach(function(n){e.setAttribute(n,a[n]);});(k||svg).appendChild(e);return e;}
+  M.bolge.forEach(function(b){s('rect',{x:b[0],y:b[1],width:b[2],height:b[3],class:'bolge',stroke:b[5],rx:26});var t=s('text',{x:b[0]+22,y:b[1]+38,class:'bt',fill:b[5]});t.textContent=b[4];});
+  var ky=s('g'),pg=null,K={},E={};
+  M.node.forEach(function(n){K[n[0]]={x:n[1],y:n[2],r:n[5],n:n};});
+  function yol(a,b,v){var A=K[a],B=K[b],ax=A.x+W/2,ay=A.y+H/2,bx=B.x+W/2,by=B.y+H/2;
+    if(v)return 'M'+ax+' '+(A.y+H)+' V'+(v-24)+' Q'+ax+' '+v+' '+(ax+(bx>ax?24:-24))+' '+v+' H'+(bx+(bx>ax?-24:24))+' Q'+bx+' '+v+' '+bx+' '+(v-24)+' V'+(B.y+H);
+    if(Math.abs(bx-ax)>W){var q=bx>ax?1:-1,x1=ax+q*W/2,x2=bx-q*W/2,o=(x2-x1)/2;return 'M'+x1+' '+ay+' C'+(x1+o)+' '+ay+' '+(x2-o)+' '+by+' '+x2+' '+by;}
+    var p=by>ay?1:-1;return 'M'+ax+' '+(ay+p*H/2)+' L'+bx+' '+(by-p*H/2);}
+  M.kenar.forEach(function(e){E[e[0]+'>'+e[1]]=s('path',{d:yol(e[0],e[1],e[2]),class:'kt'},ky);});
+  M.node.forEach(function(n){var g=s('g',{class:'kn'+(n[6]?' '+n[6]:''),transform:'translate('+n[1]+','+n[2]+')'});s('rect',{class:'ks',width:W,height:H,rx:14},g);var t=s('text',{x:14,y:28},g);t.textContent=n[3];t=s('text',{x:14,y:47,class:'a'},g);t.textContent=n[4];s('rect',{class:'dr',x:10,y:55,width:0,height:23,rx:7,fill:n[5]},g);s('text',{class:'d',x:17,y:71},g);K[n[0]].g=g;g.style.setProperty('--nc',n[5]);});
+  pg=s('g');
+  var rail=$('.zc',S);M.adim.forEach(function(a,k){var b=el('button');b.type='button';b.setAttribute('aria-label','Adım '+(k+1)+': '+a.t);b.title=a.t;b.onclick=function(){dur();git(k);};rail.appendChild(b);});
+  function hedef(a){var L={};(a.mv||[]).forEach(function(m){L[m[0]]=1;L[m[1]]=1;});var n=Object.keys(L);if(!n.length||n.length>8)return[20,40,2380,1060];var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;n.forEach(function(q){x0=Math.min(x0,K[q].x);y0=Math.min(y0,K[q].y);x1=Math.max(x1,K[q].x+W);y1=Math.max(y1,K[q].y+H);});var w=Math.max(560,x1-x0+150),h=Math.max(330,y1-y0+130);return[(x0+x1-w)/2,(y0+y1-h)/2,w,h];}
+  function uygula(k){svg.setAttribute('viewBox',k.map(function(v){return v.toFixed(1);}).join(' '));}
+  function kamera(h){if(az||!kam){kam=h.slice();uygula(kam);return;}var b=kam.slice(),t0=performance.now(),T=1100/hiz;cancelAnimationFrame(kamera.r);(function f(z){var p=Math.min(1,(z-t0)/T),e=p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;kam=b.map(function(v,q){return v+(h[q]-v)*e;});uygula(kam);if(p<1)kamera.r=requestAnimationFrame(f);})(t0);}
+  function ciz(){var a=M.adim[i],v={},st={};for(var j=0;j<=i;j++){Object.keys(M.adim[j].v||{}).forEach(function(n){v[n]=M.adim[j].v[n];});Object.keys(M.adim[j].st||{}).forEach(function(n){st[n]=M.adim[j].st[n];});}
+    var on={};(a.mv||[]).forEach(function(m){on[m[0]]=1;on[m[1]]=1;});(a.on||[]).forEach(function(n){on[n]=1;});
+    M.node.forEach(function(n){var k=K[n[0]],g=k.g;g.setAttribute('class','kn'+(n[6]?' '+n[6]:'')+(on[n[0]]?' on':'')+(st[n[0]]?' '+st[n[0]]:''));$('.ks',g).style.stroke=on[n[0]]?n[5]:'';var d=$('.d',g),r=$('.dr',g);d.textContent=v[n[0]]||'';r.setAttribute('width',v[n[0]]?Math.min(W-20,d.textContent.length*7.9+14):0);});
+    Object.keys(E).forEach(function(e){E[e].setAttribute('class','kt');E[e].style.stroke='';});
+    while(pg.firstChild)pg.removeChild(pg.firstChild);par=[];
+    (a.mv||[]).forEach(function(m,z){var p=E[m[0]+'>'+m[1]],ters=false;if(!p){p=E[m[1]+'>'+m[0]];ters=true;}if(!p)return;p.setAttribute('class','kt ak');p.style.stroke=m[3]||'#FFC21A';var L=p.getTotalLength();
+      for(var q=0;q<3;q++){var c=s('circle',{r:q?6-q*1.5:9,fill:m[3]||'#FFC21A',class:'par',opacity:1-q*.3},pg);c.style.color=m[3]||'#FFC21A';par.push({p:p,L:L,t:c,f:z,n:(a.mv||[]).length,d:q*.035,ters:ters});}
+      if(m[2]){var g=s('g',{},pg),w=m[2].length*8.6+20;s('rect',{x:-w/2,y:-34,width:w,height:26,rx:13,fill:m[3]||'#FFC21A'},g);var t=s('text',{x:0,y:-16,'text-anchor':'middle',class:'pl'},g);t.textContent=m[2];par.push({p:p,L:L,t:g,f:z,n:(a.mv||[]).length,d:0,ters:ters,g:1});}});
+    $('.no',S).textContent='Adım '+(i+1)+' / '+M.adim.length;$('.hud h3',S).textContent=a.t;$('.ne',S).textContent=a.x;$('.ned',S).style.display=a.n?'':'none';$('.nedm',S).textContent=a.n||'';
+    var kb=$('.skod');kb.textContent='';(a.c||[]).forEach(function(c){kb.appendChild(kod(c));});
+    var sh=$('.saat',S);sh.textContent=a.s||'';
+    [].slice.call(rail.children).forEach(function(b,z){b.className=z===i?'su':z<i?'gec':'';if(z===i)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+    $('[data-a=geri]',S).disabled=i===0;$('[data-a=ileri]',S).disabled=i===M.adim.length-1;}
+  function parca(z){if(gr&&par.length){par.forEach(function(o){var T=1500/hiz,u=((z/T)%o.n+o.n)%o.n-o.f-o.d;var g=u>=0&&u<=1;if(az)u=.5;var q=az?.5:Math.max(0,Math.min(1,u)),P=o.p.getPointAtLength(o.L*(o.ters?1-q:q));o.t.setAttribute('transform','translate('+P.x+','+P.y+')');o.t.style.display=(az?(o.g&&o.f===0):g)?'':'none';});}requestAnimationFrame(parca);}
+  function git(k){i=k;ciz();kamera(hedef(M.adim[i]));}
+  function uzun(){var a=M.adim[i];return (3200+36*((a.x||'').length+(a.n||'').length))/hiz;}
+  function tik(z){if(!oyn)return;if(z-bas>=sure){if(i<M.adim.length-1){git(i+1);bas=z;sure=uzun();}else{dur();return;}}raf=requestAnimationFrame(tik);}
+  function dur(){oyn=false;cancelAnimationFrame(raf);$('[data-a=oynat]',S).textContent='Oynat';}
+  function oyna(){if(i===M.adim.length-1)git(0);oyn=true;$('[data-a=oynat]',S).textContent='Duraklat';bas=performance.now();sure=uzun();raf=requestAnimationFrame(tik);}
+  $('.tus',S).addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var a=b.getAttribute('data-a');if(a==='oynat')oyn?dur():oyna();else if(a==='hiz'){hiz=hiz===1?2:hiz===2?.5:1;b.textContent='Hız '+String(hiz).replace('.',',')+'×';}else{dur();if(a==='geri'&&i)git(i-1);if(a==='ileri'&&i<M.adim.length-1)git(i+1);if(a==='ilk')git(0);if(a==='genel')kamera([20,20,2380,1080]);}});
+  S.addEventListener('keydown',function(e){if(e.target!==S)return;if(e.key==='ArrowRight'&&i<M.adim.length-1){dur();git(i+1);e.preventDefault();}if(e.key==='ArrowLeft'&&i){dur();git(i-1);e.preventDefault();}if(e.key===' '){oyn?dur():oyna();e.preventDefault();}});
+  gor(S,function(g){gr=g;});git(0);requestAnimationFrame(parca);})();
+
+/* ---------- UART dalga formu ---------- */
+(function(){var k=$('#dalga');if(!k)return;var c=$('canvas',k),r=$('input[type=range]',k),b=D.ham[0].slice(9,32),of=0,x,gr=false,tz=0,oy=false;
+  var ALAN=function(i){return i<6?['ivme','#22E4FF']:i<12?['jiro','#9B88FF']:i<18?['açı','#A8D84A']:i===18?['flags','#FFC21A']:i<21?['prev_seq','#FF8BE0']:['prev_us','#4FD1A0'];};
+  function ciz(){x=tuval(c,210);var n=+r.value,w=x.w,bit=w/(n*10),top=46,alt=128;x.fillStyle='#070A12';x.fillRect(0,0,w,x.h);$('output',k).textContent=n+' bayt · '+tr(n*21.701,1)+' µs';
+    var kay=Math.max(0,Math.min(23-n,of)),i0=Math.floor(kay);x.lineWidth=2.4;
+    for(var q=i0;q<=Math.min(22,i0+n);q++){var ox=(q-kay)*bit*10;if(ox>w)break;var f=ALAN(q),v=b[q],B=[0];for(var z=0;z<8;z++)B.push((v>>z)&1);B.push(1);
+      x.fillStyle=f[1]+'22';x.fillRect(ox,top-26,bit*10-1,alt-top+54);x.strokeStyle=f[1];x.beginPath();x.moveTo(ox,q===0?top:top);B.forEach(function(d,m){var y=d?top:alt;x.lineTo(ox+m*bit,y);x.lineTo(ox+(m+1)*bit,y);});x.stroke();
+      if(bit*10>34){x.fillStyle='#EEF2F8';x.font='800 13px '+MONO;x.textAlign='center';x.fillText(v.toString(16).toUpperCase().padStart(2,'0'),ox+bit*5,top-10);x.fillStyle=f[1];x.font='700 11px '+MONO;if(bit*10>52)x.fillText(f[0],ox+bit*5,alt+20);}
+      if(bit>13){x.fillStyle='#A6B1C4';x.font='700 10px '+MONO;B.forEach(function(d,m){x.fillText(m===0?'B':m===9?'D':d,ox+(m+.5)*bit,alt+38);});}}
+    var t=(tz-kay*10)*bit;if(t>=0&&t<=w){x.strokeStyle='#FFC21A';x.lineWidth=2;x.beginPath();x.moveTo(t,10);x.lineTo(t,alt+42);x.stroke();}
+    x.textAlign='left';x.fillStyle='#A6B1C4';x.font='600 12px '+MONO;x.fillText('t = '+tr(tz/10*21.701,1)+' µs  (bit '+Math.floor(tz)%10+', bayt '+Math.min(22,Math.floor(tz/10))+')',10,x.h-10);}
+  function f(){if(!oy)return;tz+=.35;if(tz>=230){tz=0;}var n=+r.value;of=Math.max(0,tz/10-n*.4);ciz();requestAnimationFrame(f);}
+  r.addEventListener('input',ciz);addEventListener('resize',ciz);$('[data-a=oy]',k).onclick=function(){oy=!oy;this.textContent=oy?'Duraklat':'Oynat';if(oy)f();};$('[data-a=ad]',k).onclick=function(){oy=false;$('[data-a=oy]',k).textContent='Oynat';tz=(Math.floor(tz/10)+1)%23*10;of=Math.max(0,tz/10-+r.value*.4);ciz();};ciz();})();
+
+/* ---------- zamanlayici (model) ---------- */
+(function(){var k=$('#plan');if(!k)return;var c=$('canvas',k),SN=30000,ADIM=5,G0=0,G1=30000;
+  var T=[['ISR',9,'#FF8A95'],['critParser',6,'#FFC21A'],['ctrlTask',6,'#FFD98A'],['IP task',5,'#22E4FF'],['uartTx',5,'#7CC7FF'],['vnetRx',4,'#9B88FF'],['meas',3,'#A8D84A'],['lowParser',1,'#FF8BE0'],['worker',1,'#D59BFF'],['idle',0,'#26324A']];
+  var AD={};T.forEach(function(t,i){AD[t[0]]=i;});
+  var ZIN={drdy:[['ISR',10],['meas',20],['bekle',45],['ISR',8],['meas',45]],cmd:[['ISR',12],['vnetRx',130],['IP task',80],['critParser',35],['ctrlTask',70],['IP task',60],['uartTx',30]],bulk:[['ISR',12],['vnetRx',220],['IP task',90],['lowParser',120],['worker',260]],rap:[['worker',220],['uartTx',35]]};
+  var sec={drdy:true,cmd:true,bulk:true,rap:false},cmdT=6300,sonuc=null,oynT=SN,gr=false,za=0;
+  function benzet(){var is=[],ekle=function(t,z,ad){is.push({t:t,z:ZIN[z],i:0,k:ZIN[z][0][1],ad:ad,bas:t});};
+    if(sec.drdy)[1000,11000,21000].forEach(function(t){ekle(t,'drdy','DRDY');});if(sec.cmd)ekle(cmdT,'cmd','START');if(sec.bulk)for(var b=0;b<6;b++)ekle(900+b*5000,'bulk','BULK');if(sec.rap)ekle(6000,'rap','rapor');
+    var h=new Int8Array(SN/ADIM).fill(AD.idle),bit={},son=null;
+    for(var a=0;a<h.length;a++){var t=a*ADIM,en=null,ep=-1;is.forEach(function(j){if(t<j.t||j.i>=j.z.length)return;var s=j.z[j.i];if(s[0]==='bekle'){j.k-=ADIM;if(j.k<=0){j.i++;if(j.i<j.z.length)j.k=j.z[j.i][1];}return;}var p=T[AD[s[0]]][1];if(p>ep||(p===ep&&en&&j===son)){ep=p;en=j;}});
+      if(en){h[a]=AD[en.z[en.i][0]];en.k-=ADIM;son=en;if(en.k<=0){en.i++;if(en.i<en.z.length)en.k=en.z[en.i][1];else{(bit[en.ad]=bit[en.ad]||[]).push(t+ADIM-en.bas);}}}}
+    return{h:h,bit:bit};}
+  function ciz(){var x=tuval(c,360),so=96,w=x.w-so-10,sa=30,st=(x.h-sa-26)/T.length;x.fillStyle='#070A12';x.fillRect(0,0,x.w,x.h);x.font='700 12px '+MONO;
+    T.forEach(function(t,i){var y=sa+i*st;x.fillStyle=i%2?'#0B1120':'#0E1628';x.fillRect(0,y,x.w,st);x.fillStyle=t[0]==='idle'?'#A6B1C4':t[2];x.textAlign='right';x.fillText(t[0]+(t[1]<9?' P'+t[1]:''),so-8,y+st/2+4);});
+    x.textAlign='center';x.fillStyle='#A6B1C4';for(var m=0;m<=6;m+=w<360?3:1){var X=so+w*m/6;x.fillText(tr((G0+(G1-G0)*m/6)/1000,G1-G0>9000?0:1)+' ms',Math.min(x.w-30,X),18);x.fillStyle='#1C2740';x.fillRect(X,sa,1,x.h-sa-26);x.fillStyle='#A6B1C4';}
+    var h=sonuc.h,b=0;for(var a=1;a<=h.length;a++){if(a===h.length||h[a]!==h[b]){var bz=Math.max(b*ADIM,G0),e=Math.min(a*ADIM,oynT,G1);if(e>bz){var i=h[b],y=sa+i*st;x.fillStyle=T[i][2];x.fillRect(so+w*(bz-G0)/(G1-G0),y+4,Math.max(1.5,w*(e-bz)/(G1-G0)),st-8);}b=a;}}
+    var ok=[];if(sec.drdy)[1000,11000,21000].forEach(function(t){ok.push([t,'DRDY','#A8D84A']);});if(sec.cmd)ok.push([cmdT,'START','#FFC21A']);ok.forEach(function(o){if(o[0]<G0||o[0]>G1)return;var X=so+w*(o[0]-G0)/(G1-G0);x.strokeStyle=o[2];x.setLineDash([4,4]);x.beginPath();x.moveTo(X,sa);x.lineTo(X,x.h-26);x.stroke();x.setLineDash([]);x.fillStyle=o[2];x.fillText(o[1],X,x.h-9);});
+    if(oynT<G1&&oynT>G0){x.strokeStyle='#fff';x.beginPath();x.moveTo(so+w*(oynT-G0)/(G1-G0),sa);x.lineTo(so+w*(oynT-G0)/(G1-G0),x.h-26);x.stroke();}}
+  function hes(){sonuc=benzet();var b=sonuc.bit,p=[];if(b.DRDY)p.push('DRDY işi: '+b.DRDY.map(function(v){return v+' µs';}).join(', '));if(b.START)p.push('START cevabı: '+b.START[0]+' µs');if(b.BULK)p.push(b.BULK.length+' BULK, en uzunu '+Math.max.apply(0,b.BULK)+' µs');$('.bilgi',k).innerHTML='<b>'+p.join(' · ')+'</b>'+'DRDY tam bir frame işlenirken gelirse meas (P3) vnetRx’i (P4) ve IP task’ı (P5) bekler; BULK’un asıl işi (P1) ise herkesi bekler. START cevabı P6’dan yürüdüğü için hemen biter.';$('output',k).textContent=tr(cmdT/1000,2)+' ms';oynT=SN;ciz();}
+  $$('.tus [data-z]',k).forEach(function(b){b.onclick=function(){var z=b.getAttribute('data-z');sec[z]=!sec[z];b.setAttribute('aria-pressed',sec[z]);hes();};});
+  $('input',k).addEventListener('input',function(){cmdT=+this.value;if(G1-G0<SN){G0=Math.max(0,cmdT-600);G1=G0+3000;}hes();});
+  $('[data-a=oy]',k).onclick=function(){if(az){ciz();return;}oynT=G0;var t0=performance.now(),hz=(G1-G0)/5000;cancelAnimationFrame(za);(function f(z){oynT=Math.min(G1,G0+(z-t0)*hz);ciz();if(oynT<G1)za=requestAnimationFrame(f);})(t0);};
+  $('[data-a=yak]',k).onclick=function(){var y=this.getAttribute('aria-pressed')!=='true';this.setAttribute('aria-pressed',y);G0=y?Math.max(0,cmdT-600):0;G1=y?G0+3000:SN;oynT=SN;ciz();};addEventListener('resize',ciz);hes();})();
+
+/* ---------- TX kuyrugu ---------- */
+(function(){var k=$('#txq');if(!k)return;var q=[],on=false,may=true,g=$('.gunce',k),kt=$('.kuyruk',k),n=0;
+  function yaz(t){g.textContent=t+'\n'+g.textContent;}
+  function ciz(){kt.textContent='';for(var i=0;i<8;i++){var e=el('i',q[i]?q[i].t:(i>=6?'rz':''),q[i]?{T:'TELEM',R:'rapor',K:'cevap'}[q[i].t]:(i>=6?'yedek':'boş'));kt.appendChild(e);}}
+  function ekle(t){var bos=8-q.length;if(bos===0){yaz(t+': RED, kuyruk dolu (txq_full)');return;}if(t!=='K'&&bos<=2){yaz({T:'TELEM',R:'rapor'}[t]+': RED, son 2 yer komut cevaplarına (txq_reserve)');return;}
+    var o={t:t,n:++n};if(t==='T'&&!on&&may){q.unshift(o);on=o;may=false;yaz('TELEM: öne kondu');}else{q.push(o);yaz({T:'TELEM',R:'rapor',K:'komut cevabı'}[t]+': arkaya kondu'+(t==='T'?' (önde zaten bir TELEM var ya da sıra başkasında)':''));}ciz();}
+  function yolla(){if(!q.length){yaz('uartTx: kuyruk boş, uyuyor');return;}var o=q.shift();if(o===on)on=false;else may=true;yaz('uartTx: '+{T:'TELEM',R:'rapor',K:'komut cevabı'}[o.t]+' hatta');ciz();}
+  $$('.tus button',k).forEach(function(b){b.onclick=function(){var a=b.getAttribute('data-k');if(a==='G')yolla();else if(a==='Z'){for(var i=0;i<12;i++)ekle(i%3?'T':'R');}else ekle(a);};});ciz();})();
+
+/* ---------- paket laboratuvari ---------- */
+(function(){var k=$('#lab');if(!k)return;var c=$('canvas',k),A={r:12,p:-8,y:20},pk=null,seq=0,sec=-1,canli=false,bz={},idx=0,gr=true;
+  var TAB=[];for(var i=0;i<256;i++){var v=i;for(var j=0;j<8;j++)v=(v&128?(v<<1)^7:v<<1)&255;TAB[i]=v;}
+  function crc(b,n){var c=0;for(var i=0;i<n;i++)c=TAB[c^b[i]];return c;}
+  var AD=function(i){return i===0?['SOF','başlangıç işareti','#A8D84A']:i===1?['VER','sürüm 1','#A8D84A']:i===2?['TYPE','30 = TELEM','#A8D84A']:i===3?['FLAGS','0 = veri','#A8D84A']:i<6?['SEQ','sıra numarası','#FFC21A']:i<8?['REQ_ID','veride 0','#A8D84A']:i===8?['LEN','17 onaltılık = 23 bayt','#A8D84A']:i<15?['ivme '+'xyz'[(i-9)>>1],'8192 = 1 g','#22E4FF']:i<21?['jiro '+'xyz'[(i-15)>>1],'32,8 = 1 °/s','#B9ABFF']:i<27?[['roll','pitch','yaw'][(i-21)>>1],'0,01 derece','#7BE495']:i===27?['flags','bias, ivme, prev','#FFC21A']:i<30?['prev_seq','önceki mesajın sırası','#FF8BE0']:i<32?['prev_us','önceki mesajın süresi, µs','#4FD1A0']:['CRC8','ilk 32 baytın denetimi','#FF3DCB'];};
+  function kur(){var b=new Array(33).fill(0),w=function(o,v){v=Math.max(-32768,Math.min(32767,Math.round(v)))&65535;b[o]=v>>8;b[o+1]=v&255;};
+    b[0]=0xA5;b[1]=1;b[2]=0x30;w(4,seq);b[8]=23;var R=A.r*Math.PI/180,P=A.p*Math.PI/180;w(9,-Math.sin(P)*8192);w(11,Math.sin(R)*Math.cos(P)*8192);w(13,Math.cos(R)*Math.cos(P)*8192);w(21,A.r*100);w(23,A.p*100);w(25,A.y*100);b[27]=7;w(28,(seq+65535)%65536);w(30,596);b[32]=crc(b,32);return b;}
+  function coz(b){var s=function(o){var v=b[o]<<8|b[o+1];return v>32767?v-65536:v;};if(b[0]!==0xA5)return['RED: SOF yanlış'];if(b[1]!==1)return['RED: sürüm yanlış'];if(b[8]!==23)return['RED: uzunluk yanlış'];if(crc(b,32)!==b[32])return['RED: CRC tutmadı (beklenen '+crc(b,32).toString(16).toUpperCase().padStart(2,'0')+', gelen '+b[32].toString(16).toUpperCase().padStart(2,'0')+')'];if(b[3])return['RED: bilinmeyen bayrak'];return['GEÇTİ: Host decode','SEQ '+(b[4]<<8|b[5])+' · roll '+tr(s(21)/100,2)+'° · pitch '+tr(s(23)/100,2)+'° · yaw '+tr(s(25)/100,2)+'° · ivme '+[9,11,13].map(function(o){return tr(s(o)/8192,2);}).join(' / ')+' g · önceki süre '+(b[30]<<8|b[31])+' µs'];}
+  function ucak(){var x=tuval(c,300),R=A.r*Math.PI/180,P=A.p*Math.PI/180,Y=A.y*Math.PI/180,cr=Math.cos(R),sr=Math.sin(R),cp=Math.cos(P),sp=Math.sin(P),cy=Math.cos(Y),sy=Math.sin(Y);x.fillStyle='#070A12';x.fillRect(0,0,x.w,x.h);
+    function don(v){var X=v[0],Yv=v[1],Z=v[2];var a=[X*cp*cy+Yv*(sr*sp*cy-cr*sy)+Z*(cr*sp*cy+sr*sy),X*cp*sy+Yv*(sr*sp*sy+cr*cy)+Z*(cr*sp*sy-sr*cy),-X*sp+Yv*sr*cp+Z*cr*cp];var e=.5,u=[-a[0]*Math.sin(.6)+a[1]*Math.cos(.6),a[0]*Math.cos(.6)+a[1]*Math.sin(.6),a[2]];var z=u[1]*Math.cos(e)-u[2]*Math.sin(e),h=u[1]*Math.sin(e)+u[2]*Math.cos(e),f=300/(5+z*.6);return[x.w/2+u[0]*f*.95,x.h/2-h*f*.95+14,z];}
+    x.strokeStyle='#1C2740';for(var g=-3;g<=3;g++){[[[-3,g,-.9],[3,g,-.9]],[[g,-3,-.9],[g,3,-.9]]].forEach(function(l){var s=[R,P,Y];cr=1;sr=0;cp=1;sp=0;cy=1;sy=0;var a=don(l[0]),b=don(l[1]);x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1]);x.stroke();cr=Math.cos(s[0]);sr=Math.sin(s[0]);cp=Math.cos(s[1]);sp=Math.sin(s[1]);cy=Math.cos(s[2]);sy=Math.sin(s[2]);});}
+    var V={b:[1.7,0,0],l:[-1.2,1.25,.12],r:[-1.2,-1.25,.12],o:[-1.2,0,-.35],ol:[-1.2,.16,.12],or:[-1.2,-.16,.12]},yz=[[['b','l','ol'],'#22E4FF'],[['b','r','or'],'#FF8BE0'],[['b','ol','o'],'#A8D84A'],[['b','or','o'],'#FFC21A']];
+    yz.map(function(f){var p=f[0].map(function(n){return don(V[n]);});return[p,f[1],p.reduce(function(a,q){return a+q[2];},0)];}).sort(function(a,b){return b[2]-a[2];}).forEach(function(f){x.beginPath();f[0].forEach(function(q,i){i?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]);});x.closePath();x.fillStyle=f[1]+'CC';x.fill();x.strokeStyle='#0B0F1A';x.stroke();});
+    [['x burun',[1,0,0],'#FF8A95'],['y sol',[0,1,0],'#A8D84A'],['z üst',[0,0,1],'#22E4FF']].forEach(function(e){var a=don([0,0,0]),b=don(e[1].map(function(v){return v*2.2;}));x.strokeStyle=e[2];x.lineWidth=2;x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(b[0],b[1]);x.stroke();x.fillStyle=e[2];x.font='700 12px '+MONO;x.textAlign='center';x.fillText(e[0],b[0],b[1]-6);});
+    x.textAlign='left';x.fillStyle='#EEF2F8';x.font='700 13px '+MONO;x.fillText('roll '+tr(A.r)+'°  pitch '+tr(A.p)+'°  yaw '+tr(A.y)+'°',12,22);x.fillStyle='#A6B1C4';x.fillText(canli?'gerçek kart kaydı, paket '+(idx+1)+' / '+D.ham.length:'kaydırıcılardan üretiliyor',12,x.h-12);}
+  function goster(){var b=pk.slice();Object.keys(bz).forEach(function(i){b[i]^=bz[i];});var kt=$('.baytlar',k);if(kt.children.length!==33){kt.textContent='';for(var q=0;q<33;q++){(function(q){var e=el('button');e.type='button';e.onclick=function(){sec=sec===q?-1:q;goster();};kt.appendChild(e);})(q);}}
+    [].slice.call(kt.children).forEach(function(e,q){var a=AD(q);e.textContent=b[q].toString(16).toUpperCase().padStart(2,'0');e.style.setProperty('--bc',a[2]);e.className=(q===sec?'sec':'')+(bz[q]?' bozuk':'');e.setAttribute('aria-label','Bayt '+q+' '+a[0]);});
+    var bt=$('.bitler',k);bt.textContent='';var inf=$('.bilgi',k);if(sec>=0){var a=AD(sec);inf.innerHTML='<b></b><span></span>';$('b',inf).textContent='Bayt '+sec+': '+a[0];$('span',inf).textContent=a[1]+'. Bir bite dokun: kabloda bozulmuş gibi ters çevir.';for(var z=7;z>=0;z--)(function(z){var e=el('button','',(b[sec]>>z)&1);e.type='button';e.setAttribute('aria-label','bit '+z);e.onclick=function(){bz[sec]=(bz[sec]||0)^(1<<z);if(!bz[sec])delete bz[sec];goster();};bt.appendChild(e);})(z);}else inf.innerHTML='<b>Bir bayta dokun</b>Ne olduğunu gör, bitlerini boz.';
+    var r=coz(b),kr=$('.karar',k);kr.className='karar'+(r.length<2?' kotu':'');kr.innerHTML='<b></b><span></span>';$('b',kr).textContent=r[0];$('span',kr).textContent=r[1]||'Paket ekrana ulaşmaz, sayacı artar; sonraki paket etkilenmez.';}
+  function yeni(){pk=kur();goster();ucak();}
+  ['r','p','y'].forEach(function(n){var i=$('[name='+n+']',k);i.value=A[n];i.addEventListener('input',function(){canli=false;dug();A[n]=+i.value;$('[data-o='+n+']',k).textContent=i.value+'°';seq=(seq+1)&65535;yeni();});$('[data-o='+n+']',k).textContent=A[n]+'°';});
+  function dug(){var b=$('[data-a=canli]',k);b.setAttribute('aria-pressed',canli);b.textContent=canli?'Kaydı durdur':'Gerçek kart kaydını oynat';}
+  function kare(){if(!canli)return;if(gr){idx=(idx+1)%D.ham.length;pk=D.ham[idx].slice();var s=function(o){var v=pk[o]<<8|pk[o+1];return v>32767?v-65536:v;};A={r:s(21)/100,p:s(23)/100,y:s(25)/100};goster();ucak();}setTimeout(kare,az?600:60);}
+  $('[data-a=canli]',k).onclick=function(){canli=!canli;dug();if(canli)kare();};$('[data-a=onar]',k).onclick=function(){bz={};goster();};$('[data-a=rast]',k).onclick=function(){var q=Math.floor(Math.random()*33),z=1<<Math.floor(Math.random()*8);bz[q]=(bz[q]||0)^z;if(!bz[q])delete bz[q];sec=q;goster();};
+  gor(k,function(g){gr=g;});addEventListener('resize',function(){ucak();});dug();yeni();})();
+
+/* ---------- sessizlik cercevesi ---------- */
+(function(){var k=$('#sess');if(!k)return;var c=$('canvas',k),ky=$('[name=kayip]',k),es=$('[name=esik]',k);
+  function ciz(){var x=tuval(c,200),w=x.w,kay=+ky.value,e=+es.value/10,say=0,bad=0,top=0,son=-99,n=0,T=32,X=function(t){return 8+t/T*(w-16);};x.fillStyle='#070A12';x.fillRect(0,0,w,x.h);$('[data-o=kayip]',k).textContent=kay?kay+'. bayt':'yok';$('[data-o=esik]',k).textContent=tr(e)+' ms';
+    x.font='700 12px '+MONO;x.textAlign='left';
+    for(var m=0;m<3;m++)for(var b=0;b<23;b++){var t=m*10+1+b*.0217;if(m===1&&kay&&b===kay-1){x.fillStyle='#FF4D5E';x.fillRect(X(t)-1,30,3,70);continue;}if(n>0&&t-son>e){bad++;n=0;}son=t;n++;x.fillStyle=n===1?'#FFC21A':'#22E4FF';x.fillRect(X(t),46,Math.max(1,(w-16)/T*.014),44);if(n===23){say++;n=0;x.fillStyle='#A8D84A';x.fillRect(X(t),36,3,64);}}
+    for(m=0;m<3;m++){x.fillStyle='#A6B1C4';x.textAlign='center';x.fillText('mesaj '+(m+1),X(m*10+1.25),24);if(m<2){x.fillStyle='#33415F';x.fillRect(X(m*10+1.6),68,X((m+1)*10+.9)-X(m*10+1.6),2);x.fillStyle='#A6B1C4';x.fillText('9,5 ms sessizlik',(X(m*10+1.6)+X((m+1)*10+.9))/2,60);}}
+    x.fillStyle='#FFC21A';x.textAlign='left';x.fillText('eşik',8,126);x.fillRect(X(0)+36,122,(w-16)/T*e,4);
+    x.fillStyle='#EEF2F8';x.font='800 14px '+MONO;x.fillText('tam mesaj '+say+'   bad_len '+bad+(n?'   bekleyen yarım '+n+' bayt':''),8,158);x.fillStyle='#A6B1C4';x.font='600 12px '+MONO;x.fillText('sarı: T1   yeşil: T2   kırmızı: kaybolan bayt',8,182);
+    $('.bilgi',k).innerHTML='<b></b><span></span>';$('.bilgi b',k).textContent=e>=9.5?'Eşik çok büyük: mesajlar birbirine karışır':e<.03?'Eşik çok küçük: her bayt yeni mesaj sanılır':kay?'Yarım mesaj 3. mesajın ilk baytında atılır':'Üç mesaj da ayrıldı';$('.bilgi span',k).textContent='Kodda eşik 2 ms: bayt arası 0,022 ms’den çok büyük, mesaj arası 9,5 ms’den çok küçük.';}
+  [ky,es].forEach(function(i){i.addEventListener('input',ciz);});addEventListener('resize',ciz);ciz();})();
+
+/* ---------- vring halkasi ---------- */
+(function(){var k=$('#halka');if(!k)return;var c=$('canvas',k),sl=new Array(8).fill(0),yaz=0,oku=0,S={gon:0,dus:0,ok:0},t=0,son=0,lin=0,gr=false,seq=100,h=$('[name=lh]',k),tak=false,P=[];
+  function adim(){if(sl[yaz]===0){sl[yaz]=++seq;S.gon++;P.push({a:'m',i:yaz,t:0});yaz=(yaz+1)%8;}else{seq++;S.dus++;P.push({a:'x',i:yaz,t:0});}}
+  function al(){if(sl[oku]){P.push({a:'l',i:oku,t:0});sl[oku]=0;S.ok++;oku=(oku+1)%8;}}
+  function ciz(z){var dt=Math.min(60,z-son||16);son=z;if(gr&&!az){t+=dt;while(t>520){t-=520;adim();}if(!tak){lin+=dt;var T=+h.value;while(lin>T){lin-=T;al();}}}
+    var x=tuval(c,320),cx=x.w/2,cy=x.h/2,R=Math.min(118,x.w*.3);x.fillStyle='#070A12';x.fillRect(0,0,x.w,x.h);x.font='800 12px '+MONO;x.textAlign='center';
+    function yer(i,r){var a=-Math.PI/2+i*Math.PI/4;return[cx+Math.cos(a)*r,cy+Math.sin(a)*r];}
+    for(var i=0;i<8;i++){var p=yer(i,R);x.beginPath();x.arc(p[0],p[1],25,0,7);x.fillStyle=sl[i]?'#FFC21A':'#0E2A38';x.fill();x.strokeStyle=sl[i]?'#FFC21A':'#22E4FF';x.lineWidth=2;x.stroke();x.fillStyle=sl[i]?'#0B0F1A':'#7FDDEE';x.fillText(sl[i]?sl[i]:'boş',p[0],p[1]+4);}
+    [[yaz,'#A8D84A','M33',R+46],[oku,'#22E4FF','Linux',R-52]].forEach(function(o){var p=yer(o[0],o[3]),q=yer(o[0],o[3]>R?R+27:R-27);x.strokeStyle=o[1];x.lineWidth=3;x.beginPath();x.moveTo(p[0],p[1]);x.lineTo(q[0],q[1]);x.stroke();x.fillStyle=o[1];x.fillText(o[2],p[0],p[1]+(p[1]<cy?-6:14));});
+    P=P.filter(function(o){o.t+=dt/450;return o.t<1;});P.forEach(function(o){var p=yer(o.i,R);var f=o.a==='m'?[[20,cy],[p[0],p[1]],'#A8D84A']:o.a==='l'?[[p[0],p[1]],[x.w-20,cy],'#22E4FF']:[[20,cy],[60,cy+80*o.t],'#FF4D5E'];x.fillStyle=f[2];x.beginPath();x.arc(f[0][0]+(f[1][0]-f[0][0])*o.t,f[0][1]+(f[1][1]-f[0][1])*o.t,8,0,7);x.fill();});
+    x.fillStyle='#A8D84A';x.textAlign='left';x.fillText('M33 →',8,cy-14);x.fillStyle='#22E4FF';x.textAlign='right';x.fillText('→ Linux',x.w-8,cy-14);
+    x.textAlign='left';x.fillStyle='#EEF2F8';x.font='800 13px '+MONO;x.fillText('gönderilen '+S.gon+'  okunan '+S.ok+'  atılan '+S.dus,10,22);if(gr&&!az)requestAnimationFrame(ciz);}
+  $('[data-a=tak]',k).onclick=function(){tak=!tak;this.setAttribute('aria-pressed',tak);this.textContent=tak?'Linux takıldı: çöz':'Linux’u takılt';};
+  $('[data-a=bir]',k).onclick=function(){adim();if(az)ciz(performance.now());};h.addEventListener('input',function(){$('output',k).textContent=tr(520/+h.value*1,1)+'×';});$('output',k).textContent=tr(520/+h.value,1)+'×';
+  gor(k,function(g){var e=gr;gr=g;if(g&&!e)requestAnimationFrame(ciz);});addEventListener('resize',function(){if(!gr||az)ciz(performance.now());});ciz(performance.now());})();
+
+/* ---------- gecikme selalesi ---------- */
+(function(){var k=$('#selale');if(!k)return;var b=$('.bant2',k),L=D.sure;
+  L.forEach(function(d){var i=el('i');i.style.setProperty('--bc',d[2]);b.appendChild(i);});
+  function ciz(m){var ilk=m==='hep'?0:m==='m33'?2:1,son=L.length;[].slice.call(b.children).forEach(function(i,q){var g=q>=ilk;i.style.flex=(g?L[q][1]:0)+' 1 0';i.style.minWidth=g?'3px':'0';var top=0;for(var z=ilk;z<son;z++)top+=L[z][1];i.textContent=g&&L[q][1]/top>.11?L[q][0]+' '+tr(L[q][1]):'';});var t=0;for(var z=ilk;z<son;z++)t+=L[z][1];$('.bilgi',k).innerHTML='<b></b><span></span>';$('.bilgi b',k).textContent='Görünen toplam: '+tr(t)+' µs';$('.bilgi span',k).textContent=m==='hep'?'F746 ve M33’ün saatleri ayrı; hat süresi iki ölçümde de var, burada bir kez sayıldı. Toplam yaklaşıktır.':m==='m33'?'Yalnız M33’ün payı: 23. bayttan Linux’a vermeye.':'F746’nın hazırlığı çıkarıldı.';$$('.tus button',k).forEach(function(x){x.setAttribute('aria-pressed',x.getAttribute('data-m')===m);});}
+  $$('.tus button',k).forEach(function(x){x.onclick=function(){ciz(x.getAttribute('data-m'));};});ciz('hep');
+  function hist(c,H,bir,renk){var x=tuval(c,230),mx=Math.max.apply(0,H.map(function(h){return h[1];})),so=52,al=40,w=x.w-so-12,hh=x.h-al-26,n=H.length,lg=function(v){return v>0?(Math.log10(v)+.15)/(Math.log10(mx)+.15):0;};x.fillStyle='#070A12';x.fillRect(0,0,x.w,x.h);x.font='600 11px '+MONO;x.fillStyle='#A6B1C4';x.textAlign='right';[1,10,100,1000,10000].forEach(function(v){if(v<=mx){var y=26+hh*(1-lg(v));x.fillText(v,so-8,y+4);x.fillStyle='#1C2740';x.fillRect(so,y,w,1);x.fillStyle='#A6B1C4';}});
+    x.textAlign='center';H.forEach(function(h,i){var X=so+w*i/n,y=lg(h[1])*hh;x.fillStyle=renk;x.fillRect(X+1.5,26+hh-y,Math.max(2,w/n-3),y);var adm=Math.ceil(n/(w/58));if(i%adm===0){x.fillStyle='#A6B1C4';x.fillText(h[0],X+w/n/2,x.h-22);}});x.fillText(bir+' (adet ekseni logaritmik)',so+w/2,x.h-5);}
+  function hepsi(){hist($('.h1',k),D.hist.prev,'F746: DRDY → son bit, µs','#A8D84A');hist($('.h2',k),D.hist.ara,'PC’de paket aralığı, ms','#FF8BE0');}
+  addEventListener('resize',hepsi);hepsi();})();
+
+/* ---------- ariza ---------- */
+(function(){var k=$('#ariza');if(!k)return;var A=D.ariza,H=$('.hat',k),za=[];D.halka.forEach(function(h){H.appendChild(el('span','',h));});
+  function goster(q){za.forEach(clearTimeout);za=[];$$('.arz button',k).forEach(function(b,z){b.setAttribute('aria-pressed',z===q);});var a=A[q],s=[].slice.call(H.children);s.forEach(function(e){e.className='';});
+    for(var i=0;i<=a.d;i++)(function(i){za.push(setTimeout(function(){s[i].className=i<a.d?'g':(a.tur||'x');},az?0:i*170));})(i);
+    if(a.surer)for(var j=a.d+1;j<s.length;j++)(function(j){za.push(setTimeout(function(){s[j].className='g';},az?0:j*170+500));})(j);
+    var b=$('.bilgi',k);b.innerHTML='<b></b><span></span><p class="mu"></p>';$('b',b).textContent=a.s;$('span',b).textContent=a.x;$('p',b).textContent='Sayaç: '+a.c+' · Kanıt: '+a.k;}
+  var ar=$('.arz',k);A.forEach(function(a,q){var b=el('button','',a.ad);b.type='button';b.onclick=function(){goster(q);};ar.appendChild(b);});goster(0);})();
+
+/* ---------- bilgi agi ---------- */
+(function(){var k=$('#ag');if(!k)return;var c=$('canvas',k),NT=D.not,ad=Object.keys(NT),V={},B=[],x,o={x:0,y:0,z:1},sec='Sistem',ust=null,tas=null,gr=false,isi=1,sak={},ara='',tiklik=0;
+  ad.forEach(function(a,i){var t=i*2.4;V[a]={x:Math.cos(t)*(60+i*5),y:Math.sin(t)*(60+i*5),vx:0,vy:0,d:0,a:a,tur:NT[a][0]};});
+  ad.forEach(function(a){NT[a][2].forEach(function(b){if(!B.some(function(q){return q[0]===a&&q[1]===b||q[0]===b&&q[1]===a;})){B.push([a,b]);V[a].d++;V[b].d++;}});});
+  function r(v){return 6+Math.sqrt(v.d)*2.6;}
+  function kuvvet(){var L=ad.map(function(a){return V[a];});for(var i=0;i<L.length;i++){for(var j=i+1;j<L.length;j++){var dx=L[i].x-L[j].x,dy=L[i].y-L[j].y,d=dx*dx+dy*dy+40,f=7000/d*isi,q=Math.sqrt(d);dx*=f/q;dy*=f/q;L[i].vx+=dx;L[i].vy+=dy;L[j].vx-=dx;L[j].vy-=dy;}L[i].vx-=L[i].x*.006*isi;L[i].vy-=L[i].y*.009*isi;}
+    B.forEach(function(b){var p=V[b[0]],q=V[b[1]],dx=q.x-p.x,dy=q.y-p.y,d=Math.sqrt(dx*dx+dy*dy)||1,f=(d-118)*.02*isi;dx*=f/d;dy*=f/d;p.vx+=dx;p.vy+=dy;q.vx-=dx;q.vy-=dy;});
+    L.forEach(function(v){if(v===tas)return;v.vx*=.82;v.vy*=.82;v.x+=v.vx;v.y+=v.vy;});}
+  function kom(a,b){return B.some(function(q){return q[0]===a&&q[1]===b||q[0]===b&&q[1]===a;});}
+  function gos(a){return !sak[V[a].tur];}
+  function ciz(){if(isi>.02&&!az){kuvvet();isi*=.993;}x=tuval(c);x.fillStyle='#070A12';x.fillRect(0,0,x.w,x.h);x.save();x.translate(x.w/2+o.x,x.h/2+o.y);x.scale(o.z,o.z);var od=ust||sec;
+    B.forEach(function(b){if(!gos(b[0])||!gos(b[1]))return;var p=V[b[0]],q=V[b[1]],ak=od&&(b[0]===od||b[1]===od);x.strokeStyle=ak?'#FFC21A':'rgba(120,140,180,.28)';x.lineWidth=ak?2:1;x.beginPath();x.moveTo(p.x,p.y);x.lineTo(q.x,q.y);x.stroke();});
+    x.textAlign='center';ad.forEach(function(a){if(!gos(a))return;var v=V[a],R=r(v),il=!od||a===od||kom(a,od),es=ara&&a.toLocaleLowerCase('tr').indexOf(ara)>=0;x.globalAlpha=ara?(es?1:.18):(il?1:.5);x.fillStyle=D.tur[v.tur];x.beginPath();x.arc(v.x,v.y,R,0,7);x.fill();if(a===sec||es){x.strokeStyle='#fff';x.lineWidth=3;x.stroke();}if(o.z>.85||a===od||kom(a,od)||v.d>4||es){x.fillStyle='#EEF2F8';x.font=(a===od?'800 ':'600 ')+Math.max(11,12/Math.sqrt(o.z))+'px "IBM Plex Sans","Segoe UI",sans-serif';x.fillText(a.length>26?a.slice(0,25)+'…':a,v.x,v.y+R+14);}x.globalAlpha=1;});x.restore();if(gr&&(isi>.02||tas)&&!az)requestAnimationFrame(ciz);else tiklik=0;}
+  function uyan(v){if(v)isi=Math.max(isi,v);if(!tiklik){tiklik=1;requestAnimationFrame(ciz);}}
+  function nere(e){var q=c.getBoundingClientRect();return[(e.clientX-q.left-q.width/2-o.x)/o.z,(e.clientY-q.top-q.height/2-o.y)/o.z];}
+  function bul(p){var en=null,ed=1e9;ad.forEach(function(a){if(!gos(a))return;var v=V[a],d=Math.hypot(v.x-p[0],v.y-p[1]);if(d<Math.max(r(v)+6,16/o.z)&&d<ed){ed=d;en=v;}});return en;}
+  function yaz(a){sec=a;var t=NT[a],n=$('.not',k);n.textContent='';n.appendChild(el('h3','',a));var et=el('span','et',t[0]);et.style.background=D.tur[t[0]];n.appendChild(et);
+    t[1].split('\n').forEach(function(s){var p=el('p');s.split(/(\[\[[^\]]+\]\]|\*\*[^*]+\*\*)/).forEach(function(q){var m=q.match(/^\[\[(.+)\]\]$/),b=q.match(/^\*\*(.+)\*\*$/);if(m){var l=el('a','',m[1]);l.href='#ag';l.onclick=function(e){e.preventDefault();git(m[1]);};p.appendChild(l);}else if(b)p.appendChild(el('b','',b[1]));else p.appendChild(document.createTextNode(q));});n.appendChild(p);});
+    var g=ad.filter(function(b){return b!==a&&NT[b][2].indexOf(a)>=0;});if(g.length){var d=el('div','geri');d.appendChild(el('b','','Buraya bağlananlar ('+g.length+'): '));g.forEach(function(b,i){if(i)d.appendChild(document.createTextNode(' · '));var l=el('a','',b);l.href='#ag';l.onclick=function(e){e.preventDefault();git(b);};d.appendChild(l);});n.appendChild(d);}n.scrollTop=0;uyan();}
+  function git(a){if(sak[V[a].tur]){sak[V[a].tur]=false;leg();}yaz(a);var t0=performance.now(),bx=o.x,by=o.y,hx=-V[a].x*o.z,hy=-V[a].y*o.z;if(az){o.x=hx;o.y=hy;uyan();return;}(function f(z){var p=Math.min(1,(z-t0)/450),e=1-Math.pow(1-p,3);o.x=bx+(hx-bx)*e;o.y=by+(hy-by)*e;uyan();if(p<1)requestAnimationFrame(f);})(t0);}
+  var par={},kay=null,ilk=null,kis=0;
+  c.addEventListener('pointerdown',function(e){c.setPointerCapture(e.pointerId);par[e.pointerId]=e;var v=bul(nere(e));ilk=[e.clientX,e.clientY];if(Object.keys(par).length===2){tas=null;kay=null;kis=0;}else if(v){tas=v;uyan(.3);}else kay=[e.clientX-o.x,e.clientY-o.y];});
+  c.addEventListener('pointermove',function(e){if(par[e.pointerId])par[e.pointerId]=e;var ids=Object.keys(par);if(ids.length===2){var a=par[ids[0]],b=par[ids[1]],d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);if(kis){o.z=Math.max(.3,Math.min(3,o.z*d/kis));uyan();}kis=d;return;}if(tas){var p=nere(e);tas.x=p[0];tas.y=p[1];uyan(.3);}else if(kay){o.x=e.clientX-kay[0];o.y=e.clientY-kay[1];uyan();}else{var v=bul(nere(e)),y=v?v.a:null;if(y!==ust){ust=y;c.style.cursor=y?'pointer':'grab';uyan();}}});
+  function birak(e){delete par[e.pointerId];if(tas&&ilk&&Math.hypot(e.clientX-ilk[0],e.clientY-ilk[1])<6)yaz(tas.a);tas=null;kay=null;kis=0;}
+  c.addEventListener('pointerup',birak);c.addEventListener('pointercancel',birak);c.addEventListener('pointerleave',function(){ust=null;uyan();});
+  c.addEventListener('wheel',function(e){if(!e.ctrlKey&&!e.shiftKey)return;e.preventDefault();o.z=Math.max(.3,Math.min(3,o.z*(e.deltaY<0?1.12:.89)));uyan();},{passive:false});
+  $('[data-a=buyut]',k).onclick=function(){o.z=Math.min(3,o.z*1.25);uyan();};$('[data-a=kucult]',k).onclick=function(){o.z=Math.max(.3,o.z/1.25);uyan();};$('[data-a=ortala]',k).onclick=function(){o={x:0,y:0,z:x.w<500?.42:.62};isi=.6;uyan();};
+  $('.agust input',k).addEventListener('input',function(){ara=this.value.trim().toLocaleLowerCase('tr');uyan();});$('.agust input',k).addEventListener('keydown',function(e){if(e.key==='Enter'&&ara){var b=ad.filter(function(a){return a.toLocaleLowerCase('tr').indexOf(ara)>=0;})[0];if(b)git(b);}});
+  function leg(){var l=$('.tur-leg',k);l.textContent='';Object.keys(D.tur).forEach(function(t){var b=el('button','',t+' '+ad.filter(function(a){return V[a].tur===t;}).length);b.type='button';b.style.setProperty('--tc',D.tur[t]);b.setAttribute('aria-pressed',!sak[t]);b.onclick=function(){sak[t]=!sak[t];leg();uyan();};l.appendChild(b);});}
+  for(var q=0;q<420;q++){isi=q<300?1:.5;kuvvet();}isi=az?0:.25;o.z=(c.clientWidth||600)<500?.42:.62;leg();yaz('Sistem');gor(c,function(g){gr=g;if(g)uyan();});addEventListener('resize',function(){uyan();});ciz();window.__ag={V:V,B:B,git:git};})();
+})();
+</script>
+</body>
+</html>
