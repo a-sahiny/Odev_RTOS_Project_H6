@@ -1,12 +1,12 @@
 /**
   ******************************************************************************
   * @file    worker_task.c
-  * @brief   worker (P1): the low lane's last stop. ENV channel statistics,
+  * @brief   worker (P2): the low lane's last stop. ENV channel statistics,
   *          BULK pattern check, CAL offsets to meas through a mailbox, the
   *          1 s st / env reports (docs 5.2, 6.4, 17.2). Künye: report 072.
   ******************************************************************************
   * RTOS objects owned:
-  *   worker       static task, APP_PRIO_WORKER (1), APP_STACK_WORKER_WORDS.
+  *   worker       static task, APP_PRIO_WORKER (2), APP_STACK_WORKER_WORDS.
   *                Waits only on workQueue (<= APP_WORK_MAX_SLEEP_MS; the
   *                report timer wakes it earlier).
   *   xCalMailbox  static queue, length 1, ImuCal_t (12 B). Writer worker
@@ -143,7 +143,7 @@ size_t Worker_GetEnvStats( ReportEnvChannel_t * pxOut, size_t uxMax )
     configASSERT( ( pxOut != NULL ) && ( xEnvMailbox != NULL ) );
 
     /* One static copy per caller task (136 B, not on the stacks). worker
-     * (P1) may be in the middle of a packet when ctrlTask (P6) asks: the
+     * (P2) may be in the middle of a packet when ctrlTask (P6) asks: the
      * mailbox holds the last whole table (K5, report 092). */
     pxCopy = ( xTaskGetCurrentTaskHandle() == xWorkerTask ) ? &xCopyWorker : &xCopyCtrl;
 

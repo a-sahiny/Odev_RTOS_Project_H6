@@ -22,6 +22,7 @@ from . import ethframe as eth
 from . import link as linkmod
 from . import proto
 from .hoststack import Host, HostError
+from . import source
 from . import FROZEN, HOST_DIR
 from .stats_ids import COUNTER_NAMES
 
@@ -30,13 +31,27 @@ def _open(args, log=None):
     if args.sim:
         from .sim_board import SimBoard
         lk = linkmod.SimLink(SimBoard(seed=args.seed))
+    elif args.linux:
+        src = source.TelemSource()
+        ses = source.BoardSession(src)
+        if src.error or not ses.ensure():
+            why = src.error or ses.text
+            ses.stop()
+            raise SystemExit("Linux'tan veri gelmiyor: %s" % why)
+        lk = linkmod.LinuxLink(on_close=lambda: (ses.stop(), src.close()))
+        src.attach(lk)
     else:
         port = args.port or linkmod.guess_stlink_port()
         if not port:
             raise SystemExit("Port bulunamadı. 'python vnet.py ports' ile bakın, --port COMx verin ya da --sim kullanın.")
         lk = linkmod.SerialLink(port, args.baud)
+        src = source.TelemSource()                       # Linux okuyorsa komut ve cevaplar oradan; port arayüzdeyse yalnız seri hat
+        src.attach(lk)
     flag = {"none": None, "0": 0, "1": 1}[args.fcs]
-    return Host(lk, fcs_flag=flag, log=log)
+    h = Host(lk, fcs_flag=flag, log=log)
+    if not args.sim:
+        src.linux_listeners.append(h.on_linux_telem)
+    return h
 
 
 def _printer(verbose):
@@ -169,6 +184,7 @@ def main(argv=None):
     p.add_argument("--port", help="seri port (ör. COM5); verilmezse ST-LINK aranır")
     p.add_argument("--baud", type=int, default=1000000, help="UART1 hızı (1000000: TELEM satırı ≤ 2 ms)")
     p.add_argument("--sim", action="store_true", help="kart yerine Python simülatörü")
+    p.add_argument("--linux", action="store_true", help="seri portsuz: komut ve cevaplar MP257 (Linux) üzerinden")
     p.add_argument("--seed", type=int, default=1, help="simülatör seed'i")
     p.add_argument("--fcs", choices=("none", "0", "1"), default="1", help="host->kart FRAME biçimi")
     p.add_argument("-v", "--verbose", action="store_true", help="her satırı yaz")

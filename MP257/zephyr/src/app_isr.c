@@ -1,45 +1,75 @@
-/* Kesmeler: USART6 baytlarını mesaja ayırıp main thread'ine, IPCC haberini link thread'ine verir; süre dolunca göndermeyi kapatır. */
+/* Kesmeler: USART6 çerçevelerini main ve line thread'lerine, IPCC haberini link thread'ine verir; süre dolunca göndermeyi kapatır. */
 #include "app.h"
+#include "f746_tx.h"
 #include "ipcc.h"
 #include "rpmsg_link.h"
 #include <zephyr/drivers/uart.h>
+#include <string.h>
 
-static RawMsg msg;                                   // toplanan mesaj
-static uint32_t msg_len;                             // toplanan bayt sayısı
+static FrameRx rx;                                   // toplanan çerçeve
+static uint32_t first_cycles;                        // T1
 static uint32_t last_byte_cycles;                    // son baytın alındığı an
 
-/* Bir baytı mesaja ekler; 23. baytta mesajı kuyruğa koyar. */
-static void add_byte(uint8_t byte)
+/* Tam çerçeveyi türüne göre thread'ine verir; kuyruk doluysa kayıp sayılır. */
+static void give_frame(uint32_t now)
 {
-    uint32_t now = k_cycle_get_32();
+    uint8_t type = rx.raw[0];
+    uint8_t size = rx.raw[1];
 
-    // Başlık yok: mesaj sınırını sessizlik gösterir; yarım kalan mesaj atılır
-    if (msg_len > 0 && now - last_byte_cycles > k_us_to_cyc_floor32(MSG_GAP_US))
+    if (type == FRAME_TELEM && size == MSG_SIZE)
     {
-        ++bad_len;
-        msg_len = 0;
-    }
+        RawMsg msg = { .first_cycles = first_cycles, .last_cycles = now };
 
-    last_byte_cycles = now;
-
-    if (msg_len == 0)
-    {
-        msg.first_cycles = now;                      // T1
-    }
-
-    msg.data[msg_len] = byte;
-    ++msg_len;
-
-    if (msg_len == MSG_SIZE)
-    {
-        msg.last_cycles = now;                       // T2
+        memcpy(msg.data, &rx.raw[2], MSG_SIZE);
 
         if (k_msgq_put(&raw_queue, &msg, K_NO_WAIT) != 0)
         {
             ++queue_drops;                           // thread yetişemedi, mesaj kayıp
         }
+    }
+    else if (type == FRAME_LINE)
+    {
+        Piece piece = { .size = size };
 
-        msg_len = 0;
+        memcpy(piece.data, &rx.raw[2], size);
+
+        if (k_msgq_put(&piece_queue, &piece, K_NO_WAIT) != 0)
+        {
+            ++piece_drops;                           // eksik parça line_add'de satırı düşürür
+        }
+    }
+    else
+    {
+        ++bad_len;
+    }
+}
+
+/* Bir baytı çerçeveye ekler; tam çerçeveyi iletir. */
+static void add_byte(uint8_t byte)
+{
+    uint32_t now = k_cycle_get_32();
+
+    if (rx.state != FRAME_WAIT_SOF && now - last_byte_cycles > k_us_to_cyc_floor32(MSG_GAP_US))
+    {
+        ++bad_len;                                   // yarım kalan çerçeve atılır
+        rx.state = FRAME_WAIT_SOF;
+    }
+
+    last_byte_cycles = now;
+    int result = frame_add(&rx, byte);
+
+    if (rx.state == FRAME_WAIT_TYPE)
+    {
+        first_cycles = now;                          // T1: bu bayt SOF
+    }
+
+    if (result > 0)
+    {
+        give_frame(now);                             // T2
+    }
+    else if (result < 0)
+    {
+        ++bad_len;
     }
 }
 
@@ -63,6 +93,11 @@ void uart_isr(const struct device *dev, void *user_data)
         {
             add_byte(byte);
         }
+    }
+
+    if (uart_irq_tx_ready(dev) > 0)
+    {
+        f746_tx_isr(dev);
     }
 }
 

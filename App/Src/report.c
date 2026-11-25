@@ -8,7 +8,7 @@
   *                BufferAllocation_1.c pattern), APP_REPORT_COUNT blocks of
   *                ReportDesc_t.
   *                Take (Pool_Get, wait 0): the report writers ctrlTask (P6),
-  *                vnetRx (P4), worker (P1).
+  *                vnetRx (P4), worker (P2).
   *                Give (Pool_Release): uartTx (P4) after copying the line, or
   *                the writer when UartTx_PostReport refused the block.
   * A block has one owner at a time (writer -> queue -> uartTx), so its text

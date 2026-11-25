@@ -61,11 +61,16 @@ class UdpIn(unittest.TestCase):
         def m33(seq, f746, m33_us, flags=0x07):
             raw = proto.payload_telem((0, 0, 8192), (0, 0, 0), (0, 0, 0), flags, seq - 1, f746)
             return proto.encode(proto.Packet(proto.TELEM, 0, seq, 0, raw + m33_us.to_bytes(2, "big")))
-        self.send([m33(1, 600, 495), m33(2, 590, 500), m33(3, 610, 490), m33(4, 999, 0, flags=0x03)])
+        self.send([m33(1, 600, 582), m33(2, 590, 587), m33(3, 610, 577), m33(4, 999, 0, flags=0x03)])
         f, m = self.rx.f746, self.rx.m33
         self.assertEqual((f.n, f.min, f.total / f.n, f.max), (3, 590, 600, 610))
-        self.assertEqual((m.n, m.min, m.total / m.n, m.max), (3, 490, 495, 500))
-        self.assertEqual(f.row("F746").split()[1:], ["590", "600.0", "610", "20", "3"])
+        self.assertEqual((m.n, m.min, m.total / m.n, m.max), (3, 577, 582, 587))
+        self.assertEqual(f.cells(), ("590", "600.0", "610", "20", "610", "3"))
+        # H5: DRDY -> Linux = prev_us + (m33_us - 563); ilk paketin öncesi yok, son paketin m33_us'u 0
+        w, tail = self.rx.whole, self.rx.tail
+        self.assertEqual((tail.n, tail.min, tail.max), (3, 14, 24))
+        self.assertEqual((w.n, w.min, w.max), (2, 590 + 24, 610 + 14))
+        self.assertEqual((self.rx.le_target, self.rx.over_deadline), (2, 0))
 
     def test_p2_parse(self):
         """P2: 25 baytlık gövde (MP257) ve 23 baytlık (seri hat) çözülür; 24 bayt reddedilir."""

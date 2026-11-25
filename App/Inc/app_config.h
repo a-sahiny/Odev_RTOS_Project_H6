@@ -25,8 +25,8 @@
 /*----------------------------------------------------------------------------
  * Telemetri hedefi: derleme ayarı.
  * PC    : TELEM yalnız USART1'den, START ile (önceki davranış).
- * MP257 : ham TELEM verisi açılıştan itibaren USART6'dan; PC'den START gelirse
- *         USART1'den de önceki gibi gider.
+ * MP257 : ham TELEM verisi açılıştan itibaren USART6'dan; PC'den START gelmişse
+ *         ve MP257'de Linux okumuyorsa USART1'den de gider.
  *--------------------------------------------------------------------------*/
 #define APP_TELEM_TARGET_PC             0
 #define APP_TELEM_TARGET_MP257          1
@@ -46,7 +46,7 @@
 #define APP_PRIO_UART_TX                5       /* TELEM line out at once (DRDY -> TX done) */
 #define APP_PRIO_MEAS                   3
 #define APP_PRIO_LOW_PARSER             1
-#define APP_PRIO_WORKER                 1
+#define APP_PRIO_WORKER                 2       /* lowParser'dan önce: sıra birikince havuzu o boşaltır (T03) */
 
 /*----------------------------------------------------------------------------
  * Task stacks, in words (checked later with high-water marks)
@@ -312,6 +312,8 @@
  *--------------------------------------------------------------------------*/
 _Static_assert( APP_PRIO_CRIT_PARSER < configMAX_PRIORITIES, "priority out of range" );
 _Static_assert( APP_PRIO_LOW_PARSER < APP_PRIO_VNET_RX, "low lane must stay below the link tasks" );
+_Static_assert( APP_PRIO_LOW_PARSER < APP_PRIO_WORKER, "worker, lowParser'ın doldurduğu havuzu boşaltabilmeli" );
+_Static_assert( APP_PRIO_WORKER < APP_PRIO_MEAS, "worker ölçümü bekletmez" );
 _Static_assert( APP_TXQ_RESERVE < APP_TXQ_LEN, "TX reserve must leave room for bulk frames" );
 _Static_assert( APP_LINE_MAX_CHARS >= ( 8U + 2U * ( APP_FRAME_MAX_BYTES + APP_FRAME_FCS_BYTES ) ),
                 "longest FRAME 1 line must fit the line buffer" );

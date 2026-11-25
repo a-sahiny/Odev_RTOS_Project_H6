@@ -19,6 +19,7 @@ from . import accounting as acc
 from . import ethframe as eth
 from . import link as linkmod
 from . import proto
+from . import source as src
 from .hoststack import Host, HostError
 from . import FROZEN, HOST_DIR
 from .stats_ids import COUNTER_NAMES
@@ -85,14 +86,22 @@ class Plot(tk.Canvas):
             self.create_line(*pts, fill=col, width=1.4)
 
 
+AUTO_PORT = "Otomatik (Linux, yoksa F746)"
+
+
 class App:
     def __init__(self, root):
         self.root = root
         root.title("VNET Telemetri İstasyonu — host aracı")
-        root.geometry("1180x760")
-        root.minsize(980, 620)
+        root.geometry("1180x820")
+        root.minsize(1100, 820)
         self.h = None
         self.events = queue.Queue()
+        self.source = src.TelemSource()          # IMU verisi: MP257 (UDP); Linux yoksa F746 (UART)
+        self.source.listeners.append(lambda t: self.events.put(("telem", t)))
+        self.source.on_line = self._linux_line
+        self.source.linux_listeners.append(self._linux_telem)
+        self.session = src.BoardSession(self.source)
         self.busy = False
         self.gen_running = False
         self.ref_counters = None
@@ -102,6 +111,8 @@ class App:
         self._build()
         self.root.after(60, self._pump)
         self.root.after(1000, self._tick)
+        self.root.after(250, self._poll_session)
+        self.root.protocol("WM_DELETE_WINDOW", self._close)
         self._refresh_ports()
 
     # ------------------------------------------------------------ görünüm
@@ -241,13 +252,13 @@ class App:
         f.rowconfigure(1, weight=1)
 
     def _tab_flight(self):
-        from .flight_view import FlightTab
-        self.flight = FlightTab(self.nb, self)
+        from .imu_page import ImuPage
+        self.flight = ImuPage(self.nb, self, detail=True)
         self.nb.add(self.flight, text="Uçuş (IMU)")
 
     def _tab_udp(self):
-        from .udp_view import UdpTab
-        self.udp = UdpTab(self.nb)
+        from .imu_page import ImuPage
+        self.udp = ImuPage(self.nb, self, detail=False)
         self.nb.add(self.udp, text="MP257 (UDP)")
 
     def _tab_telem(self):
@@ -256,8 +267,8 @@ class App:
         bar = ttk.Frame(f)
         bar.pack(fill="x")
         self.tel_vars = {k: tk.StringVar(value="—") for k in ("rx", "hz", "gap", "lat", "last")}
-        for k, txt in (("rx", "Alınan"), ("hz", "Hız (Hz)"), ("gap", "Kayıp (SEQ boşluğu)"),
-                       ("lat", "Kart gecikmesi DRDY→TX (ms)")):
+        for k, txt in (("rx", "Alınan"), ("hz", "Anlık hız (Hz)"), ("gap", "Kayıp (SEQ boşluğu)"),
+                       ("lat", "Gecikme son / en çok (ms)")):
             box = ttk.Frame(bar, padding=(0, 0, 24, 0))
             box.pack(side="left")
             ttk.Label(box, text=txt, style="Small.TLabel").pack(anchor="w")
@@ -395,53 +406,48 @@ class App:
     # ------------------------------------------------------------ bağlantı
     def _refresh_ports(self):
         ports = linkmod.list_ports()
-        items = ["%s — %s" % p for p in ports]
+        items = [AUTO_PORT] + ["%s — %s" % p for p in ports]
         self.port_cb["values"] = items
-        guess = linkmod.guess_stlink_port()
-        for it in items:
-            if guess and it.startswith(guess + " "):
-                self.port_var.set(it)
-                break
-        else:
-            if items and not self.port_var.get():
-                self.port_var.set(items[0])
+        if self.port_var.get() not in items:
+            self.port_var.set(AUTO_PORT)
 
     def _make_host(self, lk):
         flag = {"none": None, "0": 0, "1": 1}[self.fcs_var.get()]
         h = Host(lk, fcs_flag=flag, log=lambda d, t: self.events.put(("log", (d, t))))
-        h.listeners.append(lambda k, d: self.events.put((k, d)))
+        h.listeners.append(lambda k, d: self._host_event(k, d))
         lk.on_raw_tx = None
         return h
 
     def _connect_serial(self):
-        sel = self.port_var.get().split(" — ")[0].strip()
-        if not sel:
-            messagebox.showwarning("Port", "Bir seri port seçin (ST-LINK VCP).")
-            return
-        try:
-            lk = linkmod.SerialLink(sel, int(self.baud_var.get()))
-        except Exception as e:
-            messagebox.showerror("Port açılamadı", str(e))
-            return
-        self._attach(self._make_host(lk))
+        auto = self.port_var.get() == AUTO_PORT
+        sel = linkmod.guess_stlink_port() if auto else self.port_var.get().split(" — ")[0].strip()
+        lk = linkmod.LinuxLink()
+        if sel:
+            try:
+                lk = linkmod.SerialLink(sel, int(self.baud_var.get()))
+            except Exception as e:
+                if not auto:                    # Otomatik'te Linux tek başına da yeter
+                    messagebox.showerror("Port açılamadı", str(e))
+                    return
+        self.source.attach(lk)
+        self.source.on_line = self._linux_line       # hat değişse de satır o anki hatta gider
+        self._attach(self._make_host(lk), auto)
 
     def _connect_sim(self):
         from .sim_board import SimBoard
         self._attach(self._make_host(linkmod.SimLink(SimBoard(seed=random.randrange(1 << 16)))))
 
-    def _attach(self, h):
+    def _attach(self, h, auto=False):
         self._disconnect()
         self.h = h
         self.btn_disc.config(state="normal")
         self.btn_conn.config(state="disabled")
         self.btn_sim.config(state="disabled")
-        self._chip("link", "BAĞLI: " + getattr(h.link, "name", "?"), COL_OK)
-        self._bg("Bağlanılıyor (HELLO + ARP)…", self._hello_and_arp)
+        self._link_chip()
+        self._bg("Bağlanılıyor (HELLO + ARP)…", self._hello_and_arp, auto)
 
     def _disconnect(self):
         self.gen_running = False
-        if hasattr(self, "flight"):
-            self.flight.detach()
         if self.h is not None:
             try:
                 self.h.link.close()
@@ -479,7 +485,20 @@ class App:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _hello_and_arp(self):
+    def _link_chip(self):
+        """Bağlantının o anki yolu: Linux akıyorsa o, değilse seri port."""
+        lk = self.h.link
+        if lk.route is not None and self.source.active() == src.MP257:
+            self._chip("link", "BAĞLI: MP257 (Linux)", COL_OK)
+        elif isinstance(lk, linkmod.LinuxLink):
+            self._chip("link", "LİNUX VERİSİ YOK", COL_WARN)
+        else:
+            self._chip("link", "BAĞLI: " + getattr(lk, "name", "?"), COL_OK)
+
+    def _hello_and_arp(self, auto=False):
+        if auto and not self.session.ensure() and isinstance(self.h.link, linkmod.LinuxLink):
+            raise HostError("Linux'tan veri gelmiyor ve F746'nın seri portu yok: %s" % (
+                self.source.error or self.session.text or "kart ve USB ağı açık mı, M33 çalışıyor mu?"))
         hello = self.h.connect()
         self.events.put(("hello", hello))
         return "Bağlandı: %s, fw %s" % (hello.get("board"), hello.get("fw"))
@@ -801,34 +820,59 @@ class App:
             tr.insert("", "end", values=(i, n, v, dv if dv else ""))
 
     def _telem_reset(self):
-        if self.h:
-            self.h.telem.reset()
-            self.h.telem_lat.reset()
+        self.source.reset()
         self.plot_a.clear()
         self.plot_g.clear()
 
     def _tick(self):
+        s = self.source
+        t = s.stats()
+        direct = t is s.direct_stats
+        lat = s.direct if direct else s.udp.whole
+        self.tel_vars["rx"].set(str(t.received))
+        self.tel_vars["hz"].set("%.1f" % t.rate_now(time.perf_counter()))
+        self.tel_vars["gap"].set(str(t.gaps))
+        if lat.n:
+            self.tel_vars["lat"].set("%.2f / %.2f" % (lat.last / 1000.0, lat.max / 1000.0))
+        if t.last is not None:
+            self.tel_vars["last"].set(
+                "kaynak %s | son: SEQ %d, ivme %s LSB, jiroskop %s LSB, roll %+.2f° pitch %+.2f° yaw %+.2f° | gecikme %s" % (
+                    s.active(), t.last.seq, t.last.accel, t.last.gyro, t.last.roll, t.last.pitch, t.last.yaw,
+                    "DRDY→UART TX bitti" if direct else "DRDY→Linux'a verildi"))
+        self.plot_a.redraw()
+        self.plot_g.redraw()
         if self.h is not None:
-            t = self.h.telem
-            self.tel_vars["rx"].set(str(t.received))
-            self.tel_vars["hz"].set("%.1f" % t.rate_hz() if t.received > 1 else "—")
-            self.tel_vars["gap"].set(str(t.gaps))
-            lat = self.h.telem_lat
-            if lat.n:
-                self.tel_vars["lat"].set("%.2f / %.2f" % (lat.values[-1], lat.max))
-            if t.last is not None:
-                self.tel_vars["last"].set(
-                    "son: SEQ %d, ivme %s LSB, jiroskop %s LSB, roll %+.2f° pitch %+.2f° yaw %+.2f° | "
-                    "gecikme son / en çok, %d ölçüm, >12 ms %d" % (
-                        t.last.seq, t.last.accel, t.last.gyro, t.last.roll, t.last.pitch, t.last.yaw,
-                        lat.n, lat.over_deadline))
-            self.plot_a.redraw()
-            self.plot_g.redraw()
+            self._link_chip()
             lk = self.h.link
-            self.linkstat_var.set("hat: gönderilen %d bayt / %d satır, alınan %d bayt / %d satır | host sayaçları: %s" % (
-                lk.tx_bytes, lk.tx_lines, lk.rx_bytes, lk.rx_lines,
+            self.linkstat_var.set("hat: gönderilen %d bayt (Linux %d), alınan %d satır (Linux %d) | host sayaçları: %s" % (
+                lk.tx_bytes, lk.linux_tx, lk.rx_lines, lk.linux_lines,
                 ", ".join("%s %d" % kv for kv in sorted(self.h.c.items()) if "err" in kv[0] or "bad" in kv[0]) or "hata yok"))
         self.root.after(1000, self._tick)
+
+    def _host_event(self, kind, data):
+        if kind != "telem":
+            self.events.put((kind, data))
+        elif not data.linux:                 # Linux'tan gelen kaynaktan zaten geldi
+            self.source.on_direct(data)
+
+    def _linux_telem(self, t):
+        h = self.h
+        if h is not None and h.link.route is not None:
+            h.on_linux_telem(t)
+
+    def _linux_line(self, line):
+        h = self.h
+        if h is not None:
+            h.link.feed_line(line)
+
+    def _poll_session(self):
+        self.session.poll()
+        self.root.after(250, self._poll_session)
+
+    def _close(self):
+        self.session.stop()
+        self.source.close()
+        self.root.destroy()
 
 
 def main():

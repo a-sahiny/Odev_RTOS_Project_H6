@@ -1,6 +1,7 @@
 #pragma once
 #include <zephyr/kernel.h>
 
+#define LINE_CHUNK 480U                              // bir RPMsg mesajındaki satır baytı (tampon 512, başlık 16 + 4)
 #define LINK_LEASE_MS 3000U                          // son '1'den bu kadar sonra gönderme kendiliğinden durur
 
 typedef enum
@@ -22,3 +23,4 @@ extern volatile uint32_t link_drops;                 // tampon dolu olduğu içi
 
 void lease_isr(struct k_timer *timer);               // süre doldu: göndermeyi kapatır
 int link_send(const void *data, size_t size);        // paketi Linux'a verir, beklemez; başarı 1
+int link_send_line(const uint8_t *line, size_t size); // satırı en çok LINE_CHUNK'lık mesajlarla verir; başarı 1

@@ -22,10 +22,16 @@ def list_ports():
     return [(p.device, p.description) for p in serial.tools.list_ports.comports()]
 
 
+STLINK_V3_PIDS = (0x374D, 0x374E, 0x374F, 0x3753, 0x3754)     # MP257'nin ST-LINK'i; F746'nınki V2-1
+
+
 def guess_stlink_port():
-    for dev, desc in list_ports():
-        if "STLink" in desc or "ST-Link" in desc or "STMicroelectronics" in desc:
-            return dev
+    """F746'nın ST-LINK portu; MP257'nin V3 ST-LINK portları seçilmez. Yoksa None."""
+    if serial is None:
+        return None
+    for p in serial.tools.list_ports.comports():
+        if p.vid == 0x0483 and p.pid not in STLINK_V3_PIDS:
+            return p.device
     return None
 
 
@@ -44,6 +50,12 @@ class Link:
         self._tx_lock = threading.RLock()
         self._reading = threading.Event()
         self._reading.set()
+        self._line_lock = threading.Lock()     # seri okuma ve Linux (UDP) thread'leri satırı sırayla verir
+        self.linux_lines = 0                   # F746'nın Linux üzerinden gelen satırı
+        self.linux_tx = 0                      # Linux üzerinden yollanan bayt
+        self.route = None                      # fonksiyon(bytes) -> bool: Linux yolu aldıysa True
+        self.linux_active = None               # fonksiyon() -> bool: Linux okuyor
+        self.on_pause = None                   # fonksiyon(bool): Linux (UDP) alımını da durdur
         self.closed = False
 
     # ---- alma
@@ -57,14 +69,32 @@ class Link:
                 break
             line = bytes(self._rx_buf[:i]).decode("ascii", errors="replace")
             del self._rx_buf[:i + 1]
-            self.rx_lines += 1
-            if self.on_line is not None:
-                self.on_line(line, now)
+            self._deliver(line, now)
         if len(self._rx_buf) > 4096:           # satırsız çöp: biriktirme
             self._rx_buf.clear()
 
+    def _deliver(self, line, now):
+        with self._line_lock:
+            self.rx_lines += 1
+            if self.on_line is not None:
+                self.on_line(line, now)
+
+    def feed_line(self, data: bytes):
+        """Linux üzerinden (UDP) gelen bir tam satır, '\\n' dahil."""
+        if not self.closed:
+            self.rx_bytes += len(data)
+            self.linux_lines += 1
+            self._deliver(data.rstrip(b"\n").decode("ascii", errors="replace"), time.perf_counter())
+
+    @property
+    def via_linux(self):
+        """Komut ve cevaplar şu an Linux üzerinden mi?"""
+        return self.linux_active is not None and self.linux_active()
+
     def pause_reading(self, paused: bool):
         """T06: host okumayı bırakır / yeniden başlar."""
+        if self.on_pause is not None:
+            self.on_pause(paused)
         if paused:
             self._reading.clear()
         else:
@@ -73,6 +103,14 @@ class Link:
     # ---- gönderme
     def _write(self, data: bytes):
         raise NotImplementedError
+
+    def _out(self, data: bytes):
+        """Linux okuyorsa baytlar ondan, değilse bu hattan gider."""
+        route = self.route
+        if route is not None and route(data):
+            self.linux_tx += len(data)
+        else:
+            self._write(data)
 
     def hold(self):
         """Hattı bir dizi yazım için ayırır (rapor 092): `with link.hold():` içinde başka thread'in
@@ -83,7 +121,7 @@ class Link:
 
     def write(self, data: bytes):
         with self._tx_lock:
-            self._write(data)
+            self._out(data)
             self.tx_bytes += len(data)
             self.tx_lines += data.count(b"\n")
         if self.on_raw_tx is not None:
@@ -101,7 +139,7 @@ class Link:
             while i < len(data):
                 n = 1 if mode == "bytes" else rng.randint(min_chunk, max_chunk)
                 part = data[i:i + n]
-                self._write(part)
+                self._out(part)
                 i += n
                 if gap_s > 0:
                     time.sleep(gap_s)
@@ -155,6 +193,25 @@ class SerialLink(Link):
     @property
     def name(self):
         return "%s @ %d" % (self.port, self.baud)
+
+
+class LinuxLink(Link):
+    """Seri portsuz: baytlar yalnız route (Linux) ile gider, satırlar feed_line ile gelir."""
+
+    name = "MP257 (Linux)"
+
+    def __init__(self, on_close=None):
+        super().__init__()
+        self.dropped = 0                       # Linux yokken yazılan, hiçbir yere gitmeyen bayt
+        self.on_close = on_close
+
+    def _write(self, data: bytes):
+        self.dropped += len(data)
+
+    def close(self):
+        super().close()
+        if self.on_close is not None:
+            self.on_close()
 
 
 class SimLink(Link):

@@ -54,6 +54,9 @@ BaseType_t UartLink_SendDma( const uint8_t * pucData, size_t uxLen, TickType_t x
  * returned pdPASS: then it belongs to that line (report 091). */
 uint32_t UartLink_GetTxDoneCycles( void );
 
+/* Linux üzerinden gelen baytlar (yalnız USART6 kesmesi, MP257 hedefi). */
+void UartLink_FeedFromISR( const uint8_t * pucData, size_t uxLen, BaseType_t xLost, BaseType_t * pxWoken );
+
 /* App_Halt only (report 092): one TX DMA transfer of pucData, started and
  * left running; returns at once (no polling, no interrupt needed). A DMA
  * line still being sent is aborted first. pucData must stay valid. */

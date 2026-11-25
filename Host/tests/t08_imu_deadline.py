@@ -17,6 +17,7 @@ from vnet_host import accounting as acc
 from vnet_host.hoststack import TelemLatencyStats
 from tests.common import TestResult, prepare, counters
 
+RAW_CHARS = 4 + proto.TELEM_LEN          # USART6 çerçevesi (Linux yolu)
 LINE_CHARS = 8 + 2 * (14 + 20 + 8 + proto.OVERHEAD_BYTES + proto.TELEM_LEN + 4) + 1
 
 
@@ -27,11 +28,16 @@ def run(h, seconds=10, **_):
     res.meta["seconds_per_rate"] = per_rate
     prepare(h, res)
     c0 = counters(h)
+    linux = h.link.via_linux         # TELEM MP257'den (UDP): START / STOP'a bağlı değil, UART'tan hiç gelmez
+    uart0 = h.c["telem_rx"]
 
     # 1) STOP durumunda TELEM gelmez
     rx0 = h.telem.received
     time.sleep(0.3)
-    res.check("STOP durumunda 0,3 s", "TELEM gelmez", "%d TELEM" % (h.telem.received - rx0), h.telem.received == rx0)
+    if linux:
+        res.info("STOP durumunda 0,3 s", "Linux yolunda TELEM STOP'ta da akar (tasarım): %d TELEM" % (h.telem.received - rx0))
+    else:
+        res.check("STOP durumunda 0,3 s", "TELEM gelmez", "%d TELEM" % (h.telem.received - rx0), h.telem.received == rx0)
 
     # 2) eski GET_IMU (0x05) artık komut değil; listede olmayan hız reddedilir
     r = h.command(0x05, b"", timeout=0.5)
@@ -41,9 +47,11 @@ def run(h, seconds=10, **_):
               r.status == proto.ST_E_RANGE)
 
     # 3) TELEM satır süresi (hesap): 'FRAME 1 ' + hex(Ethernet + IPv4 + UDP + paket + FCS) + '\n'
-    baud = getattr(h.link, "baud", 1000000)
-    line_ms = LINE_CHARS * 10 * 1000.0 / baud
-    res.check("TELEM satırı (%d karakter, %d baud)" % (LINE_CHARS, baud), "≤ 2 ms", "%.2f ms" % line_ms, line_ms <= 2.0)
+    baud = 460800 if linux else getattr(h.link, "baud", 1000000)
+    chars = RAW_CHARS if linux else LINE_CHARS
+    line_ms = chars * 10 * 1000.0 / baud
+    res.check("TELEM %s (%d karakter, %d baud)" % ("çerçevesi, USART6" if linux else "satırı", chars, baud), "≤ 2 ms",
+              "%.2f ms" % line_ms, line_ms <= 2.0)
 
     # 4) her hız: hız, kayıp, açılar, kart içi gecikme
     for hz in proto.RATES_HZ:
@@ -69,7 +77,9 @@ def run(h, seconds=10, **_):
                   "%s / %s; %d TELEM, %.1f Hz, boşluk %d" % (r.status_name, rs.status_name, len(got), meas_hz, gaps),
                   r.ok and rs.ok and abs(meas_hz - hz) <= hz * 0.1 and gaps == 0)
         in_range = all(-180.0 <= t.roll <= 180.0 and -90.0 <= t.pitch <= 90.0 and -180.0 <= t.yaw <= 180.0 for t in got)
-        first_ready = next((i for i, t in enumerate(got) if t.bias_ready), None)
+        # Linux yolunda START'tan önceki örnekler de gelir: bias'ı sıfırlanan ilk örnekten sayılır
+        fresh = got[next((i for i, t in enumerate(got) if not t.bias_ready), len(got)):] if linux else got
+        first_ready = next((i for i, t in enumerate(fresh) if t.bias_ready), None)
         res.check("%d Hz: açılar" % hz, "aralıkta; BIAS_READY ~1 s sonra (≈ %d örnek)" % hz,
                   "BIAS_READY ilk %s. örnekte; son: roll %.2f pitch %.2f yaw %.2f" % (
                       first_ready, got[-1].roll if got else 0, got[-1].pitch if got else 0, got[-1].yaw if got else 0),
@@ -83,6 +93,10 @@ def run(h, seconds=10, **_):
     # 5) kartın kendi sayaçları
     c1 = counters(h)
     d = acc.delta(c0, c1)
+    if linux:
+        res.check("Linux okurken F746 PC'ye TELEM yollamaz", "Δtelem_gen = 0, UART'tan gelen TELEM 0",
+                  "Δtelem_gen=%d, UART %d" % (d["telem_gen"], h.c["telem_rx"] - uart0),
+                  d["telem_gen"] == 0 and h.c["telem_rx"] == uart0)
     res.check("kart içi deadline (DRDY → TX bitti ≤ 12 ms)", "telem_miss artmaz",
               "Δtelem_miss=%d, Δtelem_over10=%d (hedef 10 ms aşımı, bilgi), Δtelem_gen=%d, Δimu_fail_run=%d" % (
                   d["telem_miss"], d["telem_over10"], d["telem_gen"], d["imu_fail_run"]),
@@ -91,6 +105,8 @@ def run(h, seconds=10, **_):
               "%d = %d + %d" % (d["telem_gen"], d["telem_sendto_ok"], d["telem_sendto_fail"]),
               d["telem_gen"] == d["telem_sendto_ok"] + d["telem_sendto_fail"] and d["telem_sendto_fail"] == 0)
     h.set_rate(proto.RATE_DEFAULT_HZ)
+    if linux:
+        res.note("Linux yolu: gecikme DRDY → USART6 TX bitti; TELEM MP257 ve UDP üzerinden gelir.")
     res.note("Gecikme yalnız kart zamanıyla: DRDY kesmesi (IMU verisi hazır) -> TELEM satırının son biti UART'tan "
              "çıktı (TX bitti kesmesi). Bir TELEM'in süresi o gittikten sonra bilinir, bir sonraki TELEM'de gelir.")
     return res

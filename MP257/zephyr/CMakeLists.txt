@@ -9,7 +9,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(mp257_m33 LANGUAGES C)
 
 # Derlenecek kaynaklar tek tek listelenir
-target_sources(app PRIVATE src/main.c src/app_isr.c src/packet.c src/ipcc.c src/rpmsg_link.c)
+target_sources(app PRIVATE src/main.c src/app_isr.c src/packet.c src/ipcc.c src/rpmsg_link.c src/f746_tx.c src/frame.c src/line_task.c)
 
 # RPMsg kütüphanesinin başlıkları
 target_include_directories(app PRIVATE ${LIBMETAL_INCLUDE_DIR} ${OPENAMP_INCLUDE_DIR})

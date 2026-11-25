@@ -303,6 +303,7 @@ class Telem:
     prev_us: int = 0
     m33_us: int = 0      # MP257 yolu: önceki paketin M33 süresi, µs; 0 yok
     rx_time: float = 0.0
+    linux: bool = False  # MP257'den (UDP) geldi
 
     @property
     def prev_valid(self) -> bool:

@@ -217,6 +217,12 @@ void HAL_UART_ErrorCallback( UART_HandleTypeDef * huart )
             prvRestartRx();
         }
     }
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    else if( huart->Instance == USART6 )
+    {
+        raw_link_error_isr();
+    }
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -262,7 +268,44 @@ void HAL_UARTEx_RxEventCallback( UART_HandleTypeDef * huart, uint16_t Size )
          * between (docs 13.1). */
         portYIELD_FROM_ISR( xWoken );
     }
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    else if( huart->Instance == USART6 )
+    {
+        raw_link_rx_isr( Size );
+    }
+#endif
 }
+
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+/* Linux üzerinden gelen baytları sbUartRx'e ekler (USART6 kesmesi, NVIC 8). Akışın tek yazarı olmalı:
+ * USART1 kesmesi (NVIC 5) yazma boyunca maskelenir. xLost: önceki baytlardan eksik var. */
+void UartLink_FeedFromISR( const uint8_t * pucData, size_t uxLen, BaseType_t xLost, BaseType_t * pxWoken )
+{
+    size_t xWritten = 0U;
+    UBaseType_t uxSaved = taskENTER_CRITICAL_FROM_ISR();
+
+    if( sbUartRx != NULL )
+    {
+        xWritten = xStreamBufferSendFromISR( sbUartRx, pucData, uxLen, pxWoken );
+        Stats_GaugeMax( eGaugeSbUartRxMax, ( uint32_t ) xStreamBufferBytesAvailable( sbUartRx ) );
+    }
+
+    Stats_Add( eStatRxBytes, ( uint32_t ) uxLen );
+
+    if( xWritten < uxLen )
+    {
+        Stats_Add( eStatUartRxSbOvf, ( uint32_t ) ( uxLen - xWritten ) );
+        xLost = pdTRUE;
+    }
+
+    if( xLost != pdFALSE )
+    {
+        ulLossCount++;
+    }
+
+    taskEXIT_CRITICAL_FROM_ISR( uxSaved );
+}
+#endif
 
 /*---------------------------------------------------------------------------*/
 /* prvRxEventISR: copy the new bytes, then the lag check (one rule, B3).     */
@@ -389,6 +432,21 @@ BaseType_t UartLink_SendDma( const uint8_t * pucData, size_t uxLen, TickType_t x
     configASSERT( ( uxLen > 0U ) && ( uxLen <= APP_UART_TX_DMA_BYTES ) );
     configASSERT( xWait <= APP_MS( UART_LINK_TX_WAIT_MAX_MS ) );
 
+#if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
+    /* Linux okuyorsa satır MP257'den gider. 460800 baud'da en uzun satır 16 ms, xWait'in 20 ms payına sığar. */
+    if( raw_link_linux_on() != 0 )
+    {
+        if( raw_link_send_line( pucData, uxLen, xWait ) != 0 )
+        {
+            ulTxDoneCycles = DWT->CYCCNT;
+            return pdPASS;
+        }
+
+        Stats_Inc( eStatTxUartStall );
+        return pdFAIL;
+    }
+#endif
+
     /* 1. A "done" left over from a line that timed out and then finished
      *    after all would end the next wait at once: drop it. */
     ( void ) ulTaskNotifyTake( pdTRUE, 0U );
@@ -455,6 +513,7 @@ void HAL_UART_TxCpltCallback( UART_HandleTypeDef * huart )
     }
 #endif
 }
+
 
 /*---------------------------------------------------------------------------*/
 /* UartLink_HaltWrite: App_Halt only (report 092). Starts one TX DMA         */

@@ -83,6 +83,7 @@ def prepare(h, res, rate=None):
     res.meta["board"] = hello.get("board")
     res.meta["epoch"] = hello.get("ep")
     res.meta["link"] = getattr(h.link, "name", "?")
+    res.meta["path"] = "Linux (MP257)" if h.link.via_linux else "UART"
     res.meta["board_mac"] = h.board_mac.hex(":") if h.board_mac else None
     h.txdelay(0)
     h.stop()

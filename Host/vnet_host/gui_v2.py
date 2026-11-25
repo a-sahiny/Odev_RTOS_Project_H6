@@ -65,10 +65,10 @@ class AppV2(gui.App):
         lk.write_fragmented = self._gate(lk.write_fragmented)
         return super()._make_host(lk)
 
-    def _attach(self, h):
+    def _attach(self, h, auto=False):
         self._dbg_locked = False
         self._dbg_owner = None
-        super()._attach(h)
+        super()._attach(h, auto)
 
     def _bg(self, label, fn, *args):
         if self._dbg_locked:

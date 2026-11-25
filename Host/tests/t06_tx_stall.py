@@ -5,6 +5,7 @@ A) Host okumayı keser (akış kontrolü yok): kart bunu göremez, birikme kartt
 B) TXDELAY 50 (yapay enjeksiyon): uartTx her öğeden sonra 50 ms bekler, TX queue'su dolar.
    Beklenen: TXQ_FULL / TXQ_RESERVE artar, IP task bloklanmaz (RX ilerler: to_stack),
    komut cevapları kontrol rezervi sayesinde yine gelir; enjeksiyon kalkınca nb_free döner.
+   Linux yolunda TELEM TX queue'sundan geçmez; kontrol dışı yük ping cevaplarıdır.
 Kartta test edilen: uart_tx.c prvAdmit (son 2 yer kontrol cevaplarına), prvVNetOutput'un
 0 beklemesi, uartTx TXDELAY, network buffer'ların ret yolunda bırakılması.
 """
@@ -50,6 +51,9 @@ def run(h, pause_s=3.0, txdelay_ms=50, load_s=4.0, rate_hz=50, seed=606, **_):
     t_end = time.perf_counter() + load_s
     i = 0
     while time.perf_counter() < t_end:
+        if h.link.via_linux:                # TELEM bu yolda TX queue'sundan geçmez: kontrol dışı yük ping cevapları
+            for _ in range(8):
+                h.ping_send()
         h.send_env([i, -i])
         i += 1
         try:

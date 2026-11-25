@@ -6,7 +6,7 @@
   * RTOS objects (künye: report 045):
   *   xUartTxQueue  static Queue, APP_TXQ_LEN x UartTxItem_t (12 B).
   *                 Producers, all with wait 0: the IP task (UartTx_PostFrame,
-  *                 P5); ctrlTask (P6), vnetRx (P4), worker (P1) through
+  *                 P5); ctrlTask (P6), vnetRx (P4), worker (P2) through
   *                 UartTx_PostReport. Consumer: uartTx only,
   *                 <= APP_TXQ_RECV_WAIT_MS.
   *   uartTx        static task, APP_PRIO_UART_TX (5, report 091), APP_STACK_UART_TX_WORDS.

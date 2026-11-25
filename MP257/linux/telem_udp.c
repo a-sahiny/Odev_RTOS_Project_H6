@@ -1,4 +1,6 @@
-/* M33'ün TELEM paketlerini /dev/rpmsg0'dan okur, UDP ile PC'ye yollar. Kullanım: telem_udp <PC IP> <port> [aygıt]
+/* M33'ün TELEM paketlerini ve F746'nın satırlarını /dev/rpmsg0'dan okur, UDP ile PC'ye yollar: TELEM <port>'a,
+ * satırlar <port> + 1'e. PC'nin <port> + 1'e yolladığı komut baytlarını M33'e verir.
+ * Kullanım: telem_udp <PC IP> <port> [aygıt]
  * Olay bekler, yoklamaz: aygıt, sinyal ve 1 saniyelik zamanlayıcı tek poll() içinde. Çıkış: 0 düzgün, 1 kurulum, 2 aygıt kapandı. */
 #include <arpa/inet.h>
 #include <errno.h>
@@ -16,19 +18,27 @@
 #include <unistd.h>
 
 #define PKT_SIZE    35                               // TELEM paketi, bayt (M9 sonrası: + M33 süresi)
+#define LINE_TYPE   'L'                              // satır mesajının ilk baytı
+#define CMD_TYPE    'C'                              // M33'e giden komut mesajının ilk baytı
+#define CMD_MAX     480                              // bir datagramdaki komut baytı (RPMsg 496)
+#define LINE_HEADER 4                                // tür, bayrak, sıra (2 bayt)
 #define BUF_SIZE    512                              // RPMsg tamponu; küçük olsaydı fazlası sessizce kesilirdi
 #define RENEW_S     1                                // '1' yenileme aralığı; M33 3 saniye yenilenmezse durur
 #define CMD_START   "1"
 #define CMD_STOP    "0"
 
-enum { FD_DEV, FD_SIGNAL, FD_TIMER, FD_COUNT };
+enum { FD_DEV, FD_SIGNAL, FD_TIMER, FD_LINE, FD_COUNT };
 
 typedef struct
 {
     unsigned long received;                          // aygıttan okunan paket
     unsigned long sent;                              // UDP'ye verilen paket
     unsigned long stale;                             // açılışta atılan eski paket
-    unsigned long bad_len;                           // 35 bayt olmayan mesaj
+    unsigned long lines;                             // UDP'ye verilen satır mesajı
+    unsigned long line_errors;                       // UDP'nin reddettiği satır mesajı
+    unsigned long commands;                          // M33'e verilen komut mesajı
+    unsigned long command_errors;                    // M33'ün almadığı ya da CMD_MAX'tan uzun komut
+    unsigned long bad_len;                           // TELEM ya da satır olmayan mesaj
     unsigned long send_errors;                       // UDP'nin reddettiği paket (PC dinlemiyor, hat kapalı)
     unsigned long renew_errors;                      // M33'e verilemeyen '1'
     long long lat_min;                               // Linux süresi, ns: poll uyandı -> send bitti (yollananlar)
@@ -70,8 +80,8 @@ static uint16_t parse_port(const char *text)
     return (uint16_t)value;
 }
 
-/* PC'ye bağlı UDP soketi açar; hata -1. */
-static int open_socket(const char *ip, uint16_t port)
+/* PC'ye bağlı UDP soketi açar, 'local' sıfır değilse o porta bağlar; hata -1. */
+static int open_socket(const char *ip, uint16_t port, uint16_t local)
 {
     struct sockaddr_in to = { .sin_family = AF_INET, .sin_port = htons(port) };
 
@@ -87,7 +97,11 @@ static int open_socket(const char *ip, uint16_t port)
         return -1;
     }
 
-    if (connect(fd, (struct sockaddr *)&to, sizeof(to)) != 0)
+    struct sockaddr_in from = { .sin_family = AF_INET, .sin_port = htons(local) };
+
+    // Bağlı soket yalnız PC'nin bu portundan geleni alır
+    if ((local != 0 && bind(fd, (struct sockaddr *)&from, sizeof(from)) != 0)
+        || connect(fd, (struct sockaddr *)&to, sizeof(to)) != 0)
     {
         int saved = errno;
 
@@ -147,7 +161,7 @@ static void discard_stale(int dev, Counters *n)
 }
 
 /* Bekleyen bütün paketleri UDP'ye verir, Linux süresini yazar; aygıt çalışıyorsa 1, kapandıysa 0. */
-static int forward(int dev, int sock, Counters *n, long long woke)
+static int forward(int dev, int sock, int line_sock, Counters *n, long long woke)
 {
     for (;;)
     {
@@ -159,13 +173,27 @@ static int forward(int dev, int sock, Counters *n, long long woke)
             return errno == EAGAIN || errno == EINTR; // EAGAIN: bekleyen paket kalmadı
         }
 
-        if (len != PKT_SIZE)
+        if (len == 0)
         {
-            if (len == 0)
+            return 0;
+        }
+
+        if (len > LINE_HEADER && buf[0] == LINE_TYPE)
+        {
+            if (send(line_sock, buf, (size_t)len, 0) == len)
             {
-                return 0;
+                ++n->lines;
+            }
+            else
+            {
+                ++n->line_errors;
             }
 
+            continue;
+        }
+
+        if (len != PKT_SIZE)
+        {
             ++n->bad_len;
             continue;
         }
@@ -196,8 +224,39 @@ static int forward(int dev, int sock, Counters *n, long long woke)
     }
 }
 
+/* Bekleyen bütün komut datagramlarını M33'e verir. */
+static void take_commands(int dev, int line_sock, Counters *n)
+{
+    for (;;)
+    {
+        uint8_t buf[1 + CMD_MAX + 1];
+        ssize_t len = recv(line_sock, &buf[1], CMD_MAX + 1, 0);
+
+        if (len < 0)
+        {
+            if (errno == ECONNREFUSED || errno == EINTR)
+            {
+                continue;                            // PC dinlemiyordu: bekleyen soket hatası temizlendi
+            }
+
+            return;                                  // EAGAIN: kalmadı
+        }
+
+        buf[0] = CMD_TYPE;
+
+        if (len >= 1 && len <= CMD_MAX && write(dev, buf, (size_t)len + 1) == len + 1)
+        {
+            ++n->commands;
+        }
+        else
+        {
+            ++n->command_errors;                     // PC cevapsız komutu yeniden dener
+        }
+    }
+}
+
 /* Olay döngüsü; 0 sinyalle düzgün bitiş, 2 aygıt kapandı. */
-static int run(struct pollfd *fds, int sock, Counters *n)
+static int run(struct pollfd *fds, int sock, int line_sock, Counters *n)
 {
     for (;;)
     {
@@ -213,7 +272,7 @@ static int run(struct pollfd *fds, int sock, Counters *n)
 
         long long woke = now_ns();                    // Linux süresinin başı
 
-        if ((fds[FD_DEV].revents & POLLIN) && !forward(fds[FD_DEV].fd, sock, n, woke))
+        if ((fds[FD_DEV].revents & POLLIN) && !forward(fds[FD_DEV].fd, sock, line_sock, n, woke))
         {
             return 2;
         }
@@ -234,6 +293,11 @@ static int run(struct pollfd *fds, int sock, Counters *n)
             }
         }
 
+        if (fds[FD_LINE].revents & (POLLIN | POLLERR))
+        {
+            take_commands(fds[FD_DEV].fd, line_sock, n);
+        }
+
         if (fds[FD_SIGNAL].revents & POLLIN)
         {
             return 0;
@@ -252,14 +316,20 @@ int main(int argc, char **argv)
     const char *path = argc == 4 ? argv[3] : "/dev/rpmsg0";
     uint16_t port = parse_port(argv[2]);
 
-    if (port == 0)
+    if (port == 0 || port == UINT16_MAX)             // satırlar port + 1'den gider
     {
-        fprintf(stderr, "telem_udp: port 1..65535 olmali: %s\n", argv[2]);
+        fprintf(stderr, "telem_udp: port 1..65534 olmali: %s\n", argv[2]);
         return 1;
     }
 
-    int sock = open_socket(argv[1], port);
+    int sock = open_socket(argv[1], port, 0);
     if (sock < 0)
+    {
+        return fail(argv[1]);
+    }
+
+    int line_sock = open_socket(argv[1], (uint16_t)(port + 1), (uint16_t)(port + 1));
+    if (line_sock < 0)
     {
         return fail(argv[1]);
     }
@@ -295,9 +365,10 @@ int main(int argc, char **argv)
         [FD_DEV] = { .fd = dev, .events = POLLIN },
         [FD_SIGNAL] = { .fd = signals, .events = POLLIN },
         [FD_TIMER] = { .fd = timer, .events = POLLIN },
+        [FD_LINE] = { .fd = line_sock, .events = POLLIN },
     };
 
-    int result = run(fds, sock, &n);
+    int result = run(fds, sock, line_sock, &n);
 
     // Okuyan kalmıyor: M33 dursun. Aygıt kapandıysa bu yazma zaten başarısız olur
     if (write(dev, CMD_STOP, 1) != 1 && result == 0)
@@ -306,9 +377,10 @@ int main(int argc, char **argv)
     }
 
     fprintf(stderr, "telem_udp: alinan %lu yollanan %lu eski %lu uzunluk %lu udp_hatasi %lu yenileme_hatasi %lu cikis %d"
-            " linux_us en_az %.1f ort %.1f en_cok %.1f\n",
+            " linux_us en_az %.1f ort %.1f en_cok %.1f satir %lu satir_hatasi %lu komut %lu komut_hatasi %lu\n",
             n.received, n.sent, n.stale, n.bad_len, n.send_errors, n.renew_errors, result,
-            n.lat_min / 1e3, n.sent ? n.lat_sum / 1e3 / n.sent : 0.0, n.lat_max / 1e3);
+            n.lat_min / 1e3, n.sent ? n.lat_sum / 1e3 / n.sent : 0.0, n.lat_max / 1e3,
+            n.lines, n.line_errors, n.commands, n.command_errors);
 
     return result;
 }

@@ -1,9 +1,11 @@
 /* RPMsg kanalı: link thread'i Linux hazır olunca rpmsg-raw uç noktasını açar ve komutları alır; main thread'i paketi link_send ile verir. */
 #include "rpmsg_link.h"
+#include "f746_tx.h"
 #include "ipcc.h"
 #include <openamp/open_amp.h>
 #include <metal/sys.h>
 #include <resource_table.h>
+#include <string.h>
 
 #define SHM_ADDR DT_REG_ADDR(DT_CHOSEN(zephyr_ipc_shm))
 #define SHM_SIZE DT_REG_SIZE(DT_CHOSEN(zephyr_ipc_shm))
@@ -37,7 +39,7 @@ static int notify_linux(void *priv, uint32_t id)
     return 0;
 }
 
-/* Linux'un tek baytlık komutunu uygular: '1' LINK_LEASE_MS boyunca gönder, '0' dur. */
+/* Linux'un mesajını uygular: '1' LINK_LEASE_MS boyunca gönder, '0' dur, 'C' + baytlar F746'ya gider. */
 static int on_message(struct rpmsg_endpoint *ept, void *data, size_t len, uint32_t src, void *priv)
 {
     (void)ept;
@@ -45,18 +47,25 @@ static int on_message(struct rpmsg_endpoint *ept, void *data, size_t len, uint32
     (void)priv;
     ++link_rx;
 
-    uint8_t command = len == 1 ? *(const uint8_t *)data : 0;
+    const uint8_t *msg = data;
+    uint8_t command = len >= 1 ? msg[0] : 0;
 
-    if (command == '1')
+    if (command == 'C' && len > 1)
+    {
+        f746_tx_command(&msg[1], len - 1U);
+    }
+    else if (command == '1' && len == 1)
     {
         // Okuyan program çökerse '1' kesilir, süre dolunca gönderme durur
         k_timer_start(&lease_timer, K_MSEC(LINK_LEASE_MS), K_NO_WAIT);
         link_on = 1;                                 // Linux'un adresi bu mesajla öğrenildi
+        f746_tx_state(1);                            // F746 TELEM'i PC'ye yollamayı keser
     }
-    else if (command == '0')
+    else if (command == '0' && len == 1)
     {
         k_timer_stop(&lease_timer);
         link_on = 0;                                 // okuyan yok: paketler Linux çekirdeğinde birikmesin
+        f746_tx_state(0);                            // F746 hemen PC'ye döner
     }
     else
     {
@@ -85,6 +94,34 @@ int link_send(const void *data, size_t size)
     ++link_sent;
 
     return 1;
+}
+
+/* Satırı 'L', bayrak (1 ilk, 2 son), 2 bayt sıra, veri biçiminde verir; sıra eksikse okuyan satırı atar. */
+int link_send_line(const uint8_t *line, size_t size)
+{
+    static uint16_t seq;                             // yalnız line thread'i çağırır
+    static uint8_t msg[4U + LINE_CHUNK];
+    int ok = 1;
+
+    for (size_t pos = 0; pos < size;)
+    {
+        size_t n = size - pos < LINE_CHUNK ? size - pos : LINE_CHUNK;
+
+        msg[0] = 'L';
+        msg[1] = (uint8_t)((pos == 0 ? 1U : 0U) | (pos + n == size ? 2U : 0U));
+        msg[2] = (uint8_t)(seq >> 8);
+        msg[3] = (uint8_t)seq;
+        memcpy(&msg[4], &line[pos], n);
+        ++seq;                                       // verilemeyen mesaj da sırada boşluk bırakır
+        pos += n;
+
+        if (!link_send(msg, 4U + n))
+        {
+            ok = 0;
+        }
+    }
+
+    return ok;
 }
 
 /* Linux'un kanalı açmasını kesmeyle bekler; başarı 0. */

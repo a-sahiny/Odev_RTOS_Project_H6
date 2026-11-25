@@ -287,7 +287,7 @@ static void prvMeasTask( void * pvParameters )
     for( ; ; )
     {
 #if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
-        /* MP257 hep örnek alır; PC yolu START / STOP'a uyar. */
+        /* MP257 hep örnek alır; PC yolu START / STOP'a ve Linux'un yokluğuna bağlı. */
         xPcOn = ( ( SysState_WaitMeasAllowed( 0U ) == pdPASS ) &&
                   ( prvLoadDestination( &xNow ) == pdPASS ) ) ? pdTRUE : pdFALSE;
 #else
@@ -342,7 +342,8 @@ static void prvMeasTask( void * pvParameters )
         /* Önce MP257: PC yolunun sendto beklemesi (<= 2 ms) ham süreye girmez. */
         prvSendRaw( &xSample, ucFlags );
 
-        if( xPcOn == pdTRUE )
+        /* Linux okuyorsa TELEM yalnız ondan gider; START yine işlenir. */
+        if( ( xPcOn == pdTRUE ) && ( raw_link_linux_on() == 0 ) )
         {
             prvSendTelemetry( &xSample, ucFlags, &xNow );
         }

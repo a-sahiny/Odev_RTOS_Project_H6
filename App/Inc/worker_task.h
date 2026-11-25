@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file    worker_task.h
-  * @brief   worker (P1): ENV statistics, BULK pattern check, CAL hand-over to
+  * @brief   worker (P2): ENV statistics, BULK pattern check, CAL hand-over to
   *          meas, the 1 s st / env reports (docs 5.2, 17). Step 16.
   ******************************************************************************
   */

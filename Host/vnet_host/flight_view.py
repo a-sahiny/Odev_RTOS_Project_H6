@@ -1,4 +1,4 @@
-"""Uçuş (IMU) sekmesi: her TELEM'le gelen roll / pitch / yaw'ı 3B kağıt uçakla gösterir.
+"""Her TELEM'le gelen roll / pitch / yaw'ı 3B kağıt uçakla çizen görünüm (imu_page.py kullanır).
 
 Yalnız tkinter Canvas: kendi 3x3 dönme matrisi ve basit perspektif izdüşüm; ek paket yok.
 
@@ -10,15 +10,8 @@ Renkler Okabe–Ito paletinden (renk körlüğüne dayanıklı); her öğede ayr
 anlam yalnız renkle verilmez.
 """
 
-import collections
 import math
-import threading
-import time
 import tkinter as tk
-from tkinter import ttk
-
-from . import proto
-from .hoststack import HostError, TelemLatencyStats
 
 # ---------------------------------------------------------------- renk ve yazı tokenları
 C = {
@@ -36,8 +29,6 @@ C = {
     "warn_bg": "#3B2A0B",
     "warn_fg": "#FCD34D",
     "ok": "#2BC48F",
-    "target": "#E69F00",        # 10 ms hedef çizgisi
-    "deadline": "#F07A4A",      # 12 ms deadline çizgisi
 }
 FONT_UI = "Segoe UI"
 FONT_NUM = "Consolas"           # rakamlar sabit genişlikte: değer değişirken titremez
@@ -294,6 +285,8 @@ class FlightCanvas(tk.Canvas):
         return fn
 
     def _legend(self, w, h):
+        if h < 440:                     # alçak görünümde açı etiketlerini örter
+            return
         rows = (("Roll (φ)", C["roll"], "x (burun) ekseni etrafında dönüş · a_x"),
                 ("Pitch (θ)", C["pitch"], "y (kanat) ekseni etrafında dönüş · a_y"),
                 ("Yaw (ψ)", C["yaw"], "z (üst) ekseni etrafında dönüş · a_z"))
@@ -318,261 +311,3 @@ class FlightCanvas(tk.Canvas):
         x0, y0, x1, y1 = self.bbox(t)
         r = self.create_rectangle(x0 - 8, y0 - 5, x1 + 8, y1 + 5, fill=bg, outline="")
         self.tag_lower(r, t)
-
-
-class DeadlineHistogram(tk.Canvas):
-    """Kartın ölçtüğü TELEM gecikmesi (DRDY -> TX bitti) dağılımı: 0–20 ms, 1 ms kutular; 10 ms hedef ve
-    12 ms deadline çizgileri etiketli. Windows / USB yok."""
-
-    MAX_MS = 20
-
-    def __init__(self, master, **kw):
-        super().__init__(master, background="white", highlightthickness=1, highlightbackground="#bbb", **kw)
-        self.values = []
-        self.bind("<Configure>", lambda e: self.draw())
-
-    def set_values(self, values):
-        self.values = list(values)
-        self.draw()
-
-    def draw(self):
-        self.delete("all")
-        w, h = self.winfo_width(), self.winfo_height()
-        if w < 80 or h < 60:
-            return
-        left, right, top, bottom = 34, w - 8, 20, h - 20
-        bins = [0] * (self.MAX_MS + 1)
-        for v in self.values:
-            bins[min(self.MAX_MS, int(v))] += 1
-        peak = max(bins) or 1
-        bw = (right - left) / len(bins)
-        self.create_text(left, 4, anchor="nw", text="Kart DRDY → TX bitti dağılımı (son %d TELEM)" % len(self.values),
-                         font=(FONT_UI, 9, "bold"))
-        for i, n in enumerate(bins):
-            x0 = left + i * bw
-            y0 = bottom - (bottom - top) * n / peak
-            col = "#1976d2" if i < 10 else ("#ef6c00" if i < 12 else "#c62828")
-            if n:
-                self.create_rectangle(x0 + 1, y0, x0 + bw - 1, bottom, fill=col, outline="")
-        for ms in range(0, self.MAX_MS + 1, 2):
-            x = left + ms * bw
-            self.create_text(x, bottom + 3, anchor="n", text=str(ms) if ms < self.MAX_MS else "≥20",
-                             font=(FONT_UI, 8), fill="#555")
-        for ms, col, txt, anchor, dx in ((10, C["target"], "hedef 10 ms", "ne", -3),
-                                         (12, C["deadline"], "deadline 12 ms", "nw", 3)):
-            x = left + ms * bw
-            self.create_line(x, top - 2, x, bottom, fill=col, width=2, dash=(5, 3))
-            self.create_text(x + dx, top - 2, anchor=anchor, text=txt, fill=col, font=(FONT_UI, 8, "bold"))
-        self.create_line(left, bottom, right, bottom, fill="#999")
-        self.create_text(left - 4, top, anchor="ne", text=str(peak), font=(FONT_UI, 8), fill="#555")
-        self.create_text(right, bottom - 2, anchor="se", text="ms", font=(FONT_UI, 8), fill="#555")
-
-
-class FlightTab(ttk.Frame):
-    """Sekme: sol uçuş görünümü, sağ sayısal panel + gecikme paneli + düğmeler. Veri TELEM'den gelir
-    (her IMU örneğinde bir tane); host hiçbir şey sormaz."""
-
-    def __init__(self, master, app):
-        super().__init__(master, padding=8)
-        self.app = app                      # gui.App: .h (Host) ve .status_var
-        self.watching = None                # izlenen Host (dinleyici bağlıyken)
-        self.stats = TelemLatencyStats()
-        self.latest = None                  # son Telem (host'un alma thread'i yazar)
-        self.drawn = None
-        self.yaw_zero = 0.0
-        self.board0 = None                  # izleme başında kart sayaçları (fark için)
-        self.board_text = "Kart sayaçları (izleme başı → sonu): —"
-        self.columnconfigure(0, weight=3)
-        self.columnconfigure(1, weight=1, minsize=330)
-        self.rowconfigure(0, weight=1)
-
-        self.view = FlightCanvas(self, width=760, height=560)
-        self.view.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-
-        side = ttk.Frame(self)
-        side.grid(row=0, column=1, sticky="nsew")
-
-        g = ttk.LabelFrame(side, text="TELEM (UDP 5002, her IMU örneği)", padding=8)
-        g.pack(fill="x")
-        g.columnconfigure((0, 1), weight=1)
-        self.btn_start = ttk.Button(g, text="▶ START ve izle", command=self.start)
-        self.btn_start.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
-        self.btn_stop = ttk.Button(g, text="■ İzlemeyi durdur", command=self.stop, state="disabled")
-        self.btn_stop.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
-        ttk.Label(g, text="IMU hızı (Hz), START'tan önce").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.rate_var = tk.IntVar(value=proto.RATE_DEFAULT_HZ)
-        ttk.Combobox(g, textvariable=self.rate_var, values=proto.RATES_HZ, state="readonly", width=6).grid(
-            row=1, column=1, sticky="w", pady=(6, 0))
-        ttk.Button(g, text="Yaw sıfırla (görüntü)", command=self.zero_yaw).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
-        ttk.Button(g, text="Kamerayı sıfırla", command=self.view.reset_camera).grid(row=2, column=1, sticky="ew", padx=2,
-                                                                                   pady=2)
-        ttk.Label(g, text="Kart START ile STOP arasında her IMU örneğini (DRDY) TELEM olarak yollar.",
-                  style="Small.TLabel", wraplength=300).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
-
-        g = ttk.LabelFrame(side, text="Açılar", padding=8)
-        g.pack(fill="x", pady=(8, 0))
-        self.ang_vars = {}
-        for i, (key, name, col) in enumerate((("roll", "Roll φ", C["roll"]), ("pitch", "Pitch θ", C["pitch"]),
-                                              ("yaw", "Yaw ψ", C["yaw"]))):
-            tk.Label(g, text="■", fg=col, font=(FONT_UI, 12)).grid(row=i, column=0, sticky="w")
-            ttk.Label(g, text=name, font=(FONT_UI, 11, "bold")).grid(row=i, column=1, sticky="w", padx=(2, 10))
-            v = tk.StringVar(value="—")
-            ttk.Label(g, textvariable=v, font=(FONT_NUM, 20, "bold"), width=9, anchor="e").grid(row=i, column=2, sticky="e")
-            self.ang_vars[key] = v
-        g.columnconfigure(2, weight=1)
-
-        g = ttk.LabelFrame(side, text="Örnek", padding=8)
-        g.pack(fill="x", pady=(8, 0))
-        self.sample_var = tk.StringVar(value="—")
-        ttk.Label(g, textvariable=self.sample_var, font=(FONT_NUM, 9), justify="left").pack(anchor="w")
-
-        from .udp_view import LatencyPanel            # udp_view bu modülü içe aktarır: döngü olmasın diye burada
-        LatencyPanel(side, lambda: getattr(getattr(app, "udp", None), "rx", None)).pack(fill="x", pady=(8, 0))
-
-        g = ttk.LabelFrame(side, text="Gecikme: hedef 10 ms, deadline 12 ms", padding=8)
-        g.pack(fill="both", expand=True, pady=(8, 0))
-        self.hist = DeadlineHistogram(g, height=130)
-        self.hist.pack(fill="x")
-        self.dl_var = tk.StringVar(value="—")
-        ttk.Label(g, textvariable=self.dl_var, font=(FONT_NUM, 9), justify="left").pack(anchor="w", pady=(6, 0))
-        self.board_var = tk.StringVar(value=self.board_text)
-        ttk.Label(g, textvariable=self.board_var, font=(FONT_UI, 9, "bold"), wraplength=310,
-                  justify="left").pack(anchor="w", pady=(6, 0))
-        ttk.Label(g, text="Yalnız kart zamanı: IMU verisi hazır (DRDY kesmesi) → TELEM satırının son biti "
-                          "UART'tan çıktı (TX bitti kesmesi). PC / USB yok. Bir TELEM'in süresi o gittikten "
-                          "sonra bilinir, bu yüzden bir sonraki TELEM'de gelir. Durdurunca panel sıfırlanır.",
-                  style="Small.TLabel", wraplength=310, justify="left").pack(anchor="w", pady=(4, 0))
-
-        self.after(33, self._frame)
-        self.after(500, self._panel)
-
-    # ------------------------------------------------------------ düğmeler
-    def _host(self):
-        return self.app.h
-
-    def start(self):
-        h = self._host()
-        if h is None:
-            self.app.status_var.set("Önce karta ya da simülatöre bağlanın.")
-            return
-        self.btn_start.config(state="disabled")
-        hz = int(self.rate_var.get() or proto.RATE_DEFAULT_HZ)
-        self._reset_panel()
-
-        def go():
-            try:
-                c = h.get_counters()
-                self.board0 = (c["telem_over10"], c["telem_miss"])
-                r = h.set_rate(hz)
-                if not r.ok:
-                    raise HostError("SET_RATE %d reddedildi: %s" % (hz, r.status_name))
-                self.stats.reset()
-                self.watching = h
-                h.listeners.append(self._on_event)
-                r = h.start()
-                if not r.ok:
-                    h.listeners.remove(self._on_event)
-                    self.watching = None
-                    self.app.events.put(("error", "START reddedildi: %s" % r.status_name))
-                    self.after(0, lambda: self.btn_start.config(state="normal"))
-                    return
-                self.app.events.put(("done", ("", "TELEM izleniyor (%d Hz)" % hz)))
-                self.after(0, lambda: self.btn_stop.config(state="normal"))
-            except HostError as e:
-                self.app.events.put(("error", str(e)))
-                self.after(0, lambda: self.btn_start.config(state="normal"))
-        threading.Thread(target=go, daemon=True).start()
-
-    def stop(self):
-        """İzleme durur; gecikme paneli sıfırlanır (bir sonraki izleme baştan başlar). Kartın bu
-        izleme boyunca saydığı aşımlar durum çubuğuna yazılır."""
-        h, w, b0 = self._host(), self.watching, self.board0
-        if w is not None:
-            try:
-                w.listeners.remove(self._on_event)
-            except ValueError:
-                pass
-        self.watching = None
-        self.board0 = None
-        s = self.stats.summary()
-        self._reset_panel()
-        self.btn_stop.config(state="disabled")
-        self.btn_start.config(state="normal")
-        self.app.status_var.set("İzleme durdu, gecikme paneli sıfırlandı (ölçüm sürüyor; STOP için Kontrol sekmesi)")
-        if w is not None and h is w and b0 is not None:
-            def go():
-                try:
-                    c = h.get_counters()
-                    self.app.events.put(("done", ("", "Son izleme: kart DRDY→TX >10 ms %d, >12 ms %d (sayaç farkı); "
-                                                  "TELEM'lerle gelen %d ölçümde en çok %.2f ms" % (
-                                                      c["telem_over10"] - b0[0], c["telem_miss"] - b0[1],
-                                                      s["n"], s["max_ms"]))))
-                except Exception:
-                    pass
-            threading.Thread(target=go, daemon=True).start()
-
-    def _reset_panel(self):
-        self.stats.reset()
-        self.hist.set_values([])
-        self.dl_var.set("—")
-        self.board_var.set(self.board_text)
-
-    def detach(self):
-        """Bağlantı kesilince."""
-        self.stop()
-        self.latest = None
-
-    def zero_yaw(self):
-        if self.latest is not None:
-            self.yaw_zero = self.latest.yaw
-        self.drawn = None
-
-    def _on_event(self, kind, data):
-        if kind == "telem":
-            self.stats.add(data)
-            self.latest = data              # tek atama: çizim döngüsü en sonuncuyu okur
-
-    # ------------------------------------------------------------ çizim döngüleri
-    def _frame(self):
-        t = self.latest
-        if t is not None and t is not self.drawn and self.winfo_ismapped():
-            yaw = ((t.yaw - self.yaw_zero + 180.0) % 360.0) - 180.0
-            self.view.set_sample(t.roll, t.pitch, yaw, t.accel_g, t.bias_ready)
-            self.view.draw()
-            self.drawn = t
-            self.ang_vars["roll"].set("%+.2f°" % t.roll)
-            self.ang_vars["pitch"].set("%+.2f°" % t.pitch)
-            self.ang_vars["yaw"].set("%+.2f°" % yaw)
-            a, g = t.accel_g, t.gyro_dps
-            self.sample_var.set(
-                "SEQ %d\n"
-                "ivme  (g)    x %+6.3f  y %+6.3f  z %+6.3f\n"
-                "jiro  (°/s)  x %+7.1f  y %+7.1f  z %+7.1f\n"
-                "bias %s · ivme düzeltmesi %s · önceki TELEM %s" % (
-                    t.seq, a[0], a[1], a[2], g[0], g[1], g[2],
-                    "hazır" if t.bias_ready else "ölçülüyor", "var" if t.acc_used else "yok",
-                    "SEQ %d: %.2f ms" % (t.prev_seq, t.prev_ms) if t.prev_valid else "yok"))
-        elif self.drawn is None and t is None and self.winfo_ismapped():
-            self.view.draw()
-            self.drawn = False
-        self.after(33, self._frame)
-
-    def _panel(self):
-        h = self.watching
-        if h is not None and self.winfo_ismapped():
-            s = self.stats
-            self.hist.set_values(list(s.values)[-500:])
-            n = max(s.n, 1)
-            last = s.values[-1] if s.values else 0.0
-            self.dl_var.set(
-                "TELEM %d  %.1f Hz  kayıp (SEQ boşluğu) %d\n"
-                "DRDY→TX  son %.2f  ort %.2f  p99 %.2f  en çok %.2f ms\n"
-                "≤10 ms %5.1f%%   ≤12 ms %5.1f%%   >12 ms %d\n"
-                "ölçüm %d  (bir öncekinden eski: %d)" % (
-                    h.telem.received, h.telem.rate_hz(), h.telem.gaps,
-                    last, s.mean(), s.percentile(0.99), s.max,
-                    100.0 * s.le_target / n, 100.0 * s.le_deadline / n, s.over_deadline, s.n, s.behind))
-            self.board_var.set("Kart DRDY → TX bitti (%d ölçüm): %s" % (
-                s.n, "✓ deadline tuttu (hepsi ≤ 12 ms)" if s.over_deadline == 0 else
-                "✗ %d TELEM 12 ms'yi aştı" % s.over_deadline))
-        self.after(500, self._panel)

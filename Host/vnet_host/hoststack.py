@@ -46,6 +46,7 @@ class TelemetryStats:
         self.first_time = None
         self.last_time = None
         self.last = None
+        self.recent = collections.deque(maxlen=512)    # son paketlerin geliş anları (rate_now)
 
     def add(self, t: proto.Telem):
         if self.last_seq is not None:
@@ -59,6 +60,12 @@ class TelemetryStats:
         self.first_time = self.first_time or t.rx_time
         self.last_time = t.rx_time
         self.last = t
+        self.recent.append(t.rx_time)
+
+    def rate_now(self, now, window=1.0):
+        """Son 'window' saniyenin hızı: SET_RATE'ten sonra eski paketler ortalamayı bozmaz. Akış yoksa 0."""
+        ts = [x for x in list(self.recent) if now - x <= window]
+        return (len(ts) - 1) / (ts[-1] - ts[0]) if len(ts) > 1 and ts[-1] > ts[0] else 0.0
 
     def rate_hz(self):
         if self.received < 2 or self.last_time == self.first_time:
@@ -148,6 +155,7 @@ class Host:
         self.telem = TelemetryStats()
         self.telem_lat = TelemLatencyStats()
         self.telem_log = collections.deque(maxlen=2000)
+        self._telem_linux = False
         self._ping_waiters = {}
         self.listeners = []                 # fonksiyon(olay, veri): 'report', 'telem', 'response', 'frame_err'
         self.c = collections.Counter()      # host sayaçları
@@ -293,12 +301,24 @@ class Host:
                 return
             t.rx_time = rx_time
             self.c["telem_rx"] += 1
-            self.telem.add(t)
-            self.telem_lat.add(t)
-            self.telem_log.append(t)
-            self._emit("telem", t)
+            self._take_telem(t)
         else:
             self.c["udp_other_port"] += 1
+
+    def on_linux_telem(self, t):
+        """MP257'nin UDP'den gelen TELEM'i: UART'takiyle aynı sayaçlara girer (T testleri)."""
+        t.linux = True
+        self.c["telem_linux"] += 1
+        self._take_telem(t)
+
+    def _take_telem(self, t):
+        if t.linux != self._telem_linux:        # iki yolun SEQ'i ayrı: geçişte boşluk sayılmasın
+            self._telem_linux = t.linux
+            self.telem.last_seq = None
+        self.telem.add(t)
+        self.telem_lat.add(t)
+        self.telem_log.append(t)
+        self._emit("telem", t)
 
     # ------------------------------------------------------------ gönderme
     def send_line(self, data: bytes, mode="whole", seed=1234):
@@ -358,6 +378,11 @@ class Host:
         ok = ev.wait(timeout)
         self._ping_waiters.pop((ident, seq), None)
         return (slot[0] - t0) * 1000.0 if ok else None
+
+    def ping_send(self):
+        """Cevabı beklenmeyen ICMP echo (T06: TX queue'suna kontrol dışı yük)."""
+        self.send_frame(eth.build_icmp_echo(self.board_mac, self.host_mac, self.host_ip, self.board_ip,
+                                            0x4849, next(self._req_ids) & 0xFFFF, ip_ident=next(self.ip_ident)), note="ping")
 
     # ------------------------------------------------------------ konsol
     def report_mark(self):
