@@ -20,8 +20,8 @@ uint16_t packet_seq(const uint8_t *raw)
     return (uint16_t)(sys_get_be16(&raw[RAW_PREV_SEQ_OFFSET]) + 1U);
 }
 
-/* 23 baytlık ham mesajı 33 baytlık pakete çevirir. */
-void packet_build(uint8_t *out, const uint8_t *raw)
+/* 23 baytlık ham mesajı ve önceki paketin M33 süresini 35 baytlık pakete çevirir. */
+void packet_build(uint8_t *out, const uint8_t *raw, uint16_t m33_us)
 {
     out[0] = PKT_SOF;
     out[1] = PKT_VER;
@@ -30,7 +30,8 @@ void packet_build(uint8_t *out, const uint8_t *raw)
     sys_put_be16(packet_seq(raw), &out[4]);
     out[6] = 0;                                       // REQ_ID: veride 0
     out[7] = 0;
-    out[8] = MSG_SIZE;
+    out[8] = MSG_SIZE + M33_US_SIZE;
     memcpy(&out[PKT_HEADER_SIZE], raw, MSG_SIZE);
+    sys_put_be16(m33_us, &out[PKT_HEADER_SIZE + MSG_SIZE]);  // bir paket kendi süresini taşıyamaz: öncekinin süresi
     out[PKT_SIZE - 1U] = crc8(out, PKT_SIZE - 1U, TELEM_CRC8_POLY, 0x00, false);
 }

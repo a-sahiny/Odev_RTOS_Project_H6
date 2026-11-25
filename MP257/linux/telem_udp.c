@@ -15,7 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define PKT_SIZE    33                               // TELEM paketi, bayt
+#define PKT_SIZE    35                               // TELEM paketi, bayt (M9 sonrası: + M33 süresi)
 #define BUF_SIZE    512                              // RPMsg tamponu; küçük olsaydı fazlası sessizce kesilirdi
 #define RENEW_S     1                                // '1' yenileme aralığı; M33 3 saniye yenilenmezse durur
 #define CMD_START   "1"
@@ -28,7 +28,7 @@ typedef struct
     unsigned long received;                          // aygıttan okunan paket
     unsigned long sent;                              // UDP'ye verilen paket
     unsigned long stale;                             // açılışta atılan eski paket
-    unsigned long bad_len;                           // 33 bayt olmayan mesaj
+    unsigned long bad_len;                           // 35 bayt olmayan mesaj
     unsigned long send_errors;                       // UDP'nin reddettiği paket (PC dinlemiyor, hat kapalı)
     unsigned long renew_errors;                      // M33'e verilemeyen '1'
     long long lat_min;                               // Linux süresi, ns: poll uyandı -> send bitti (yollananlar)

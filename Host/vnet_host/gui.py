@@ -247,7 +247,8 @@ class App:
 
     def _tab_udp(self):
         from .udp_view import UdpTab
-        self.nb.add(UdpTab(self.nb), text="MP257 (UDP)")
+        self.udp = UdpTab(self.nb)
+        self.nb.add(self.udp, text="MP257 (UDP)")
 
     def _tab_telem(self):
         f = ttk.Frame(self.nb, padding=10)

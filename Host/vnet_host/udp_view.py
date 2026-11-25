@@ -8,6 +8,27 @@ from . import udp_in
 from .flight_view import FlightCanvas, C, FONT_UI, FONT_NUM
 
 
+class LatencyPanel(ttk.LabelFrame):
+    """MP257 yolunun gecikmeleri, canlı. source() o anki UdpTelem'i ya da None döndürür; Başlat'ta sıfırlanır."""
+
+    def __init__(self, master, source):
+        super().__init__(master, text="Gecikme: MP257 yolu (µs)", padding=8)
+        self.source = source
+        self.var = tk.StringVar(value="Veri yok: MP257 (UDP) sekmesinde Başlat.")
+        ttk.Label(self, textvariable=self.var, font=(FONT_NUM, 9), justify="left").pack(anchor="w")
+        ttk.Label(self, text="F746: DRDY → USART6 son bit. MP257: ilk bayt kesmesi (T1) → Linux’a verildi (T5). "
+                             "İkisi de 23 baytın hattaki ≈ 0,5 ms’sini içerir; toplanmaz.",
+                  style="Small.TLabel", wraplength=310, justify="left").pack(anchor="w", pady=(4, 0))
+        self.after(500, self._tick)
+
+    def _tick(self):
+        rx = self.source()
+        if rx is not None:                  # durdurulunca son değerler kalır
+            self.var.set("%-5s %6s %6s %6s %6s %6s\n%s\n%s" % ("", "en az", "ort", "en çok", "jitter", "adet",
+                                                               rx.f746.row("F746"), rx.m33.row("MP257")))
+        self.after(500, self._tick)
+
+
 class UdpTab(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=8)
@@ -53,6 +74,7 @@ class UdpTab(ttk.Frame):
         g.pack(fill="x", pady=(8, 0))
         self.cnt_var = tk.StringVar(value="—")
         ttk.Label(g, textvariable=self.cnt_var, font=(FONT_NUM, 10), justify="left").pack(anchor="w")
+        LatencyPanel(side, lambda: self.rx).pack(fill="x", pady=(8, 0))
         self.state_var = tk.StringVar(value="")
         ttk.Label(side, textvariable=self.state_var, wraplength=320, justify="left").pack(anchor="w", pady=(8, 0))
 

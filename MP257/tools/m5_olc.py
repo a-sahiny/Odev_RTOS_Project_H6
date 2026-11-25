@@ -18,11 +18,11 @@ ORNEK = %d
 
 
 def paket_oku(oku, sem):
-    """(msg_count, 33 bayt); okurken thread degistirdiyse yeniden okur."""
+    """(msg_count, 35 bayt); okurken thread degistirdiyse yeniden okur."""
     adres, kay = sem["last_packet"] & ~3, sem["last_packet"] & 3
     def bir():
         ham = b"".join(oku(adres + i).to_bytes(4, "little") for i in range(0, 36 + (kay > 0) * 4, 4))
-        return ham[kay:kay + 33]
+        return ham[kay:kay + 35]
     for _ in range(20):
         n = oku(sem["msg_count"])
         p = bir()

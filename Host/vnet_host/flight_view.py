@@ -426,6 +426,9 @@ class FlightTab(ttk.Frame):
         self.sample_var = tk.StringVar(value="—")
         ttk.Label(g, textvariable=self.sample_var, font=(FONT_NUM, 9), justify="left").pack(anchor="w")
 
+        from .udp_view import LatencyPanel            # udp_view bu modülü içe aktarır: döngü olmasın diye burada
+        LatencyPanel(side, lambda: getattr(getattr(app, "udp", None), "rx", None)).pack(fill="x", pady=(8, 0))
+
         g = ttk.LabelFrame(side, text="Gecikme: hedef 10 ms, deadline 12 ms", padding=8)
         g.pack(fill="both", expand=True, pady=(8, 0))
         self.hist = DeadlineHistogram(g, height=130)

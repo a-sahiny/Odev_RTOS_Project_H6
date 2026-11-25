@@ -83,6 +83,7 @@ ENV_MAX_CHANNELS = 8
 BULK_MAX_PATTERN = 196
 CAL_LIMIT = 4096              # worker: |offset| <= 4096
 TELEM_LEN = 23
+TELEM_M33_LEN = TELEM_LEN + 2  # MP257 yolu: + önceki paketin M33 süresi (T1 -> T5, µs)
 TELEM_TARGET_MS = 10.0        # kart içi DRDY -> TX bitti hedefi
 TELEM_DEADLINE_MS = 12.0      # kart içi DRDY -> TX bitti deadline'ı
 ATT_FLAG_BIAS_READY = 0x01
@@ -300,6 +301,7 @@ class Telem:
     flags: int
     prev_seq: int = 0
     prev_us: int = 0
+    m33_us: int = 0      # MP257 yolu: önceki paketin M33 süresi, µs; 0 yok
     rx_time: float = 0.0
 
     @property
@@ -328,11 +330,12 @@ class Telem:
 
 
 def parse_telem(pkt: Packet) -> Telem:
-    if pkt.type != TELEM or len(pkt.payload) != TELEM_LEN:
+    if pkt.type != TELEM or len(pkt.payload) not in (TELEM_LEN, TELEM_M33_LEN):
         raise PacketError("telem_len")
-    ax, ay, az, gx, gy, gz, r, p, y, flags, prev_seq, prev_us = struct.unpack(">hhhhhhhhhBHH", pkt.payload)
+    ax, ay, az, gx, gy, gz, r, p, y, flags, prev_seq, prev_us = struct.unpack(">hhhhhhhhhBHH", pkt.payload[:TELEM_LEN])
+    m33_us = struct.unpack(">H", pkt.payload[TELEM_LEN:])[0] if len(pkt.payload) == TELEM_M33_LEN else 0
     return Telem(seq=pkt.seq, accel=(ax, ay, az), gyro=(gx, gy, gz), roll=r / 100.0, pitch=p / 100.0,
-                 yaw=y / 100.0, flags=flags, prev_seq=prev_seq, prev_us=prev_us)
+                 yaw=y / 100.0, flags=flags, prev_seq=prev_seq, prev_us=prev_us, m33_us=m33_us)
 
 
 def payload_telem(accel, gyro, angles_cdeg, flags, prev_seq=0, prev_us=0) -> bytes:

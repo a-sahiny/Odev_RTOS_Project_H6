@@ -17,12 +17,33 @@ PORT = proto.PORT_TELEM
 PROGRAM = "/root/telem_udp"
 
 
+class Span:
+    """Bir sürenin canlı özeti, µs: en az, ortalama, en çok; jitter = en çok - en az."""
+
+    def __init__(self):
+        self.n = self.total = 0
+        self.min = self.max = None
+
+    def add(self, us):
+        self.n += 1
+        self.total += us
+        self.min = us if self.min is None else min(self.min, us)
+        self.max = us if self.max is None else max(self.max, us)
+
+    def row(self, name):
+        if not self.n:
+            return "%-5s %6s" % (name, "—")
+        return "%-5s %6d %6.1f %6d %6d %6d" % (name, self.min, self.total / self.n, self.max, self.max - self.min, self.n)
+
+
 class UdpTelem:
     """UDP portunu dinler; her geçerli TELEM'i sayar ve on_telem'e verir. Port kullanımdaysa OSError."""
 
     def __init__(self, port=PORT, on_telem=None):
         self.telem = TelemetryStats()
         self.bad = 0                        # çözülemeyen paket (CRC, uzunluk, tür)
+        self.f746 = Span()                  # F746: DRDY -> USART6 son bit (paketteki prev_us)
+        self.m33 = Span()                   # MP257: ilk bayt kesmesi T1 -> Linux'a verildi T5 (paketteki m33_us)
         self.on_telem = on_telem
         self.closed = False
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -43,6 +64,10 @@ class UdpTelem:
                 continue
             t.rx_time = time.perf_counter()
             self.telem.add(t)
+            if t.prev_valid:
+                self.f746.add(t.prev_us)
+            if t.m33_us:
+                self.m33.add(t.m33_us)
             if self.on_telem is not None:
                 self.on_telem(t)
         self.sock.close()

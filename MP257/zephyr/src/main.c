@@ -100,6 +100,8 @@ int main(void)
     uart_irq_rx_enable(uart);
     uart_irq_err_enable(uart);
 
+    uint16_t m33_us = 0;                             // önceki paketin T5 - T1'i, µs; 0: yok
+
     for (;;)
     {
         RawMsg msg;
@@ -108,7 +110,7 @@ int main(void)
         uint32_t woken = k_cycle_get_32();           // T3
 
         check_seq(&msg);
-        packet_build(last_packet, msg.data);
+        packet_build(last_packet, msg.data, m33_us);
         uint32_t built = k_cycle_get_32();           // T4
 
         int sent = link_send(last_packet, PKT_SIZE);
@@ -123,6 +125,10 @@ int main(void)
         {
             stat_add(&send_time, handed - built);
         }
+
+        // Sıradaki paket bu paketin T5 - T1'ini taşır (F746'nın prev_us'u gibi); gönderilmediyse 0
+        uint32_t us = k_cyc_to_us_floor32(handed - msg.first_cycles);
+        m33_us = !sent ? 0U : (us > UINT16_MAX ? UINT16_MAX : (uint16_t)us);
 
         ++msg_count;                                 // paket hazır olduktan sonra artar
 

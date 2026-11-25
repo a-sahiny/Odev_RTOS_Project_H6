@@ -9,7 +9,7 @@ Bu kasa, F746 → MP257 → PC telemetri sisteminin notlarıdır. [[Sistem]] not
 
 ```mermaid
 flowchart LR
-  IMU --> F746["F746 · FreeRTOS"] -->|"23 bayt · 460800"| M33["M33 · Zephyr"] -->|"RPMsg · 33 bayt"| LNX["Linux · telem_udp"] -->|"UDP 5002"| PC["PC · Host"]
+  IMU --> F746["F746 · FreeRTOS"] -->|"23 bayt · 460800"| M33["M33 · Zephyr"] -->|"RPMsg · 35 bayt"| LNX["Linux · telem_udp"] -->|"UDP 5002"| PC["PC · Host"]
   PC -.->|"komut, USART1"| F746
 ```
 
