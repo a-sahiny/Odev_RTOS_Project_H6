@@ -82,5 +82,6 @@
  "showTags": false,
  "nodeSizeMultiplier": 1.2,
  "lineSizeMultiplier": 1,
- "linkDistance": 180
+ "linkDistance": 180,
+ "showArrow": true
 }

@@ -129,8 +129,8 @@ def degerlendir(s, sureler, ek, paketler, sure, bitis):
     return satir
 
 
-def main(sure, bitis):
-    """Dinler, karti calistirir, degerlendirir; 0 = hepsi gecti."""
+def olc(sure, bitis):
+    """Dinler, karti calistirir; (sayaclar, sureler, ek, paketler) ya da kart tarafi bitmediyse None."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
     sock.bind(("0.0.0.0", PORT))
@@ -169,8 +169,16 @@ def main(sure, bitis):
             print(x)
     if ssh.returncode != 0 or "cikis" not in ek:
         print("SONUC: KALDI (kart tarafi tamamlanmadi, cikis kodu %d)" % ssh.returncode)
+        return None
+    return s, sureler, ek, paketler
+
+
+def main(sure, bitis):
+    """Olcer, degerlendirir; 0 = hepsi gecti."""
+    r = olc(sure, bitis)
+    if r is None:
         return 1
-    sonuc = degerlendir(s, sureler, ek, paketler, sure, bitis)
+    sonuc = degerlendir(*r, sure, bitis)
     for gecti, metin in sonuc:
         print("%s  %s" % ("GECTI" if gecti else "KALDI", metin))
     hepsi = all(g for g, _ in sonuc)

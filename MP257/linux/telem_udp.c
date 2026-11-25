@@ -12,6 +12,7 @@
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/timerfd.h>
+#include <time.h>
 #include <unistd.h>
 
 #define PKT_SIZE    33                               // TELEM paketi, bayt
@@ -30,7 +31,20 @@ typedef struct
     unsigned long bad_len;                           // 33 bayt olmayan mesaj
     unsigned long send_errors;                       // UDP'nin reddettiği paket (PC dinlemiyor, hat kapalı)
     unsigned long renew_errors;                      // M33'e verilemeyen '1'
+    long long lat_min;                               // Linux süresi, ns: poll uyandı -> send bitti (yollananlar)
+    long long lat_max;
+    long long lat_sum;
 } Counters;
+
+/* Linux'un tekdüze saati, ns. */
+static long long now_ns(void)
+{
+    struct timespec t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t);
+
+    return t.tv_sec * 1000000000LL + t.tv_nsec;
+}
 
 /* Hata mesajını yazar; kurulum hatası kodunu döndürür. */
 static int fail(const char *what)
@@ -132,8 +146,8 @@ static void discard_stale(int dev, Counters *n)
     }
 }
 
-/* Bekleyen bütün paketleri UDP'ye verir; aygıt çalışıyorsa 1, kapandıysa 0. */
-static int forward(int dev, int sock, Counters *n)
+/* Bekleyen bütün paketleri UDP'ye verir, Linux süresini yazar; aygıt çalışıyorsa 1, kapandıysa 0. */
+static int forward(int dev, int sock, Counters *n, long long woke)
 {
     for (;;)
     {
@@ -160,6 +174,19 @@ static int forward(int dev, int sock, Counters *n)
 
         if (send(sock, buf, PKT_SIZE, 0) == PKT_SIZE)
         {
+            long long d = now_ns() - woke;           // aynı uyanışta birden çok paket varsa sonrakiler bekleyişi de taşır
+
+            if (n->sent == 0 || d < n->lat_min)
+            {
+                n->lat_min = d;
+            }
+
+            if (d > n->lat_max)
+            {
+                n->lat_max = d;
+            }
+
+            n->lat_sum += d;
             ++n->sent;
         }
         else
@@ -184,7 +211,9 @@ static int run(struct pollfd *fds, int sock, Counters *n)
             return 2;
         }
 
-        if ((fds[FD_DEV].revents & POLLIN) && !forward(fds[FD_DEV].fd, sock, n))
+        long long woke = now_ns();                    // Linux süresinin başı
+
+        if ((fds[FD_DEV].revents & POLLIN) && !forward(fds[FD_DEV].fd, sock, n, woke))
         {
             return 2;
         }
@@ -276,8 +305,10 @@ int main(int argc, char **argv)
         ++n.renew_errors;
     }
 
-    fprintf(stderr, "telem_udp: alinan %lu yollanan %lu eski %lu uzunluk %lu udp_hatasi %lu yenileme_hatasi %lu cikis %d\n",
-            n.received, n.sent, n.stale, n.bad_len, n.send_errors, n.renew_errors, result);
+    fprintf(stderr, "telem_udp: alinan %lu yollanan %lu eski %lu uzunluk %lu udp_hatasi %lu yenileme_hatasi %lu cikis %d"
+            " linux_us en_az %.1f ort %.1f en_cok %.1f\n",
+            n.received, n.sent, n.stale, n.bad_len, n.send_errors, n.renew_errors, result,
+            n.lat_min / 1e3, n.sent ? n.lat_sum / 1e3 / n.sent : 0.0, n.lat_max / 1e3);
 
     return result;
 }

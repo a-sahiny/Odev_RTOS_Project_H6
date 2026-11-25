@@ -9,6 +9,6 @@ aliases:
 
 M0 imaj · M1 Zephyr kurulumu · M2 LED ve thread · M3 [[USART6 hattı]] · M4 F746 bağlantısı · M5 [[TELEM paketi]] · M6 [[RPMsg]] · M7 [[telem_udp]]: **bitti**.
 
-M8 (Host'a UDP girişi, MP257 (UDP) sekmesi): **kod hazır, kartta bakılacak**. M9 (uçtan uca gecikme): **başlanmadı**.
+M8 (Host'a UDP girişi, MP257 (UDP) sekmesi): **kod hazır, kartta bakılacak**. M9 (gecikme; Linux süresi telem_udp'de): **kod hazır, kartta bakılacak**.
 
 İlgili: [[Sistem]].
