@@ -7,10 +7,10 @@ aliases:
 
 # Sistem
 
-Bir IMU örneğini F746'dan PC'ye taşıyan zincir.
+Bir IMU örneğini F746'dan PC'ye, komutları da PC'den F746'ya taşıyan zincir.
 
-Yol: [[IMU]] → [[F746]] → [[Ham mesaj]] → [[USART6 hattı]] → [[M33]] → [[TELEM paketi]] → [[RPMsg]] → [[Linux A35]] → [[telem_udp]] → [[USB ağı]] → [[Host]].
+Yukarı: [[IMU]] → [[F746]] → [[Ham mesaj]] → [[USART6 hattı]] → [[M33]] → [[TELEM paketi]] → [[RPMsg]] → [[Linux A35]] → [[telem_udp]] → [[USB ağı]] → [[Host]].
 
-Hız 100 Hz. Kartta uçtan uca 60 saniyede 6003 / 6003 paket, kayıp 0 ([[Test M7]]).
+Linux okurken F746'nın cevapları, raporları ve PC'nin komutları da aynı yoldan geçer ([[Linux tek yol]]). Linux yoksa [[PC yolu (USART1)]].
 
-İkinci, daha eski yol: [[PC yolu (USART1)]].
+Hız 100 Hz. Kartta 5 dakikada 30.018 paket, kayıp 0 ([[Test - Linux tek yol|Test: Linux tek yol]]).

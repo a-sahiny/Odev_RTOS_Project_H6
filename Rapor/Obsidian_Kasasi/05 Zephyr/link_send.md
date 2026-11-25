@@ -7,4 +7,4 @@ aliases:
 
 # link_send
 
-rpmsg_trysend: beklemez. Linux istemiyorsa link_skipped, tampon yoksa link_drops.
+rpmsg_trysend: beklemez. Linux istemiyorsa link_skipped, tampon yoksa link_drops. link_send_line satırı en çok 480 baytlık mesajlara böler ('L', bayrak, sıra).

@@ -7,4 +7,6 @@ aliases:
 
 # Sessizlik çerçevesi
 
-Başlık olmadığı için mesaj sınırı 2 ms'den uzun sessizliktir. Yarım mesaj atılır, bad_len sayılır.
+**Eski (M4–M9).** Başlık olmadığı için mesaj sınırı 2 ms'den uzun sessizlikti. 25.11.2026'da yerini [[USART6 çerçevesi]] aldı.
+
+2 ms'lik sessizlik kuralı yalnız yarım kalan çerçeveyi atmak için duruyor (bad_len).

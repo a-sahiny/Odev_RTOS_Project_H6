@@ -7,4 +7,4 @@ aliases:
 
 # uart_isr
 
-Baytları toplar, T1 (ilk bayt) ve T2 (23. bayt) damgalarını alır, mesajı [[k_msgq]]'ya koyar. Dosya: app_isr.c.
+Baytları [[frame.c]]'ye verir; T1 (çerçevenin ilk baytı) ve T2 (son baytı) damgalarını alır. Telemetri [[k_msgq]]'ya, satır parçası [[line_task]]'a. Yazma kesmesinde [[f746_tx.c]]. Dosya: app_isr.c.
