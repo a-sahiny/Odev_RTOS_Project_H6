@@ -1,6 +1,6 @@
 """Grafik arayüz (tkinter, Python ile gelir; ek paket gerekmez).
 
-Sekmeler: Kontrol, Uçuş (IMU), Telemetri, Kaynaklar, Sayaçlar, Testler, Günlük.
+Sekmeler: Kontrol, Uçuş (IMU), MP257 (UDP), Telemetri, Kaynaklar, Sayaçlar, Testler, Günlük.
 Host yığınının olayları (okuma thread'inden) bir queue ile arayüz thread'ine taşınır.
 """
 
@@ -153,6 +153,7 @@ class App:
         self.nb.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self._tab_control()
         self._tab_flight()
+        self._tab_udp()
         self._tab_telem()
         self._tab_resources()
         self._tab_counters()
@@ -243,6 +244,10 @@ class App:
         from .flight_view import FlightTab
         self.flight = FlightTab(self.nb, self)
         self.nb.add(self.flight, text="Uçuş (IMU)")
+
+    def _tab_udp(self):
+        from .udp_view import UdpTab
+        self.nb.add(UdpTab(self.nb), text="MP257 (UDP)")
 
     def _tab_telem(self):
         f = ttk.Frame(self.nb, padding=10)
