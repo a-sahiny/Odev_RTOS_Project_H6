@@ -15,6 +15,28 @@ SOURCE_TEXT = {src.MP257: ("Kaynak: MP257 (Linux, UDP %d)" % udp_in.PORT, "#2e7d
                src.NONE: ("Veri gelmiyor", "#6b7280")}
 
 
+def sensor_text(t):
+    """Jiro, ivme ve yer çekimi çıkarılmış ivme satırları."""
+    def row(name, digits, values):
+        return "%-12s" % name + " ".join("%s %+8.*f" % (axis, digits, round(v, digits) + 0.0)     # + 0.0: -0 yazılmaz
+                                         for axis, v in zip("xyz", values))
+    return "\n".join((row("jiro (°/s)", 1, t.gyro_dps), row("ivme (g)", 3, t.accel_g), row("hareket (g)", 3, t.motion_g)))
+
+
+def cal_status(t, asked):
+    """Kalibrasyon durumu: (yazı, zemin, yazı rengi). asked: bu oturumda CAL gönderildi."""
+    if t is None:
+        return "veri yok", "#e5e7eb", "#374151"
+    still = "duruyor" if t.still else "hareketli"
+    if t.cal_busy:
+        return "oynatmayın…  (%s)" % still, "#FFC21A", "#111827"
+    if t.cal_done:
+        return "sıfırlandı · " + still, "#2e7d32", "white"
+    if asked:
+        return "olmadı: kart durmadı", "#b91c1c", "white"
+    return "kalibre değil · " + still, "#e5e7eb", "#374151"
+
+
 class LatencyTable(ttk.LabelFrame):
     """Bütün gecikmeler tek tabloda, µs. İki sayfada da aynı veriden çizilir."""
 
@@ -94,16 +116,19 @@ class ImuPage(ttk.Frame):
         ttk.Button(g, text="Yaw sıfırla (görüntü)", command=self._zero_yaw).grid(row=2, column=0, sticky="ew", padx=2, pady=2)
         ttk.Button(g, text="Kamerayı sıfırla", command=self.view.reset_camera).grid(row=2, column=1, sticky="ew", padx=2,
                                                                                    pady=2)
+        ttk.Button(g, text="Kalibre et (CAL)", command=self._calibrate).grid(row=3, column=0, sticky="ew", padx=2, pady=2)
+        self.cal_label = tk.Label(g, font=(FONT_UI, 9, "bold"), padx=4, pady=3)
+        self.cal_label.grid(row=3, column=1, sticky="ew", padx=2, pady=2)
         fr = ttk.Frame(g)
-        fr.grid(row=3, column=0, columnspan=2, sticky="ew", pady=2)
+        fr.grid(row=4, column=0, columnspan=2, sticky="ew", pady=2)
         ttk.Label(fr, text="IMU hızı (Hz)").pack(side="left", padx=2)
         ttk.Combobox(fr, textvariable=app.rate_var, values=proto.RATES_HZ, state="readonly", width=6).pack(side="left")
         ttk.Button(fr, text="Hızı uygula", command=lambda: app._cmd("RATE")).pack(side="left", padx=6)
         self.state_var = tk.StringVar()
         ttk.Label(g, textvariable=self.state_var, style="Small.TLabel", wraplength=310, justify="left").grid(
-            row=4, column=0, columnspan=2, sticky="w")
+            row=5, column=0, columnspan=2, sticky="w")
 
-        g = ttk.LabelFrame(side, text="Açılar", padding=6)
+        g = ttk.LabelFrame(side, text="Açılar ve sensörler", padding=6)
         g.pack(fill="x", pady=(6, 0))
         self.ang_vars = {}
         for i, (key, name, col) in enumerate((("roll", "Roll φ", C["roll"]), ("pitch", "Pitch θ", C["pitch"]),
@@ -114,6 +139,9 @@ class ImuPage(ttk.Frame):
             ttk.Label(g, textvariable=v, font=(FONT_NUM, 18, "bold"), width=9, anchor="e").grid(row=i, column=2, sticky="e")
             self.ang_vars[key] = v
         g.columnconfigure(2, weight=1)
+        self.sensor_var = tk.StringVar(value="—")
+        ttk.Label(g, textvariable=self.sensor_var, font=(FONT_NUM, 9), justify="left").grid(
+            row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         g = ttk.LabelFrame(side, text="Son örnek" if detail else "Sayaçlar", padding=6)
         g.pack(fill="x", pady=(6, 0))
@@ -130,6 +158,10 @@ class ImuPage(ttk.Frame):
         if error:
             messagebox.showerror("MP257", error)
 
+    def _calibrate(self):
+        self.drawn = None
+        self.app.calibrate()
+
     def _zero_yaw(self):
         if self.source.latest is not None:
             self.source.yaw_zero = self.source.latest.yaw
@@ -145,6 +177,7 @@ class ImuPage(ttk.Frame):
             self.drawn = (t, self.source.yaw_zero)
             for key, value in (("roll", t.roll), ("pitch", t.pitch), ("yaw", yaw)):
                 self.ang_vars[key].set("%+.2f°" % value)
+            self.sensor_var.set(sensor_text(t))
         self.after(33, self._frame)
 
     def _panel(self):
@@ -155,6 +188,8 @@ class ImuPage(ttk.Frame):
         self.btn_stop.config(state="normal" if ses.wanted else "disabled")
         self.state_var.set(s.error or ses.text or "Başlat: kartta (%s) %s ssh ile çalışır. M33 çalışıyor olmalı." % (
             udp_in.BOARD_IP, udp_in.PROGRAM))
+        text, bg, fg = cal_status(s.latest if s.active() != src.NONE else None, s.cal_asked)
+        self.cal_label.config(text=text, bg=bg, fg=fg)
         if self.winfo_ismapped():
             self.info_var.set(self._detail_text() if self.detail else self._count_text())
             self.table.refresh()
@@ -170,7 +205,6 @@ class ImuPage(ttk.Frame):
         t = self.source.latest
         if t is None:
             return "—"
-        a, g = t.accel_g, t.gyro_dps
-        return ("SEQ %d   anlık hız %.1f Hz\nivme (g)   x %+6.3f y %+6.3f z %+6.3f\njiro (°/s) x %+6.1f y %+6.1f z %+6.1f\n"
-                "bias %s" % (t.seq, self.source.stats().rate_now(time.perf_counter()), a[0], a[1], a[2], g[0], g[1], g[2],
-                             "hazır" if t.bias_ready else "ölçülüyor"))
+        return "SEQ %d   anlık hız %.1f Hz\nbias %s   ivme düzeltmesi %s" % (
+            t.seq, self.source.stats().rate_now(time.perf_counter()), "hazır" if t.bias_ready else "ölçülüyor",
+            "var" if t.acc_used else "yok")

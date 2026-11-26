@@ -13,6 +13,7 @@
 """
 
 from dataclasses import dataclass, field
+import math
 import struct
 
 from .crc import crc8
@@ -89,6 +90,9 @@ TELEM_DEADLINE_MS = 12.0      # kart içi DRDY -> TX bitti deadline'ı
 ATT_FLAG_BIAS_READY = 0x01
 ATT_FLAG_ACC_USED = 0x02
 TELEM_FLAG_PREV = 0x04        # prev_seq / prev_us geçerli
+ATT_FLAG_CAL_BUSY = 0x08      # CAL geldi, kart durunca sıfırlanacak
+ATT_FLAG_CAL_DONE = 0x10      # son CAL başarıyla sıfırladı
+ATT_FLAG_STILL = 0x20         # kart hareketsiz: yaw kilitli
 DEDUP_SLOTS = 8
 DEDUP_WINDOW_S = 10.0
 
@@ -287,7 +291,7 @@ GYRO_LSB_PER_DPS = 32.8       # ±1000 dps
 class Telem:
     """TELEM (0x30, port 5002): her IMU örneğinde bir tane, 23 B, big-endian.
 
-    ax ay az i16, gx gy gz i16 (ham LSB, CAL uygulanmış), roll pitch yaw i16 (0,01°), flags u8,
+    ax ay az i16, gx gy gz i16 (süzülmüş LSB, CAL uygulanmış), roll pitch yaw i16 (0,01°), flags u8,
     prev_seq u16 + prev_us u16: bu mesajdan önce UART'tan çıkmış son TELEM'in SEQ'i ve onun kartta
     ölçülen DRDY -> TX bitti süresi (IMU verisi hazır -> satırın son biti UART'tan çıktı; PC / USB
     yok). Bir mesajın kendi süresi ancak o mesaj gittikten sonra bilinir, bu yüzden bir sonrakinde
@@ -322,8 +326,27 @@ class Telem:
         return bool(self.flags & ATT_FLAG_ACC_USED)
 
     @property
+    def cal_busy(self) -> bool:
+        return bool(self.flags & ATT_FLAG_CAL_BUSY)
+
+    @property
+    def cal_done(self) -> bool:
+        return bool(self.flags & ATT_FLAG_CAL_DONE)
+
+    @property
+    def still(self) -> bool:
+        return bool(self.flags & ATT_FLAG_STILL)
+
+    @property
     def accel_g(self):
         return tuple(v / ACCEL_LSB_PER_G for v in self.accel)
+
+    @property
+    def motion_g(self):
+        """Hareket ivmesi (g): ölçülen ivmeden, açıların söylediği yer çekimi çıkarılmış. Dururken 0."""
+        r, p = math.radians(self.roll), math.radians(self.pitch)
+        up = (-math.sin(p), math.cos(p) * math.sin(r), math.cos(p) * math.cos(r))
+        return tuple(a - u for a, u in zip(self.accel_g, up))
 
     @property
     def gyro_dps(self):

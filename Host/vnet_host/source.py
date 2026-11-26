@@ -25,6 +25,7 @@ class TelemSource:
         self.direct = udp_in.Span()         # DRDY -> UART TX bitti (yalnız Linux yokken)
         self.ignored = 0                    # MP257 akarken gösterilmeyen doğrudan TELEM
         self.yaw_zero = 0.0                 # iki sayfada da gösterilen yaw'dan çıkarılır
+        self.cal_asked = False              # arayüzden CAL gönderildi (sonuç: Telem.cal_*)
         self.latest = None
         self.listeners = []                 # fonksiyon(Telem): gösterilen
         self.linux_listeners = []           # fonksiyon(Telem): yalnız MP257'den gelen

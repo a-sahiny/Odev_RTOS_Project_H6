@@ -2,9 +2,11 @@
   ******************************************************************************
   * @file    imu_spi.c
   * @brief   The only owner of SPI2 and the IMU (WHO_AM_I 0x74, 6 axes): reset
-  *          and configuration (SPI2 DMA, <= 1 MHz), DRDY on EXTI9_5, one sample
-  *          with SPI2 DMA (3.375 MHz). docs 3.3, D18. Künye: report 076.
+  *          and configuration (SPI2 DMA, <= 1 MHz), DRDY on EXTI9_5, one block
+  *          of FIFO points with one SPI2 DMA. docs 3.3, D18. Künye: report 076.
   *          Every transfer is DMA + task notification, none polled (report 092).
+  *          IMU 1 kHz örnekler ve FIFO'suna yazar; EXTI kesmesi DRDY'leri sayar
+  *          ve meas'i yalnız çıkış örneğinde (SET_RATE hızında) uyandırır.
   ******************************************************************************
   * Start-up order and register values follow RTOS_IMU/App/Src/app_imu.c
   * (:215-286) without the magnetometer part (the module has none, K1).
@@ -34,22 +36,27 @@ extern SPI_HandleTypeDef hspi2;
 #define IMU_REG_GYRO_CONFIG     0x1BU
 #define IMU_REG_ACCEL_CONFIG    0x1CU
 #define IMU_REG_ACCEL_CONFIG2   0x1DU
+#define IMU_REG_FIFO_EN         0x23U
 #define IMU_REG_INT_PIN_CFG     0x37U
 #define IMU_REG_INT_ENABLE      0x38U
 #define IMU_REG_ACCEL_XOUT_H    0x3BU
 #define IMU_REG_USER_CTRL       0x6AU
 #define IMU_REG_PWR_MGMT_1      0x6BU
 #define IMU_REG_PWR_MGMT_2      0x6CU
+#define IMU_REG_FIFO_R_W        0x74U
 #define IMU_REG_WHO_AM_I        0x75U
 #define IMU_READ_FLAG           0x80U
 
-/* Values (app_imu.c:105-121): +-1000 dps, +-4 g. Rate and DLPF: xImuRates. */
+/* Titreşim tepesi kırpılmasın diye en geniş ölçek: +-2000 dps, +-16 g (app_config.h). */
 #define IMU_PWR_RESET           0x80U
 #define IMU_PWR_CLKSEL_PLL      0x01U
 #define IMU_USER_I2C_IF_DIS     0x10U   /* SPI only                              */
+#define IMU_USER_FIFO_EN        0x40U
+#define IMU_USER_FIFO_RST       0x04U   /* kendiliğinden temizlenir              */
+#define IMU_FIFO_EN_ALL         0xF8U   /* sıcaklık, jiro xyz, ivme: 14 bayt     */
 #define IMU_INTERNAL_HZ         1000U   /* DLPF_CFG 1..6: internal rate 1 kHz    */
-#define IMU_CFG_GYRO_FS         0x10U   /* +-1000 dps -> 32.8 LSB/dps            */
-#define IMU_CFG_ACCEL_FS        0x08U   /* +-4 g -> 8192 LSB/g                   */
+#define IMU_CFG_GYRO_FS         0x18U   /* +-2000 dps -> 16.4 LSB/dps            */
+#define IMU_CFG_ACCEL_FS        0x18U   /* +-16 g -> 2048 LSB/g                  */
 #define IMU_CFG_INT_PIN         0x00U   /* active high, push-pull, 50 us pulse   */
 #define IMU_CFG_INT_ENABLE      0x01U   /* RAW_RDY_EN                            */
 
@@ -57,9 +64,11 @@ extern SPI_HandleTypeDef hspi2;
 #define IMU_CLOCK_WAIT_MS       10U
 #define IMU_REG_TIMEOUT_MS      5U      /* one 2-byte DMA register transfer      */
 
-/* One burst: the address byte, then accel (6), temperature (2), gyro (6). */
-#define IMU_BURST_BYTES         14U
-#define IMU_XFER_BYTES          ( 1U + IMU_BURST_BYTES )
+/* Bir nokta: ivme (6), sıcaklık (2), jiro (6); kayıtlarda ve FIFO'da aynı sıra. */
+#define IMU_POINT_BYTES         14U
+#define IMU_XFER_BYTES          ( 1U + ( IMU_BLOCK_MAX * IMU_POINT_BYTES ) )
+#define IMU_TEMP_JUMP           512     /* 1,5 °C: noktadan noktaya daha çok değişirse FIFO kaymıştır */
+#define IMU_RESET_TRIES         3U
 
 /* meas's notification value (index 0, eSetBits), app_imu.c:8-12 */
 #define IMU_BIT_DRDY            0x01UL
@@ -67,29 +76,29 @@ extern SPI_HandleTypeDef hspi2;
 #define IMU_BIT_SPI_ERROR       0x04UL
 #define IMU_BITS_SPI            ( IMU_BIT_SPI_DONE | IMU_BIT_SPI_ERROR )
 
-_Static_assert( ( IMU_REG_ACCEL_XOUT_H + IMU_BURST_BYTES - 1U ) == 0x48U, "the burst ends at GYRO_ZOUT_L" );
+_Static_assert( ( IMU_REG_ACCEL_XOUT_H + IMU_POINT_BYTES - 1U ) == 0x48U, "the burst ends at GYRO_ZOUT_L" );
+_Static_assert( ( IMU_BLOCK_MAX * IMU_POINT_BYTES ) <= 512U, "blok FIFO'ya sığar" );
 
-/* One entry per SET_RATE rate. SMPLRT_DIV = 1 kHz / rate - 1. The DLPF
- * index goes into CONFIG (gyro) and ACCEL_CONFIG2 (accel, A_DLPF_CFG with
- * ACCEL_FCHOICE_B = 0): its bandwidth is at most about half the rate, so
- * nothing above the Nyquist frequency folds into the samples (MPU-6500
- * register map: gyro / accel bandwidth 2: 92 / 99 Hz, 3: 41 / 44.8 Hz,
- * 4: 20 / 21.2 Hz, 5: 10 / 10.2 Hz, 6: 5 / 5.05 Hz). A lower bandwidth
- * also delays the signal more (5 Hz: ~19 ms); that is inside the IMU,
- * before DRDY, so the TELEM latency does not include it. */
+/* SET_RATE hızı başına bir satır. IMU daha hızlı örnekler (1 kHz / (ucDiv + 1)),
+ * ucPoints nokta bir çıkış örneği olur: titreşim, DLPF'nin yumuşak eğimi yüzünden
+ * çıkışa örtüşmez, açı 1 kHz'te integre edilir. 20 ve 10 Hz'te FIFO (512 bayt)
+ * taşmasın diye iç hız düşer. DLPF iç hızın Nyquist'inin altında (gyro / accel:
+ * 1: 184 / 218 Hz, 2: 92 / 99 Hz, 3: 41 / 45 Hz). */
 typedef struct xIMU_RATE
 {
     uint16_t usHz;
+    uint8_t ucDiv;
     uint8_t ucDlpf;
+    uint8_t ucPoints;
 } ImuRate_t;
 
 static const ImuRate_t xImuRates[] =
 {
-    {  10U, 0x06U },
-    {  20U, 0x05U },
-    {  50U, 0x04U },
-    { 100U, 0x03U },    /* the values before SET_RATE changed the IMU rate */
-    { 200U, 0x02U },
+    {  10U, 3U, 0x03U, 25U },   /*  250 Hz iç hız */
+    {  20U, 1U, 0x02U, 25U },   /*  500 Hz        */
+    {  50U, 0U, 0x01U, 20U },   /* 1000 Hz        */
+    { 100U, 0U, 0x01U, 10U },
+    { 200U, 0U, 0x01U,  5U },
 };
 
 _Static_assert( ( sizeof( xImuRates ) / sizeof( xImuRates[ 0 ] ) ) == APP_RATE_COUNT, "one entry per SET_RATE rate" );
@@ -102,6 +111,16 @@ static TaskHandle_t xMeasTask = NULL;
 static volatile TickType_t xDrdyTick;
 static volatile uint32_t ulDrdyCycles;
 
+/* FIFO sayımı. ISR yazar: ulDrdyCount (bu çıkış örneğinin noktaları), ulGroups
+ * (biten çıkış örnekleri). meas yazar: ulGroupsRead, ulDrdyPerSample; ulDrdyCount'u
+ * yalnız FIFO'yu boşaltırken sıfırlar. */
+static volatile uint32_t ulDrdyPerSample = 1U;
+static volatile uint32_t ulDrdyCount;
+static volatile uint32_t ulGroups;
+static uint32_t ulGroupsRead;
+static uint8_t ucResync = 1U;               /* 1: FIFO boşaltılıp sayımla eşitlenecek */
+static int16_t sTempLast;                   /* son iyi noktanın sıcaklığı */
+
 /* DMA buffers. D-cache is off: no cache maintenance, no MPU region. Byte 0
  * of the TX buffer is the address; byte 1 the value of a register write,
  * set back to 0 right after it (a burst read sends zeros). */
@@ -110,7 +129,10 @@ static uint8_t ucSpiRx[ IMU_XFER_BYTES ];
 
 static BaseType_t prvWaitBits( uint32_t ulBits, TickType_t xTimeout );
 static BaseType_t prvTransfer( size_t uxLen, TickType_t xTimeout );
-static void prvUnpack( Sample_t * pxOut );
+static BaseType_t prvFifoRestart( void );
+static uint32_t prvFifoBlock( ImuBlock_t * pxOut );
+static BaseType_t prvUnpack( ImuBlock_t * pxOut, uint32_t ulCount );
+static const ImuRate_t * prvFindRate( uint16_t usRateHz );
 static void prvCsLow( void );
 static void prvCsHigh( void );
 static void prvSetPrescaler( uint32_t ulPrescaler );
@@ -160,6 +182,7 @@ BaseType_t Imu_Init( TaskHandle_t xNotifyTask, uint16_t usRateHz )
         return pdFAIL;
     }
 
+    prvWriteReg( IMU_REG_FIFO_EN, IMU_FIFO_EN_ALL );
     prvWriteReg( IMU_REG_INT_PIN_CFG, IMU_CFG_INT_PIN );
     prvWriteReg( IMU_REG_INT_ENABLE, IMU_CFG_INT_ENABLE );
 
@@ -198,8 +221,37 @@ BaseType_t Imu_SetRate( uint16_t usRateHz )
 /*---------------------------------------------------------------------------*/
 static BaseType_t prvWriteRate( uint16_t usRateHz )
 {
+    const ImuRate_t * pxRate = prvFindRate( usRateHz );
+
+    prvWriteReg( IMU_REG_SMPLRT_DIV, pxRate->ucDiv );
+    prvWriteReg( IMU_REG_CONFIG, pxRate->ucDlpf );
+    prvWriteReg( IMU_REG_ACCEL_CONFIG2, pxRate->ucDlpf );
+
+    {
+        const uint8_t ucWritten[ 3 ] = { pxRate->ucDiv, pxRate->ucDlpf, pxRate->ucDlpf };
+        uint8_t ucRead[ 3 ];
+        BaseType_t xOk;
+
+        ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
+        ucRead[ 1 ] = prvReadReg( IMU_REG_CONFIG );
+        ucRead[ 2 ] = prvReadReg( IMU_REG_ACCEL_CONFIG2 );
+
+        xOk = ( memcmp( ucWritten, ucRead, sizeof( ucRead ) ) == 0 ) ? pdPASS : pdFAIL;
+        Report_ImuRate( usRateHz, ucWritten, ucRead, xOk );
+
+        ulDrdyPerSample = pxRate->ucPoints;
+        ucResync = 1U;                      /* FIFO'da eski hızın noktaları var */
+
+        return xOk;
+    }
+}
+
+/*---------------------------------------------------------------------------*/
+/* prvFindRate: usRateHz'in satırı; cmd.c yalnız APP_RATE_LIST_HZ'i geçirir. */
+/*---------------------------------------------------------------------------*/
+static const ImuRate_t * prvFindRate( uint16_t usRateHz )
+{
     const ImuRate_t * pxRate = NULL;
-    uint8_t ucDiv;
     size_t x;
 
     for( x = 0U; x < ( sizeof( xImuRates ) / sizeof( xImuRates[ 0 ] ) ); x++ )
@@ -213,26 +265,13 @@ static BaseType_t prvWriteRate( uint16_t usRateHz )
 
     configASSERT( pxRate != NULL );         /* a bug, not an input (B8) */
 
-    ucDiv = ( uint8_t ) ( ( IMU_INTERNAL_HZ / pxRate->usHz ) - 1U );
+    return pxRate;
+}
 
-    prvWriteReg( IMU_REG_SMPLRT_DIV, ucDiv );
-    prvWriteReg( IMU_REG_CONFIG, pxRate->ucDlpf );
-    prvWriteReg( IMU_REG_ACCEL_CONFIG2, pxRate->ucDlpf );
-
-    {
-        const uint8_t ucWritten[ 3 ] = { ucDiv, pxRate->ucDlpf, pxRate->ucDlpf };
-        uint8_t ucRead[ 3 ];
-        BaseType_t xOk;
-
-        ucRead[ 0 ] = prvReadReg( IMU_REG_SMPLRT_DIV );
-        ucRead[ 1 ] = prvReadReg( IMU_REG_CONFIG );
-        ucRead[ 2 ] = prvReadReg( IMU_REG_ACCEL_CONFIG2 );
-
-        xOk = ( memcmp( ucWritten, ucRead, sizeof( ucRead ) ) == 0 ) ? pdPASS : pdFAIL;
-        Report_ImuRate( usRateHz, ucWritten, ucRead, xOk );
-
-        return xOk;
-    }
+/*---------------------------------------------------------------------------*/
+uint16_t Imu_PointRateHz( uint16_t usRateHz )
+{
+    return ( uint16_t ) ( IMU_INTERNAL_HZ / ( prvFindRate( usRateHz )->ucDiv + 1U ) );
 }
 
 /*---------------------------------------------------------------------------*/
@@ -243,6 +282,7 @@ static BaseType_t prvWriteRate( uint16_t usRateHz )
 void Imu_DiscardStaleDrdy( void )
 {
     ( void ) ulTaskNotifyValueClear( NULL, IMU_BIT_DRDY );
+    ucResync = 1U;                          /* FIFO'daki eski noktalar da atılır */
 }
 
 /*---------------------------------------------------------------------------*/
@@ -250,9 +290,60 @@ BaseType_t Imu_WaitDrdy( TickType_t xTimeout )
 {
     configASSERT( xTimeout <= APP_MS( APP_IMU_DRDY_TIMEOUT_MAX_MS ) );
 
-    if( prvWaitBits( IMU_BIT_DRDY, xTimeout ) == pdFAIL )
+    do
     {
-        Stats_Inc( eStatImuDrdyTimeout );
+        if( prvWaitBits( IMU_BIT_DRDY, xTimeout ) == pdFAIL )
+        {
+            Stats_Inc( eStatImuDrdyTimeout );
+            return pdFAIL;
+        }
+    } while( ( ulGroups == ulGroupsRead ) && ( ucResync == 0U ) );  /* bu örnek önceki blokla okundu */
+
+    return pdPASS;
+}
+
+/*---------------------------------------------------------------------------*/
+/* Imu_ReadBlock: son çıkış örneğinin bütün FIFO noktaları, tek DMA. Sayım   */
+/* bozulduysa (açılış, hız değişimi, taşma, SPI hatası) FIFO boşaltılır ve   */
+/* bu örnek kayıtlardan tek nokta olarak okunur: çıkışta boşluk olmaz.       */
+/*---------------------------------------------------------------------------*/
+BaseType_t Imu_ReadBlock( ImuBlock_t * pxOut, TickType_t xTimeout )
+{
+    uint32_t ulCount;
+
+    configASSERT( pxOut != NULL );
+    configASSERT( xTimeout <= APP_MS( APP_IMU_SPI_TIMEOUT_MS ) );
+
+    ulCount = prvFifoBlock( pxOut );
+
+    if( ucResync != 0U )
+    {
+        if( prvFifoRestart() != pdPASS )
+        {
+            Stats_Inc( eStatImuSpiTimeout );
+            return pdFAIL;
+        }
+
+        ulCount = 1U;
+        ucSpiTx[ 0 ] = ( uint8_t ) ( IMU_REG_ACCEL_XOUT_H | IMU_READ_FLAG );
+    }
+    else
+    {
+        ucSpiTx[ 0 ] = ( uint8_t ) ( IMU_REG_FIFO_R_W | IMU_READ_FLAG );
+    }
+
+    if( prvTransfer( 1U + ( ulCount * IMU_POINT_BYTES ), xTimeout ) != pdPASS )
+    {
+        /* timeout, DMA error, or both bits (an error after done) */
+        ucResync = 1U;
+        Stats_Inc( eStatImuSpiTimeout );            /* K3 */
+        return pdFAIL;
+    }
+
+    if( prvUnpack( pxOut, ulCount ) != pdPASS )
+    {
+        ucResync = 1U;                              /* kaymış ya da bozuk veri süzgece girmez */
+        Stats_Inc( eStatImuSpiTimeout );
         return pdFAIL;
     }
 
@@ -260,28 +351,59 @@ BaseType_t Imu_WaitDrdy( TickType_t xTimeout )
 }
 
 /*---------------------------------------------------------------------------*/
-/* Imu_ReadSample: app_imu.c:356-404 with a 14-byte burst (K1). CS stays low */
-/* from the start of the DMA transfer until it is done or aborted.          */
+/* prvFifoBlock: okunacak nokta sayısını döndürür, zaman damgasını yazar.    */
+/* Sayı ile damga aynı kesmeden olana kadar okunur. FIFO taştıysa ucResync.  */
 /*---------------------------------------------------------------------------*/
-BaseType_t Imu_ReadSample( Sample_t * pxOut, TickType_t xTimeout )
+static uint32_t prvFifoBlock( ImuBlock_t * pxOut )
 {
-    configASSERT( pxOut != NULL );
-    configASSERT( xTimeout <= APP_MS( APP_IMU_SPI_TIMEOUT_MS ) );
+    uint32_t ulNow;
+    uint32_t ulCount;
 
-    ucSpiTx[ 0 ] = ( uint8_t ) ( IMU_REG_ACCEL_XOUT_H | IMU_READ_FLAG );
-
-    if( prvTransfer( IMU_XFER_BYTES, xTimeout ) != pdPASS )
+    do
     {
-        /* timeout, DMA error, or both bits (an error after done) */
-        Stats_Inc( eStatImuSpiTimeout );            /* K3 */
-        return pdFAIL;
+        ulNow = ulGroups;
+        pxOut->ulTick = xDrdyTick;
+        pxOut->ulDrdyCycles = ulDrdyCycles;
+    } while( ulNow != ulGroups );
+
+    ulCount = ( ulNow - ulGroupsRead ) * ulDrdyPerSample;
+    ulGroupsRead = ulNow;
+
+    if( ( ulCount + ulDrdyCount ) > IMU_BLOCK_MAX )
+    {
+        ucResync = 1U;
     }
 
-    prvUnpack( pxOut );
-    pxOut->ulTick = xDrdyTick;
-    pxOut->ulDrdyCycles = ulDrdyCycles;
+    return ulCount;
+}
 
-    return pdPASS;
+/*---------------------------------------------------------------------------*/
+/* prvFifoRestart: FIFO'yu boşaltır, DRDY sayımını sıfırlar. Yazma sırasında */
+/* bir DRDY geldiyse FIFO ile sayım ayrışır: baştan. Kayıt yazması <= 1 MHz. */
+/*---------------------------------------------------------------------------*/
+static BaseType_t prvFifoRestart( void )
+{
+    BaseType_t xOk = pdFAIL;
+    uint32_t ulTry;
+
+    prvSetPrescaler( APP_IMU_SPI_PRESC_CONFIG );
+
+    for( ulTry = 0U; ( ulTry < IMU_RESET_TRIES ) && ( xOk == pdFAIL ); ulTry++ )
+    {
+        ulDrdyCount = 0U;
+        ulGroupsRead = ulGroups;
+        prvWriteReg( IMU_REG_USER_CTRL, IMU_USER_I2C_IF_DIS | IMU_USER_FIFO_EN | IMU_USER_FIFO_RST );
+        xOk = ( ( ulDrdyCount == 0U ) && ( ulGroupsRead == ulGroups ) ) ? pdPASS : pdFAIL;
+    }
+
+    prvSetPrescaler( APP_IMU_SPI_PRESC_DATA );
+
+    if( xOk == pdPASS )
+    {
+        ucResync = 0U;
+    }
+
+    return xOk;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -368,20 +490,39 @@ static BaseType_t prvWaitBits( uint32_t ulBits, TickType_t xTimeout )
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvUnpack: big-endian i16 pairs from byte 1 (byte 0 answered the address) */
+/* prvUnpack: big-endian i16'lar, bayt 1'den (bayt 0 adrese cevap). Her       */
+/* noktanın sıcaklığı öncekine yakın olmalı: FIFO bir bayt bile kaysa buraya  */
+/* ivme ya da jiro düşer. Tek nokta (FIFO yeni boşaltıldı) referansı kurar.   */
 /*---------------------------------------------------------------------------*/
-static void prvUnpack( Sample_t * pxOut )
+static BaseType_t prvUnpack( ImuBlock_t * pxOut, uint32_t ulCount )
 {
     const uint8_t * pucD = &ucSpiRx[ 1 ];
+    int16_t sTemp;
+    uint32_t ul;
     size_t x;
 
-    for( x = 0U; x < 3U; x++ )
+    for( ul = 0U; ul < ulCount; ul++ )
     {
-        pxOut->sAccel[ x ] = ( int16_t ) ( ( ( uint16_t ) pucD[ 2U * x ] << 8 ) | pucD[ ( 2U * x ) + 1U ] );
-        pxOut->sGyro[ x ] = ( int16_t ) ( ( ( uint16_t ) pucD[ 8U + ( 2U * x ) ] << 8 ) | pucD[ 9U + ( 2U * x ) ] );
+        for( x = 0U; x < 3U; x++ )
+        {
+            pxOut->sPoint[ ul ][ x ] = ( int16_t ) ( ( ( uint16_t ) pucD[ 2U * x ] << 8 ) | pucD[ ( 2U * x ) + 1U ] );
+            pxOut->sPoint[ ul ][ 3U + x ] = ( int16_t ) ( ( ( uint16_t ) pucD[ 8U + ( 2U * x ) ] << 8 ) | pucD[ 9U + ( 2U * x ) ] );
+        }
+
+        sTemp = ( int16_t ) ( ( ( uint16_t ) pucD[ 6 ] << 8 ) | pucD[ 7 ] );
+
+        if( ( ulCount > 1U ) && ( ( ( sTemp - sTempLast ) > IMU_TEMP_JUMP ) || ( ( sTempLast - sTemp ) > IMU_TEMP_JUMP ) ) )
+        {
+            return pdFAIL;
+        }
+
+        sTempLast = sTemp;
+        pucD += IMU_POINT_BYTES;
     }
 
-    pxOut->sTemp = ( int16_t ) ( ( ( uint16_t ) pucD[ 6 ] << 8 ) | pucD[ 7 ] );
+    pxOut->ulCount = ulCount;
+
+    return pdPASS;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -395,10 +536,17 @@ void HAL_GPIO_EXTI_Callback( uint16_t GPIO_Pin )
 
     if( ( GPIO_Pin == MPU_DRDY_Pin ) && ( xMeasTask != NULL ) )
     {
-        ulDrdyCycles = DWT->CYCCNT;                 /* TELEM latency starts here */
-        xDrdyTick = xTaskGetTickCountFromISR();     /* K6 */
-        ( void ) xTaskNotifyFromISR( xMeasTask, IMU_BIT_DRDY, eSetBits, &xWoken );
-        portYIELD_FROM_ISR( xWoken );
+        ulDrdyCount++;
+
+        if( ulDrdyCount >= ulDrdyPerSample )            /* meas yalnız çıkış örneğinde uyanır */
+        {
+            ulDrdyCount = 0U;
+            ulGroups++;
+            ulDrdyCycles = DWT->CYCCNT;                 /* TELEM latency starts here */
+            xDrdyTick = xTaskGetTickCountFromISR();     /* K6 */
+            ( void ) xTaskNotifyFromISR( xMeasTask, IMU_BIT_DRDY, eSetBits, &xWoken );
+            portYIELD_FROM_ISR( xWoken );
+        }
     }
 }
 

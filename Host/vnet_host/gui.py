@@ -87,6 +87,7 @@ class Plot(tk.Canvas):
 
 
 AUTO_PORT = "Otomatik (Linux, yoksa F746)"
+CAL_TRIES = 4               # kart üst üste 3 eski SEQ'ten sonra yenisini kabul eder (APP_SEQ_RESYNC_COUNT)
 
 
 class App:
@@ -559,7 +560,28 @@ class App:
         except ValueError:
             messagebox.showwarning("CAL", "Altı tam sayı girin: ax ay az gx gy gz")
             return
-        self._bg("CAL…", lambda: self.h.send_cal(vals) or "CAL gönderildi (worker ±4096 dışını reddeder)")
+        self._start_cal(vals)
+
+    def calibrate(self):
+        """Uçuş ve MP257 sayfalarının düğmesi: CAL 0; kart durunca her şeyi sıfırlar."""
+        self._start_cal([0] * 6)
+
+    def _start_cal(self, vals):
+        self.source.yaw_zero = 0.0      # sıfırlamayı kart yapar; görüntü ofseti araya girmesin
+        self.source.cal_asked = self.h is not None
+        self._bg("CAL…", self._cal_job, vals)
+
+    def _cal_job(self, vals):
+        """CAL'i kart başlayana (CAL_BUSY) kadar yineler: Host yeniden açılınca kart ilk paketleri eski SEQ diye atar."""
+        for _ in range(CAL_TRIES):
+            self.h.send_cal(vals)
+            end = time.monotonic() + 0.5
+            while time.monotonic() < end:
+                t = self.source.latest
+                if t is not None and t.cal_busy:
+                    return "CAL kartta başladı: kart durunca 1 s ölçülür, sonra her şey 0"
+                time.sleep(0.02)
+        return "CAL gönderildi, kart başlamadı (IMU verisi akmıyor ya da |değer| > 4096)"
 
     def _send_raw(self):
         if not self.h:

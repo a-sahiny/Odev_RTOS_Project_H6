@@ -303,9 +303,9 @@ class FlightCanvas(tk.Canvas):
         if not self.has_data:
             text, bg, fg = self.note, "#1E293B", C["muted"]
         elif not self.bias_ready:
-            text, bg, fg = "Jiroskop bias'ı ölçülüyor (START'tan sonraki 1 s): kartı oynatmayın.", C["warn_bg"], C["warn_fg"]
+            text, bg, fg = "Jiroskop bias'ı ölçülüyor (START / CAL, 1 s): kartı oynatmayın.", C["warn_bg"], C["warn_fg"]
         else:
-            text, bg, fg = ("Yaw yalnız jiroskopla hesaplanır (manyetometre yok): zamanla kayar. "
+            text, bg, fg = ("Yaw yalnız jiroskopla hesaplanır (manyetometre yok): uçuşta yavaş kayar, dururken kilitlidir. "
                             "Sürükle: kamera · çift tık: kamerayı sıfırla"), "#13203A", C["muted"]
         t = self.create_text(16, 16, text=text, anchor="nw", fill=fg, font=(FONT_UI, 10))
         x0, y0, x1, y1 = self.bbox(t)

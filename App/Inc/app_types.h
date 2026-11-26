@@ -147,15 +147,28 @@ typedef struct xUDP_REC_HDR
 _Static_assert( sizeof( UdpRecHdr_t ) == APP_REC_HEADER_BYTES, "record header must stay 12 bytes" );
 
 /*----------------------------------------------------------------------------
- * One IMU sample (6 axes + temperature, raw LSB, calibration applied later)
+ * IMU: bir çıkış örneğinin FIFO noktaları (imu_spi.c -> meas), ham LSB
+ *--------------------------------------------------------------------------*/
+#define IMU_BLOCK_MAX           36U     /* 512 baytlık FIFO / 14 bayt */
+
+typedef struct xIMU_BLOCK
+{
+    uint32_t ulTick;                    /* xTaskGetTickCount() at DRDY                 */
+    uint32_t ulDrdyCycles;              /* DWT cycle count at DRDY: TELEM latency start */
+    uint32_t ulCount;                   /* dolu nokta: 1..IMU_BLOCK_MAX                */
+    int16_t sPoint[ IMU_BLOCK_MAX ][ 6 ];   /* ivme xyz, jiro xyz                      */
+} ImuBlock_t;
+
+/*----------------------------------------------------------------------------
+ * One output sample: filtered, calibrated, TELEM units (app_config.h)
  *--------------------------------------------------------------------------*/
 typedef struct xSAMPLE
 {
-    uint32_t ulTick;        /* xTaskGetTickCount() at DRDY                 */
     uint32_t ulDrdyCycles;  /* DWT cycle count at DRDY: TELEM latency start */
     int16_t sAccel[ 3 ];    /* x, y, z                                     */
     int16_t sGyro[ 3 ];     /* x, y, z                                     */
-    int16_t sTemp;
+    int16_t sAngle[ 3 ];    /* roll, pitch, yaw (0,01 derece)              */
+    uint8_t ucFlags;        /* ATT_FLAG_*                                  */
 } Sample_t;
 
 /*----------------------------------------------------------------------------

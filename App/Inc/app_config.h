@@ -19,7 +19,7 @@
 /*----------------------------------------------------------------------------
  * Firmware identity (HELLO reply)
  *--------------------------------------------------------------------------*/
-#define APP_FW_VERSION_STR              "0.10"  /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud; 0.5: 216 MHz; 0.6: imu_rate report; 0.8: SPI2 SCK idle fix; 0.9: first DRDY after a rate change; 0.10: EPOCH soğuk açılışta RNG'den */
+#define APP_FW_VERSION_STR              "0.11"  /* 0.4: TELEM per IMU sample, SET_RATE = IMU rate, 1 Mbaud; 0.5: 216 MHz; 0.6: imu_rate report; 0.8: SPI2 SCK idle fix; 0.9: first DRDY after a rate change; 0.10: EPOCH soğuk açılışta RNG'den; 0.11: 1 kHz FIFO + Kalman, CAL her şeyi sıfırlar */
 #define APP_BOARD_STR                   "STM32F746G-DISCO"
 
 /*----------------------------------------------------------------------------
@@ -270,18 +270,18 @@
 #define APP_IMU_FAIL_LIMIT              3U      /* consecutive -> FAULT IMU  */
 /* SPI2 is on APB1 = 54 MHz (SYSCLK 216 MHz / 4). */
 #define APP_IMU_SPI_PRESC_CONFIG        SPI_BAUDRATEPRESCALER_64  /* 844 kHz <= 1 MHz */
-#define APP_IMU_SPI_PRESC_DATA          SPI_BAUDRATEPRESCALER_16  /* 3.375 MHz <= 20 MHz */
+#define APP_IMU_SPI_PRESC_DATA          SPI_BAUDRATEPRESCALER_8   /* 6.75 MHz <= 20 MHz */
 
-/* Scales of the imu_spi.c set-up: +-4 g, +-1000 dps (report 087). */
+/* Sensörün ham ölçeği (imu_spi.c): +-16 g, +-2000 dps. */
+#define APP_IMU_RAW_LSB_PER_G           2048U
+#define APP_IMU_RAW_LSB_PER_DPS_X10     164U    /* 16.4 LSB per deg/s        */
+/* TELEM ve CAL birimi, değişmedi: +-4 g, +-1000 dps (report 087). */
 #define APP_IMU_ACCEL_LSB_PER_G         8192U
 #define APP_IMU_GYRO_LSB_PER_DPS_X10    328U    /* 32.8 LSB per deg/s        */
 
 /*----------------------------------------------------------------------------
- * Attitude (report 086/087): complementary filter in meas, every sample.
+ * TELEM flags. Bit 0, 1, 3, 4, 5: attitude.h (ATT_FLAG_*).
  *--------------------------------------------------------------------------*/
-#define APP_ATT_BIAS_MS                 1000U   /* gyro bias: first 1 s after START */
-#define APP_ATT_FLAG_BIAS_READY         0x01U   /* gyro bias measured        */
-#define APP_ATT_FLAG_ACC_USED           0x02U   /* accel corrected this one  */
 #define APP_TELEM_FLAG_PREV             0x04U   /* prev_seq / prev_us valid  */
 
 /*----------------------------------------------------------------------------

@@ -53,7 +53,8 @@ class SimBoard:
         self.fault = 0
         self.rate = proto.RATE_DEFAULT_HZ
         self.dest = None
-        self.cal = (0,) * 6
+        self.cal_t = None               # CAL uygulandığı an; 1 s sonra o duruş sıfır olur
+        self.cal_zero = None            # (roll, pitch, yaw) sıfırı
         self.arp = {}                       # ip -> mac
         self.arp_pending = None             # (frame, t)
         self.dedup = collections.deque()    # (ip, req_id, type, payload, status, extra, t)
@@ -577,7 +578,7 @@ class SimBoard:
         elif pkt.type == proto.CAL:
             vals = struct.unpack(">6h", p)
             if all(abs(v) <= proto.CAL_LIMIT for v in vals):
-                self.cal = vals
+                self.cal_t, self.cal_zero = time.perf_counter(), None
                 self.c["cal_applied"] += 1
             else:
                 self.c["cal_rejected"] += 1
@@ -601,11 +602,21 @@ class SimBoard:
     def _attitude(self, t):
         """Bir uçuş: yavaş roll / pitch salınımı, sabit hızda yaw (t: START'tan beri s). İvme açılarla
         tutarlı (yer çekimi gövde ekseninde), jiroskop açıların türevi. İlk 1 s bias ölçümü: yaw 0,
-        BIAS_READY yok (meas_task.c ile aynı davranış). CAL ofsetleri ham değerlerden düşülür."""
+        BIAS_READY yok (meas_task.c ile aynı davranış). CAL: 1 s sonra o anki duruş sıfır sayılır (kart durmayı
+        bekler; simülatör hep uçar, beklemez)."""
         roll = 35.0 * math.sin(2 * math.pi * 0.10 * t)
         pitch = 20.0 * math.sin(2 * math.pi * 0.07 * t + 0.6)
         bias = t < 1.0
         yaw = 0.0 if bias else ((25.0 * (t - 1.0) + 180.0) % 360.0) - 180.0
+        flags = proto.ATT_FLAG_ACC_USED | (0 if bias else proto.ATT_FLAG_BIAS_READY)
+        if self.cal_t is not None and self.cal_zero is None:
+            flags |= proto.ATT_FLAG_CAL_BUSY
+            if time.perf_counter() - self.cal_t >= 1.0:
+                self.cal_zero = (roll, pitch, yaw)
+        if self.cal_zero is not None:
+            flags = (flags | proto.ATT_FLAG_CAL_DONE) & ~proto.ATT_FLAG_CAL_BUSY
+            roll, pitch = roll - self.cal_zero[0], pitch - self.cal_zero[1]
+            yaw = (yaw - self.cal_zero[2] + 180.0) % 360.0 - 180.0
         r, p = math.radians(roll), math.radians(pitch)
         g = 8192
         accel = (int(-g * math.sin(p)), int(g * math.cos(p) * math.sin(r)), int(g * math.cos(p) * math.cos(r)))
@@ -613,9 +624,8 @@ class SimBoard:
         dpitch = 20.0 * 2 * math.pi * 0.07 * math.cos(2 * math.pi * 0.07 * t + 0.6)
         gyro = tuple(int(v * proto.GYRO_LSB_PER_DPS) for v in (droll, dpitch, 0.0 if bias else 25.0))
         clamp = lambda v: max(-32768, min(32767, v))
-        accel = tuple(clamp(v - c) for v, c in zip(accel, self.cal[:3]))
-        gyro = tuple(clamp(v - c) for v, c in zip(gyro, self.cal[3:]))
-        flags = proto.ATT_FLAG_ACC_USED | (0 if bias else proto.ATT_FLAG_BIAS_READY)
+        accel = tuple(clamp(v) for v in accel)
+        gyro = tuple(clamp(v) for v in gyro)
         ang = tuple(max(-18000, min(18000, int(round(a * 100)))) for a in (roll, pitch, yaw))
         return accel, gyro, ang, flags
 

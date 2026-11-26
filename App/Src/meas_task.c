@@ -2,10 +2,10 @@
   ******************************************************************************
   * @file    meas_task.c
   * @brief   meas (P3): the telemetry source. Every DRDY while NET_READY and
-  *          MEAS_EN: one IMU sample -> CAL offsets -> roll / pitch / yaw
-  *          (complementary filter) -> one TELEM -> FreeRTOS_sendto. The IMU
-  *          rate is the SET_RATE rate (10 / 20 / 50 / 100 / 200 Hz); the
-  *          filter's dt, its time constant and the gyro bias time follow it.
+  *          MEAS_EN: one block of IMU points -> CAL offsets -> attitude.c
+  *          (Kalman filter: roll / pitch / yaw) -> one TELEM ->
+  *          FreeRTOS_sendto. The TELEM rate is the SET_RATE rate (10 / 20 /
+  *          50 / 100 / 200 Hz); the filter follows it.
   *          Künye: report 079.
   ******************************************************************************
   * RTOS objects owned:
@@ -46,6 +46,7 @@
 #include "app_config.h"
 #include "app_stats.h"
 #include "app_types.h"
+#include "attitude.h"
 #include "imu_spi.h"
 #include "pkt_format.h"
 #include "raw_link.h"
@@ -61,22 +62,14 @@ _Static_assert( APP_LEN_TELEM == ( ( 9U * 2U ) + 1U + 2U + 2U ), "TELEM = 9 x i1
 _Static_assert( APP_TELEM_FLAGS_OFFSET == ( 9U * 2U ), "flags follow the nine axes" );
 _Static_assert( APP_TELEM_PREV_OFFSET == ( APP_TELEM_FLAGS_OFFSET + 1U ), "prev follows flags" );
 
-/* Attitude (report 087). Angles in radians inside, 0.01 degree outside. */
+/* Birim dönüşümleri: ham LSB -> g, rad/s; süzgeç -> TELEM LSB, 0,01 derece. */
 #define MEAS_PI                 3.14159265f
-#define MEAS_ACC_LSB_PER_G      ( ( float ) APP_IMU_ACCEL_LSB_PER_G )
-#define MEAS_GYRO_LSB_PER_RAD   ( ( ( float ) APP_IMU_GYRO_LSB_PER_DPS_X10 / 10.0f ) * ( 180.0f / MEAS_PI ) )
-/* Time constant of the complementary filter: the gyro weight 0.98 at 100 Hz
- * gave tau = 0.98 x 10 ms / 0.02 = 0.49 s. alpha = tau / (tau + dt) keeps it
- * at every rate (200 Hz: 0.990, 10 Hz: 0.831). */
-#define MEAS_TAU_S              0.49f
-#define MEAS_ACC_MIN_G          0.85f       /* |a| outside: linear acceleration,    */
-#define MEAS_ACC_MAX_G          1.15f       /* the accelerometer is not used        */
-#define MEAS_GIMBAL_LIMIT       ( 85.0f * ( MEAS_PI / 180.0f ) )
-#define MEAS_CDEG_PER_RAD       ( 18000.0f / MEAS_PI )
-#define MEAS_CDEG_MAX           18000
-
-_Static_assert( ( ( APP_RATE_MAX_HZ * APP_ATT_BIAS_MS ) / 1000U ) <= 65000U, "bias count is 16 bits; sum of 32768 per sample fits int32" );
-_Static_assert( ( ( APP_RATE_MIN_HZ * APP_ATT_BIAS_MS ) / 1000U ) > 0U, "bias needs samples" );
+#define MEAS_DEG_TO_RAD         ( MEAS_PI / 180.0f )
+#define MEAS_RAW_TO_G           ( 1.0f / ( float ) APP_IMU_RAW_LSB_PER_G )
+#define MEAS_RAW_TO_RAD         ( ( 10.0f / ( float ) APP_IMU_RAW_LSB_PER_DPS_X10 ) * MEAS_DEG_TO_RAD )
+#define MEAS_G_TO_LSB           ( ( float ) APP_IMU_ACCEL_LSB_PER_G )
+#define MEAS_RAD_TO_LSB         ( ( ( float ) APP_IMU_GYRO_LSB_PER_DPS_X10 / 10.0f ) / MEAS_DEG_TO_RAD )
+#define MEAS_RAD_TO_CDEG        ( 18000.0f / MEAS_PI )
 
 static StaticTask_t xMeasTcb;
 static StackType_t xMeasStack[ APP_STACK_MEAS_WORDS ];
@@ -129,39 +122,35 @@ typedef struct xMEAS_STATE
 static MeasState_t xMeas;
 static QueueHandle_t xCalBox = NULL;
 
-/* meas alone: the filter (report 087) */
-typedef struct xMEAS_ATT
+/* meas alone: süzgecin girdisi ve zaman tabanı */
+typedef struct xMEAS_IN
 {
-    float fAngle[ 3 ];          /* roll, pitch, yaw (rad)                  */
-    float fBias[ 3 ];           /* gyro bias (LSB), valid once counted     */
-    float fDt;                  /* sample period of the rate in force (s)  */
-    float fAlpha;               /* gyro weight for that dt                 */
-    int32_t lBiasSum[ 3 ];
-    uint16_t usBiasCount;       /* samples summed, <= usBiasTarget         */
-    uint16_t usBiasTarget;      /* samples of APP_ATT_BIAS_MS at the rate of the START */
-    uint8_t ucHaveLast;         /* 0: no sample yet to take dt from        */
+    ImuBlock_t xBlock;
+    AttPoint xPoints[ IMU_BLOCK_MAX ];
+    uint32_t ulCalSeen;         /* işlenen son CAL (eStatCalApplied)       */
     uint32_t ulLastTick;
-} MeasAtt_t;
+    uint32_t ulLastCycles;
+    uint8_t ucHaveLast;         /* 0: no block yet to take dt from         */
+} MeasIn_t;
 
-static MeasAtt_t xAtt;
+static MeasIn_t xIn;
 
 static void prvMeasTask( void * pvParameters );
 static void prvMeasInitialise( void );
 static void prvRateInForce( uint16_t usHz );
 static void prvApplyNewRate( void );
 static BaseType_t prvLoadDestination( MeasDest_t * pxOut );
-static BaseType_t prvAcquire( Sample_t * pxOut );
-static void prvApplyCal( Sample_t * pxSample );
-static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const MeasDest_t * pxDest );
+static BaseType_t prvAcquire( ImuBlock_t * pxOut );
+static void prvSendTelemetry( const Sample_t * pxSample, const MeasDest_t * pxDest );
 #if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
-static void prvSendRaw( const Sample_t * pxSample, uint8_t ucFlags );
+static void prvSendRaw( const Sample_t * pxSample );
 #endif
 static void prvKeepDrdy( uint16_t usSeq, uint32_t ulCycles );
-static int16_t prvSubSat( int16_t sValue, int16_t sOffset );
 static void prvAttitudeReset( void );
-static uint8_t prvAttitudeUpdate( const Sample_t * pxSample );
-static float prvWrapPi( float fAngle );
-static int16_t prvCentiDeg( float fAngle );
+static void prvFilter( Sample_t * pxOut );
+static float prvPointPeriod( void );
+static void prvLoadPoints( void );
+static int16_t prvToI16( float fValue );
 
 /*---------------------------------------------------------------------------*/
 BaseType_t Meas_Init( void )
@@ -271,7 +260,6 @@ static void prvMeasTask( void * pvParameters )
 {
     Sample_t xSample;
     MeasDest_t xNow;
-    uint8_t ucFlags;
 #if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
     BaseType_t xPcOn;           /* PC yolu açık: NET_READY ve START var */
 #endif
@@ -330,25 +318,24 @@ static void prvMeasTask( void * pvParameters )
 #endif
         }
 
-        if( prvAcquire( &xSample ) != pdPASS )
+        if( prvAcquire( &xIn.xBlock ) != pdPASS )
         {
             continue;
         }
 
-        prvApplyCal( &xSample );
-        ucFlags = prvAttitudeUpdate( &xSample );
+        prvFilter( &xSample );
 
 #if ( APP_TELEM_TARGET == APP_TELEM_TARGET_MP257 )
         /* Önce MP257: PC yolunun sendto beklemesi (<= 2 ms) ham süreye girmez. */
-        prvSendRaw( &xSample, ucFlags );
+        prvSendRaw( &xSample );
 
         /* Linux okuyorsa TELEM yalnız ondan gider; START yine işlenir. */
         if( ( xPcOn == pdTRUE ) && ( raw_link_linux_on() == 0 ) )
         {
-            prvSendTelemetry( &xSample, ucFlags, &xNow );
+            prvSendTelemetry( &xSample, &xNow );
         }
 #else
-        prvSendTelemetry( &xSample, ucFlags, &xNow );
+        prvSendTelemetry( &xSample, &xNow );
 #endif
     }
 }
@@ -360,6 +347,7 @@ static void prvMeasInitialise( void )
 {
     xCalBox = Worker_GetCalMailbox();           /* WorkerTask_Init ran in App_Init */
 
+    att_init();
     prvRateInForce( Meas_GetRateHz() );
 
 #if ( APP_MEAS_SOURCE == APP_MEAS_SOURCE_IMU )
@@ -376,15 +364,13 @@ static void prvMeasInitialise( void )
 
 /*---------------------------------------------------------------------------*/
 /* prvRateInForce: everything that follows the rate: the DRDY wait, the     */
-/* filter's dt and gyro weight. The bias time is taken at the next START    */
-/* (prvAttitudeReset).                                                       */
+/* filter's cut-off frequencies and window lengths.                          */
 /*---------------------------------------------------------------------------*/
 static void prvRateInForce( uint16_t usHz )
 {
     xMeas.usRateInForce = usHz;
     xMeas.xDrdyWait = APP_MS( ( 1000U / ( uint32_t ) usHz ) + APP_IMU_DRDY_MARGIN_MS );
-    xAtt.fDt = 1.0f / ( float ) usHz;
-    xAtt.fAlpha = MEAS_TAU_S / ( MEAS_TAU_S + xAtt.fDt );
+    att_set_rate( ( float ) usHz, ( float ) Imu_PointRateHz( usHz ) );
 }
 
 /*---------------------------------------------------------------------------*/
@@ -407,7 +393,7 @@ static void prvApplyNewRate( void )
 #endif
 
     prvRateInForce( usNew );
-    xAtt.ucHaveLast = 0U;
+    xIn.ucHaveLast = 0U;
 
     /* The IMU takes the new divider only at its next sample at the OLD rate
      * (board, 22.11.2026: 10 -> 100 Hz, three 20 ms DRDY waits ran out
@@ -424,12 +410,12 @@ static BaseType_t prvLoadDestination( MeasDest_t * pxOut )
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvAcquire: one sample at the IMU rate. IMU: DRDY (<= one period + 10 ms),*/
+/* prvAcquire: one block at the TELEM rate. IMU: DRDY (<= one period + 10 ms),*/
 /* then the DMA read (<= 5 ms); APP_IMU_FAIL_LIMIT failures in a row -> one  */
 /* restart of the IMU and IMU_FAIL_RUN counted, which the health check turns */
 /* into FAULT IMU (K6). SYNTH: one period, values from a counter (K7).       */
 /*---------------------------------------------------------------------------*/
-static BaseType_t prvAcquire( Sample_t * pxOut )
+static BaseType_t prvAcquire( ImuBlock_t * pxOut )
 {
 #if ( APP_MEAS_SOURCE == APP_MEAS_SOURCE_IMU )
     BaseType_t xOk = Imu_WaitDrdy( ( xMeas.ucRateChanged != 0U ) ? APP_MS( APP_IMU_DRDY_TIMEOUT_MAX_MS ) : xMeas.xDrdyWait );
@@ -438,7 +424,7 @@ static BaseType_t prvAcquire( Sample_t * pxOut )
 
     if( xOk == pdPASS )
     {
-        xOk = Imu_ReadSample( pxOut, APP_MS( APP_IMU_SPI_TIMEOUT_MS ) );
+        xOk = Imu_ReadBlock( pxOut, APP_MS( APP_IMU_SPI_TIMEOUT_MS ) );
     }
 
     if( xOk == pdPASS )
@@ -479,12 +465,12 @@ static BaseType_t prvAcquire( Sample_t * pxOut )
 
     for( x = 0U; x < 3U; x++ )
     {
-        pxOut->sAccel[ x ] = ( int16_t ) ( uint16_t ) ( ulCount + x );
-        pxOut->sGyro[ x ] = ( int16_t ) ( uint16_t ) ( ( ulCount * 3U ) + x );
+        pxOut->sPoint[ 0 ][ x ] = ( int16_t ) ( uint16_t ) ( ulCount + x );
+        pxOut->sPoint[ 0 ][ 3U + x ] = ( int16_t ) ( uint16_t ) ( ( ulCount * 3U ) + x );
     }
 
     ulCount++;
-    pxOut->sTemp = 0;
+    pxOut->ulCount = 1U;
     pxOut->ulTick = xLastWake;
     pxOut->ulDrdyCycles = DWT->CYCCNT;
 
@@ -493,48 +479,99 @@ static BaseType_t prvAcquire( Sample_t * pxOut )
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvApplyCal: docs 5.2 / 17.2. A look into the mailbox with 0 wait; empty  */
-/* (no CAL yet) = no offsets. Offsets are subtracted, saturating (K4).       */
+/* prvFilter: son blok -> süzgeç -> TELEM birimleri. Yeni bir CAL            */
+/* uygulandıysa (worker'ın sayacı arttı) sıfırlama başlar.                   */
 /*---------------------------------------------------------------------------*/
-static void prvApplyCal( Sample_t * pxSample )
+static void prvFilter( Sample_t * pxOut )
+{
+    AttOutput xOut;
+    uint32_t ulCal = Stats_Get( eStatCalApplied );
+    size_t x;
+
+    if( ulCal != xIn.ulCalSeen )
+    {
+        xIn.ulCalSeen = ulCal;
+        att_calibrate();
+    }
+
+    prvLoadPoints();
+    att_update( xIn.xPoints, xIn.xBlock.ulCount, prvPointPeriod(), &xOut );
+
+    for( x = 0U; x < 3U; x++ )
+    {
+        pxOut->sAccel[ x ] = prvToI16( xOut.acc[ x ] * MEAS_G_TO_LSB );
+        pxOut->sGyro[ x ] = prvToI16( xOut.gyro[ x ] * MEAS_RAD_TO_LSB );
+        pxOut->sAngle[ x ] = prvToI16( xOut.angle[ x ] * MEAS_RAD_TO_CDEG );
+    }
+
+    pxOut->ulDrdyCycles = xIn.xBlock.ulDrdyCycles;
+    pxOut->ucFlags = xOut.flags;
+}
+
+/*---------------------------------------------------------------------------*/
+/* prvLoadPoints: ham noktalar -> g ve rad/s, CAL ofseti (docs 5.2, TELEM    */
+/* biriminde) çıkarılmış. Posta kutusu boşsa (hiç CAL yok) ofset yoktur.     */
+/*---------------------------------------------------------------------------*/
+static void prvLoadPoints( void )
 {
     ImuCal_t xCal;
+    float fOffset[ 6 ] = { 0.0f };
+    uint32_t ul;
     size_t x;
 
     if( xQueuePeek( xCalBox, &xCal, 0U ) == pdPASS )
     {
         for( x = 0U; x < 3U; x++ )
         {
-            pxSample->sAccel[ x ] = prvSubSat( pxSample->sAccel[ x ], xCal.sOffset[ x ] );
-            pxSample->sGyro[ x ] = prvSubSat( pxSample->sGyro[ x ], xCal.sOffset[ 3U + x ] );
+            fOffset[ x ] = ( float ) xCal.sOffset[ x ] / MEAS_G_TO_LSB;
+            fOffset[ 3U + x ] = ( float ) xCal.sOffset[ 3U + x ] / MEAS_RAD_TO_LSB;
+        }
+    }
+
+    for( ul = 0U; ul < xIn.xBlock.ulCount; ul++ )
+    {
+        for( x = 0U; x < 3U; x++ )
+        {
+            xIn.xPoints[ ul ].acc[ x ] = ( ( float ) xIn.xBlock.sPoint[ ul ][ x ] * MEAS_RAW_TO_G ) - fOffset[ x ];
+            xIn.xPoints[ ul ].gyro[ x ] = ( ( float ) xIn.xBlock.sPoint[ ul ][ 3U + x ] * MEAS_RAW_TO_RAD ) - fOffset[ 3U + x ];
         }
     }
 }
 
 /*---------------------------------------------------------------------------*/
-static int16_t prvSubSat( int16_t sValue, int16_t sOffset )
+/* prvPointPeriod: iki nokta arası (s), işlemci saatiyle ölçülür: IMU'nun    */
+/* kendi saati %1 kayabilir, açı da o kadar yanlış integre edilirdi. 0: ilk  */
+/* blok ya da araya boşluk girdi (DWT 19,9 s'de taşar), integre edilmez.     */
+/*---------------------------------------------------------------------------*/
+static float prvPointPeriod( void )
 {
-    int32_t lDiff = ( int32_t ) sValue - ( int32_t ) sOffset;
+    uint32_t ulTicks = xIn.xBlock.ulTick - xIn.ulLastTick;
+    uint32_t ulCycles = xIn.xBlock.ulDrdyCycles - xIn.ulLastCycles;
+    float fPeriod = 0.0f;
 
-    if( lDiff > INT16_MAX )
+    if( ( xIn.ucHaveLast != 0U ) && ( ulTicks <= xMeas.xDrdyWait ) )
     {
-        lDiff = INT16_MAX;
-    }
-    else if( lDiff < INT16_MIN )
-    {
-        lDiff = INT16_MIN;
-    }
-    else
-    {
-        /* in range */
+        fPeriod = ( float ) ulCycles / ( ( float ) SystemCoreClock * ( float ) xIn.xBlock.ulCount );
     }
 
-    return ( int16_t ) lDiff;
+    xIn.ulLastTick = xIn.xBlock.ulTick;
+    xIn.ulLastCycles = xIn.xBlock.ulDrdyCycles;
+    xIn.ucHaveLast = 1U;
+
+    return fPeriod;
+}
+
+/*---------------------------------------------------------------------------*/
+static int16_t prvToI16( float fValue )
+{
+    float fLimited = fmaxf( -32768.0f, fminf( 32767.0f, fValue ) );
+
+    return ( int16_t ) lroundf( fLimited );
 }
 
 /*---------------------------------------------------------------------------*/
 /* prvSendTelemetry: TELEM (0x30), 23 B, big-endian: ax ay az gx gy gz i16   */
-/* (raw LSB after CAL), roll pitch yaw i16 (0.01 deg), flags u8, prev_seq    */
+/* (TELEM LSB, filtered), roll pitch yaw i16 (0.01 deg), flags u8, prev_seq  */
 /* u16, prev_us u16. prev: the last TELEM whose line has left the UART and   */
 /* its DRDY -> TX done time, measured by uartTx (APP_TELEM_FLAG_PREV). SEQ   */
 /* from 0 (K3). The DRDY time is kept for uartTx under this SEQ before the   */
@@ -542,7 +579,7 @@ static int16_t prvSubSat( int16_t sValue, int16_t sOffset )
 /* buffer and the IP queue (FreeRTOS_Sockets.c:1404-1444); a loss is         */
 /* counted (L6).                                                             */
 /*---------------------------------------------------------------------------*/
-static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const MeasDest_t * pxDest )
+static void prvSendTelemetry( const Sample_t * pxSample, const MeasDest_t * pxDest )
 {
     uint8_t ucPayload[ APP_LEN_TELEM ];
     uint8_t ucPacket[ APP_PKT_OVERHEAD_BYTES + APP_LEN_TELEM ];
@@ -552,6 +589,7 @@ static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const 
     size_t x;
     int32_t lSent;
     uint32_t ulPrev = UartTx_GetLastTelem();
+    uint8_t ucFlags = pxSample->ucFlags;
     Socket_t xSocket = UdpIn_GetTelemSocket();
 
     /* MEAS_EN implies a START, which needs NET_READY and open sockets. */
@@ -561,7 +599,7 @@ static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const 
     {
         Pkt_WriteU16( &ucPayload[ 2U * x ], ( uint16_t ) pxSample->sAccel[ x ] );
         Pkt_WriteU16( &ucPayload[ 6U + ( 2U * x ) ], ( uint16_t ) pxSample->sGyro[ x ] );
-        Pkt_WriteU16( &ucPayload[ 12U + ( 2U * x ) ], ( uint16_t ) prvCentiDeg( xAtt.fAngle[ x ] ) );
+        Pkt_WriteU16( &ucPayload[ 12U + ( 2U * x ) ], ( uint16_t ) pxSample->sAngle[ x ] );
     }
 
     if( ulPrev != 0U )
@@ -603,17 +641,18 @@ static void prvSendTelemetry( const Sample_t * pxSample, uint8_t ucFlags, const 
 /* prvSendRaw: prvSendTelemetry ile aynı 23 bayt veri, başlıksız ve CRC'siz. */
 /* prev_seq / prev_us USART6 hattının kendi ölçümüdür.                       */
 /*---------------------------------------------------------------------------*/
-static void prvSendRaw( const Sample_t * pxSample, uint8_t ucFlags )
+static void prvSendRaw( const Sample_t * pxSample )
 {
     uint8_t ucPayload[ APP_LEN_TELEM ];
     uint32_t ulPrev = raw_link_last();
+    uint8_t ucFlags = pxSample->ucFlags;
     size_t x;
 
     for( x = 0U; x < 3U; x++ )
     {
         Pkt_WriteU16( &ucPayload[ 2U * x ], ( uint16_t ) pxSample->sAccel[ x ] );
         Pkt_WriteU16( &ucPayload[ 6U + ( 2U * x ) ], ( uint16_t ) pxSample->sGyro[ x ] );
-        Pkt_WriteU16( &ucPayload[ 12U + ( 2U * x ) ], ( uint16_t ) prvCentiDeg( xAtt.fAngle[ x ] ) );
+        Pkt_WriteU16( &ucPayload[ 12U + ( 2U * x ) ], ( uint16_t ) pxSample->sAngle[ x ] );
     }
 
     if( ulPrev != 0U )
@@ -647,190 +686,11 @@ static void prvKeepDrdy( uint16_t usSeq, uint32_t ulCycles )
 }
 
 /*---------------------------------------------------------------------------*/
-/* prvAttitudeReset: a new START: the angles, the gyro bias and the time     */
-/* base begin again (report 087). The bias is the mean of APP_ATT_BIAS_MS of */
-/* samples at the rate in force now; a SET_RATE during that second leaves    */
-/* the count as it is (the phase is then a little shorter or longer).        */
+/* prvAttitudeReset: a new START: yaw, the gyro bias and the time base begin */
+/* again (report 087). CAL hizalaması korunur.                               */
 /*---------------------------------------------------------------------------*/
 static void prvAttitudeReset( void )
 {
-    ( void ) memset( xAtt.fAngle, 0, sizeof( xAtt.fAngle ) );
-    ( void ) memset( xAtt.fBias, 0, sizeof( xAtt.fBias ) );
-    ( void ) memset( xAtt.lBiasSum, 0, sizeof( xAtt.lBiasSum ) );
-    xAtt.usBiasCount = 0U;
-    xAtt.usBiasTarget = ( uint16_t ) ( ( ( uint32_t ) xMeas.usRateInForce * APP_ATT_BIAS_MS ) / 1000U );
-    xAtt.ucHaveLast = 0U;
-    xAtt.ulLastTick = 0U;
-}
-
-/*---------------------------------------------------------------------------*/
-/* prvAttitudeUpdate: one sample (CAL applied) -> roll, pitch, yaw; returns  */
-/* the APP_ATT_FLAG_* of this sample.                                        */
-/*  - First usBiasTarget samples after START (1 s): the gyro bias is their   */
-/*    mean; roll / pitch from the accelerometer alone, yaw 0.                */
-/*  - Then: the gyro rates (bias removed) move the angles through the Euler  */
-/*    kinematics; roll / pitch are pulled towards the accelerometer angles   */
-/*    (complementary filter, fAlpha) while |a| is about 1 g. Yaw comes from  */
-/*    the gyro alone (no magnetometer): it drifts.                           */
-/*  dt is the period of the rate in force (fDt); a sample whose tick is not  */
-/*  1 tick .. one period + 10 ms after the last one is not integrated (K5).  */
-/*---------------------------------------------------------------------------*/
-static uint8_t prvAttitudeUpdate( const Sample_t * pxSample )
-{
-    float fAcc[ 3 ];
-    float fRate[ 3 ];
-    float fAccRoll;
-    float fAccPitch;
-    float fNorm;
-    float fSinR;
-    float fCosR;
-    float fCosP;
-    float fBodyQr;
-    uint32_t ulDt;
-    uint8_t ucFlags = 0U;
-    BaseType_t xAccOk;
-    BaseType_t xDtOk;
-    size_t x;
-
-    for( x = 0U; x < 3U; x++ )
-    {
-        fAcc[ x ] = ( float ) pxSample->sAccel[ x ] / MEAS_ACC_LSB_PER_G;
-    }
-
-    fNorm = sqrtf( ( fAcc[ 0 ] * fAcc[ 0 ] ) + ( fAcc[ 1 ] * fAcc[ 1 ] ) + ( fAcc[ 2 ] * fAcc[ 2 ] ) );
-    xAccOk = ( ( fNorm >= MEAS_ACC_MIN_G ) && ( fNorm <= MEAS_ACC_MAX_G ) ) ? pdTRUE : pdFALSE;
-    fAccRoll = atan2f( fAcc[ 1 ], fAcc[ 2 ] );
-    fAccPitch = atan2f( -fAcc[ 0 ], sqrtf( ( fAcc[ 1 ] * fAcc[ 1 ] ) + ( fAcc[ 2 ] * fAcc[ 2 ] ) ) );
-
-    ulDt = pxSample->ulTick - xAtt.ulLastTick;
-    xDtOk = ( ( xAtt.ucHaveLast != 0U ) && ( ulDt != 0U ) && ( ulDt <= xMeas.xDrdyWait ) ) ? pdTRUE : pdFALSE;
-
-    if( xAtt.usBiasCount < xAtt.usBiasTarget )
-    {
-        /* Bias phase: the board is expected to stay still (known limit). */
-        for( x = 0U; x < 3U; x++ )
-        {
-            xAtt.lBiasSum[ x ] += ( int32_t ) pxSample->sGyro[ x ];
-        }
-
-        xAtt.usBiasCount++;
-
-        if( xAtt.usBiasCount == xAtt.usBiasTarget )
-        {
-            for( x = 0U; x < 3U; x++ )
-            {
-                xAtt.fBias[ x ] = ( float ) xAtt.lBiasSum[ x ] / ( float ) xAtt.usBiasTarget;
-            }
-        }
-
-        if( ( xAccOk == pdTRUE ) || ( xAtt.ucHaveLast == 0U ) )
-        {
-            /* The first sample takes the accelerometer angles in any case:
-             * there is nothing better. */
-            xAtt.fAngle[ 0 ] = fAccRoll;
-            xAtt.fAngle[ 1 ] = fAccPitch;
-            ucFlags = ( xAccOk == pdTRUE ) ? ( uint8_t ) APP_ATT_FLAG_ACC_USED : 0U;
-        }
-
-        xAtt.fAngle[ 2 ] = 0.0f;
-    }
-    else
-    {
-        if( xDtOk == pdTRUE )
-        {
-            for( x = 0U; x < 3U; x++ )
-            {
-                fRate[ x ] = ( ( float ) pxSample->sGyro[ x ] - xAtt.fBias[ x ] ) / MEAS_GYRO_LSB_PER_RAD;
-            }
-
-            /* Euler kinematics: body rates p q r -> roll, pitch, yaw rates. */
-            fSinR = sinf( xAtt.fAngle[ 0 ] );
-            fCosR = cosf( xAtt.fAngle[ 0 ] );
-            fCosP = cosf( xAtt.fAngle[ 1 ] );
-            fBodyQr = ( fRate[ 1 ] * fSinR ) + ( fRate[ 2 ] * fCosR );
-
-            if( fabsf( xAtt.fAngle[ 1 ] ) < MEAS_GIMBAL_LIMIT )
-            {
-                xAtt.fAngle[ 0 ] += ( fRate[ 0 ] + ( fBodyQr * ( sinf( xAtt.fAngle[ 1 ] ) / fCosP ) ) ) * xAtt.fDt;
-                xAtt.fAngle[ 2 ] += ( fBodyQr / fCosP ) * xAtt.fDt;
-            }
-            else
-            {
-                /* Near +-90 degree pitch 1/cos(pitch) explodes (gimbal
-                 * lock): roll takes p alone, yaw stands (known limit). */
-                xAtt.fAngle[ 0 ] += fRate[ 0 ] * xAtt.fDt;
-            }
-
-            xAtt.fAngle[ 1 ] += ( ( fRate[ 1 ] * fCosR ) - ( fRate[ 2 ] * fSinR ) ) * xAtt.fDt;
-        }
-
-        if( xAccOk == pdTRUE )
-        {
-            /* Towards the accelerometer, roll by the shorter way round. */
-            xAtt.fAngle[ 0 ] += ( 1.0f - xAtt.fAlpha ) * prvWrapPi( fAccRoll - xAtt.fAngle[ 0 ] );
-            xAtt.fAngle[ 1 ] += ( 1.0f - xAtt.fAlpha ) * ( fAccPitch - xAtt.fAngle[ 1 ] );
-            ucFlags = ( uint8_t ) APP_ATT_FLAG_ACC_USED;
-        }
-
-        ucFlags = ( uint8_t ) ( ucFlags | APP_ATT_FLAG_BIAS_READY );
-    }
-
-    xAtt.fAngle[ 0 ] = prvWrapPi( xAtt.fAngle[ 0 ] );
-    xAtt.fAngle[ 1 ] = fmaxf( -0.5f * MEAS_PI, fminf( 0.5f * MEAS_PI, xAtt.fAngle[ 1 ] ) );
-    xAtt.fAngle[ 2 ] = prvWrapPi( xAtt.fAngle[ 2 ] );
-    xAtt.ulLastTick = pxSample->ulTick;
-    xAtt.ucHaveLast = 1U;
-
-    return ucFlags;
-}
-
-/*---------------------------------------------------------------------------*/
-/* prvWrapPi: into [-pi, pi). One step is enough: an update moves an angle   */
-/* by far less than 2 pi.                                                    */
-/*---------------------------------------------------------------------------*/
-static float prvWrapPi( float fAngle )
-{
-    float fOut = fAngle;
-
-    if( fOut >= MEAS_PI )
-    {
-        fOut -= 2.0f * MEAS_PI;
-    }
-    else if( fOut < -MEAS_PI )
-    {
-        fOut += 2.0f * MEAS_PI;
-    }
-    else
-    {
-        /* in range */
-    }
-
-    return fOut;
-}
-
-/*---------------------------------------------------------------------------*/
-/* prvCentiDeg: radians -> 0.01 degree, rounded, limited to +-180.00.        */
-/*---------------------------------------------------------------------------*/
-static int16_t prvCentiDeg( float fAngle )
-{
-    float fValue = fAngle * MEAS_CDEG_PER_RAD;
-    int32_t lValue;
-
-    fValue += ( fValue >= 0.0f ) ? 0.5f : -0.5f;
-    lValue = ( int32_t ) fValue;
-
-    if( lValue > MEAS_CDEG_MAX )
-    {
-        lValue = MEAS_CDEG_MAX;
-    }
-    else if( lValue < -MEAS_CDEG_MAX )
-    {
-        lValue = -MEAS_CDEG_MAX;
-    }
-    else
-    {
-        /* in range */
-    }
-
-    return ( int16_t ) lValue;
+    att_restart();
+    xIn.ucHaveLast = 0U;
 }
